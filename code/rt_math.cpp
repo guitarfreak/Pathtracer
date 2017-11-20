@@ -2023,8 +2023,7 @@ inline Vec3 toVec3(Vec2 a) {
 }
 
 inline float lenVec3(Vec3 a) {
-	float sqrlen = dot(a,a);
-	if(sqrlen > 0) sqrlen = 1.0f/sqrt(sqrlen);
+	float sqrlen = sqrt(dot(a,a));
 	return sqrlen;
 }
 

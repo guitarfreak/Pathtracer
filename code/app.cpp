@@ -70,7 +70,7 @@ Timer* globalTimer;
 
 #include "debug.cpp"
 
-
+#include "Raycast.cpp"
 
 
 #define Window_Min_Size_X 300
@@ -442,27 +442,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	{
 		Rect sr = getScreenRect(ws);
-
-
-
-		// Vec2i texSize = vec2i(16,9);
-		Vec2i texSize = vec2i(16,9);
+		// float th = 
+		Vec2i texSize = vec2i(1280/4,720/4);
+		// Vec2i texSize = vec2i(320,180);
+		// Vec2i texSize = vec2i(160,90);
+		float aspectRatio = (float)texSize.w / texSize.h;
 
 		if(init) {
 			Texture* tex = &ad->raycastTexture;
 			*tex = {};
-
-			// Vec4 data[] = {vec4(1,0,0,1), vec4(1,0,1,1), 
-								  // vec4(1,1,0,1), vec4(0,0,1,1), };
-
-			  // char data[] = { 255,0,0,255, 255,0,0,255, 255,0,0,255, 255,0,0,255, };
-
-
-// void loadTextureFromMemory(Texture* texture, char* buffer, int length, int mipLevels, int internalFormat, int channelType, int channelFormat, bool reload = false) {
-			// loadTextureFromMemory(tex, data, arrayCount(data), 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_INT);
-
-			// uchar buffer [] = {255,0,0,255 ,0,255,0,255 ,255,255,255,255, 255,255,255,255};
-			// loadTexture(tex, 0, 2,2, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_FLOAT);
 
 			int mipLevels = 1;
 			int internalFormat = INTERNAL_TEXTURE_FORMAT;
@@ -479,13 +467,44 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			glTextureParameteri(tex->id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTextureParameteri(tex->id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+			// glTextureParameteri(tex->id, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			// glTextureParameteri(tex->id, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
 			glTextureParameteri(tex->id, GL_TEXTURE_WRAP_S, GL_CLAMP);
 			glTextureParameteri(tex->id, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
 			glGenerateTextureMipmap(tex->id);
+		} 
 
 
-		}
+		// GL_CLAMP_TO_EDGE
+
+		int shapeCount = 0;
+		Shape* shapes = getTArray(Shape, 10);
+
+		// Shape* box = shapes + shapeCount++;
+
+		Shape box = {};
+		box.type = SHAPE_BOX;
+		box.pos = vec3(0,0,0);
+		box.dim = vec3(2,2,2);
+		box.rot = quat(0,0,0,0);
+
+		Shape sphere = {};
+		sphere.type = SHAPE_SPHERE;
+		sphere.pos = vec3(2*sin(ad->time*0.2f),0,2*cos(ad->time*0.2f));
+		sphere.r = 3;
+
+
+		// Vec3 camRot
+		Vec3 camPos = vec3(0, -20, 0);
+		Vec3 camDir = normVec3(vec3(0, 1, 0));
+		// float camFov = 90;
+		// float camAspect = (float)texSize.w / (float)texSize.h;
+		float camDist = 1;
+
+
 
 
 
@@ -494,13 +513,65 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec2i texDim = tex->dim;
 		Vec4* data = getTArray(Vec4, texDim.w * texDim.h);
 
+
+
+
+
+		float pixelPercent = (float)1/texDim.w;
+
+		float camWidth = camDist * 2; // 90 degrees for now.
+		Vec2 camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+
+		Vec3 camRight = normVec3(vec3(1,0,0));
+		Vec3 camUp = normVec3(vec3(0,0,1));
+		Vec3 camLeft = camRight * -1;
+
 		for(int y = 0; y < texDim.h; y++) {
 			for(int x = 0; x < texDim.w; x++) {
 
-				float sx = x/((float)texDim.w-1);
-				float sy = y/((float)texDim.h-1);
 
-				data[y*texDim.w + x] = vec4(1, sx, sy, 1);
+				// float sx = x/((float)texDim.w-1);
+				// float sy = y/((float)texDim.h-1);
+
+				// // data[y*texDim.w + x] = vec4(1, sx, sy, 1);
+				// // data[y*texDim.w + x] = vec4(x%2, y%2, 0, 1);
+				// data[y*texDim.w + x] = vec4((x+y)%2, 1);
+				
+
+				// float xa = 
+
+				// Vec2 camDim = vec2(2, 2*(1/aspectRatio)); // 90 degrees for now.
+
+				// float camDist = 
+
+				// Vec3 p = camPos;
+				float xPercent = x/((float)texDim.w-1);
+				float yPercent = y/((float)texDim.h-1);
+				Vec3 p = camPos + camDir*camDist;
+
+
+				p += camLeft * -((camDim.w*(xPercent + pixelPercent*0.5f)) - camDim.w*0.5f);
+				p += camUp * -((camDim.h*(yPercent + pixelPercent*0.5f)) - camDim.h*0.5f);
+
+				Vec3 dir = normVec3(p - camPos);
+
+
+				// box.pos
+
+				Vec4 color = vec4(0.2f,1);
+
+
+				// Check if ray hits circle
+
+				Vec3 projectedPoint = projectPointOnLine(camPos, dir, sphere.pos);
+				float distanceToSphere = lenVec3(projectedPoint - sphere.pos);
+				if(distanceToSphere <= sphere.r) {
+					color = vec4(1,1,0,1);
+				}
+
+
+
+				data[y*texDim.w + x] = color;
 			}
 		}
 
@@ -515,6 +586,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			} else {
 				tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
 			}
+			tr = rectExpand(tr, vec2(-50));
 			drawRect(tr, rect(0,0,1,1), tex->id);
 		}
 
