@@ -2029,7 +2029,7 @@ inline float lenVec3(Vec3 a) {
 
 inline Vec3 normVec3(Vec3 a) {
 	float sqrlen = lenVec3(a);
-	return a*sqrlen;
+	return a/sqrlen;
 }
 
 Vec3 projectPointOnLine(Vec3 lPos, Vec3 lDir, Vec3 p) {
@@ -2120,6 +2120,77 @@ inline Vec3 rgbToHslFloat(Vec3 rgb) {
 	Vec3 hslFloat = vec3(hsl.x / (float)360, hsl.y, hsl.z);
 	return hslFloat;
 }
+
+// inline linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn) {
+
+// }
+
+// bool lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float r, Vec3* intersection = 0) {
+// 	// float a = 
+
+// 	// Vec3 asdf = lp - sp;
+// 	// float a = pow((ld * (lp - sp)),2);
+// 	// float a = pow((ld * (lp - sp)),2);
+// 	float test = pow(lenVec3((lp - sp)),2);
+// 	float test2 = pow(dot(ld, (lp - sp)),2);
+// 	float a = test2 - test + r*r;
+
+// 	if(a < 0) return false;
+
+// 	// a == 0 means only one intersection
+
+// 	float d = -dot(ld, (lp - sp)) - sqrt(a);
+
+// 	if(intersection) *intersection = lp + ld*d;
+
+// 	return true;
+// }
+
+
+bool lineSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter, double circleRadius, Vec3* intersection = 0)
+{
+
+    double cx = circleCenter.x;
+    double cy = circleCenter.y;
+    double cz = circleCenter.z;
+
+    double px = linePoint0.x;
+    double py = linePoint0.y;
+    double pz = linePoint0.z;
+
+    double vx = linePoint1.x - px;
+    double vy = linePoint1.y - py;
+    double vz = linePoint1.z - pz;
+
+    double A = vx * vx + vy * vy + vz * vz;
+    double B = 2.0 * (px * vx + py * vy + pz * vz - vx * cx - vy * cy - vz * cz);
+    double C = px * px - 2 * px * cx + cx * cx + py * py - 2 * py * cy + cy * cy +
+               pz * pz - 2 * pz * cz + cz * cz - circleRadius * circleRadius;
+
+    // discriminant
+    double D = B * B - 4 * A * C;
+
+    double t1 = (-B - sqrt(D)) / (2.0 * A);
+
+    Vec3 solution1 = vec3(linePoint0.x * (1 - t1) + t1 * linePoint1.x,
+                                     linePoint0.y * (1 - t1) + t1 * linePoint1.y,
+                                     linePoint0.z * (1 - t1) + t1 * linePoint1.z);
+
+    double t2 = (-B + sqrt(D)) / (2.0 * A);
+    Vec3 solution2 = vec3(linePoint0.x * (1 - t2) + t2 * linePoint1.x,
+                                     linePoint0.y * (1 - t2) + t2 * linePoint1.y,
+                                     linePoint0.z * (1 - t2) + t2 * linePoint1.z);
+
+    if (D < 0 || t1 > 1 || t2 >1) return false;
+    
+    // D == 0 one solution;
+
+	if(intersection) *intersection = solution1;
+
+    return true;
+}
+
+
 
 //
 //
