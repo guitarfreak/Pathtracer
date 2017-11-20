@@ -439,6 +439,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		Rect sr = getScreenRect(ws);
 
+		// dfsdgserzg
+
 		float size = 10;
 		Vec2 pos = rectTR(sr) - vec2(100 + size, 100 + size);
 		int eCount = 100;
