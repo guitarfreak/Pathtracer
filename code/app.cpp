@@ -139,6 +139,10 @@ struct AppData {
 	// App.
 
 	Font* font;
+
+	// 
+
+	Texture raycastTexture;
 };
 
 
@@ -439,31 +443,81 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		Rect sr = getScreenRect(ws);
 
-		// dfsdgserzg
 
-		float size = 10;
-		Vec2 pos = rectTR(sr) - vec2(100 + size, 100 + size);
-		int eCount = 100;
-		float tailLength = 10;
-		float time = ad->time / 40;
-		float dist = 100;
-		float patternMod = 8;
-		glPointSize(size);
 
-		for(int i = eCount-1; i >= 0; i--) {
-			f64 t = time - (i*tailLength/eCount);
-			float d = sin(t*patternMod) * dist;
-			Vec2 p = pos + vec2((sin(t)*d), cos(t)*d);
+		// Vec2i texSize = vec2i(16,9);
+		Vec2i texSize = vec2i(16,9);
 
-			float percent = (float)i/(eCount-1);
-			// percent = sqrt(percent);
-			Vec4 c = vec4(1-percent,0,percent/2,1-percent);
+		if(init) {
+			Texture* tex = &ad->raycastTexture;
+			*tex = {};
 
-			// drawRect(rectCenDim(p, vec2(20)), c);
-			drawPoint(p, c);
+			// Vec4 data[] = {vec4(1,0,0,1), vec4(1,0,1,1), 
+								  // vec4(1,1,0,1), vec4(0,0,1,1), };
+
+			  // char data[] = { 255,0,0,255, 255,0,0,255, 255,0,0,255, 255,0,0,255, };
+
+
+// void loadTextureFromMemory(Texture* texture, char* buffer, int length, int mipLevels, int internalFormat, int channelType, int channelFormat, bool reload = false) {
+			// loadTextureFromMemory(tex, data, arrayCount(data), 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_INT);
+
+			// uchar buffer [] = {255,0,0,255 ,0,255,0,255 ,255,255,255,255, 255,255,255,255};
+			// loadTexture(tex, 0, 2,2, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_FLOAT);
+
+			int mipLevels = 1;
+			int internalFormat = INTERNAL_TEXTURE_FORMAT;
+
+			int w = texSize.w;
+			int h = texSize.h;
+
+			glCreateTextures(GL_TEXTURE_2D, 1, &tex->id);
+			glTextureStorage2D(tex->id, mipLevels, internalFormat, w, h);
+
+			tex->dim = vec2i(w,h);
+			tex->channels = 4;
+			tex->levels = mipLevels;
+
+			glTextureParameteri(tex->id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTextureParameteri(tex->id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTextureParameteri(tex->id, GL_TEXTURE_WRAP_S, GL_CLAMP);
+			glTextureParameteri(tex->id, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+			glGenerateTextureMipmap(tex->id);
+
+
 		}
 
-		glPointSize(1);
+
+
+		Texture* tex = &ad->raycastTexture;
+
+		Vec2i texDim = tex->dim;
+		Vec4* data = getTArray(Vec4, texDim.w * texDim.h);
+
+		for(int y = 0; y < texDim.h; y++) {
+			for(int x = 0; x < texDim.w; x++) {
+
+				float sx = x/((float)texDim.w-1);
+				float sy = y/((float)texDim.h-1);
+
+				data[y*texDim.w + x] = vec4(1, sx, sy, 1);
+			}
+		}
+
+
+		{
+			glTextureSubImage2D(tex->id, 0, 0, 0, texDim.w, texDim.h, GL_RGBA, GL_FLOAT, data);
+
+			Rect tr = sr;
+			Vec2 sd = rectDim(sr);
+			if(((float)texDim.h / texDim.w) > (sd.h / sd.w)) {
+				tr = rectSetW(tr, ((float)texDim.w / texDim.h)*sd.h);
+			} else {
+				tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
+			}
+			drawRect(tr, rect(0,0,1,1), tex->id);
+		}
+
 	}
 
 
