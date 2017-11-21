@@ -443,8 +443,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		Rect sr = getScreenRect(ws);
 		// float th = 
-		// Vec2i texSize = vec2i(1280/4,720/4);
-		Vec2i texSize = vec2i(320,180);
+		// Vec2i texSize = vec2i(1920,1080);
+		Vec2i texSize = vec2i(1280,720);
+		// Vec2i texSize = vec2i(1280/2,720/2);
+		// Vec2i texSize = vec2i(320,180);
 		// Vec2i texSize = vec2i(160,90);
 		float aspectRatio = (float)texSize.w / texSize.h;
 
@@ -477,158 +479,211 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glGenerateTextureMipmap(tex->id);
 		} 
 
+		if(input->keysPressed[KEYCODE_SPACE] || reload || init) {
+		// if(true) {
 
-		// Vec3 camRot
-		Vec3 camPos = vec3(0, -20, 5);
-		Vec3 camDir = normVec3(vec3(0, 1, 0));
-		// float camFov = 90;
-		// float camAspect = (float)texSize.w / (float)texSize.h;
-		float camDist = 1;
-
-
-		int shapeCount = 0;
-		Shape* shapes = getTArray(Shape, 10);
-
-		Shape s;
-
-		s = {};
-		s.type = SHAPE_SPHERE;
-		float animSpeed = 0.5f;
-		s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
-		s.r = 4;
-		s.color = vec3(0,0.2f,0.5f);
-		s.reflectionMod = 0;
-		shapes[shapeCount++] = s;
-
-		s = {};
-		s.type = SHAPE_BOX;
-		s.pos = vec3(0,0,0);
-		s.dim = vec3(12,12,1);
-		s.color = vec3(0.8f,0.3f,0);
-		shapes[shapeCount++] = s;
-
-		// Shape light = {};
-		// light.type = SHAPE_SPHERE;
-		// light.pos = vec3(-10,-10,10);
-		// light.r = 2;
+			// Vec3 camRot
+			Vec3 camPos = vec3(0, -20, 4);
+			Vec3 camDir = normVec3(vec3(0, 1, 0));
+			// float camFov = 90;
+			// float camAspect = (float)texSize.w / (float)texSize.h;
+			float camDist = 1;
 
 
+			int shapeCount = 0;
+			Shape* shapes = getTArray(Shape, 10);
 
-		Texture* tex = &ad->raycastTexture;
+			Shape s;
 
-		Vec2i texDim = tex->dim;
-		Vec4* data = getTArray(Vec4, texDim.w * texDim.h);
+			s = {};
+			s.type = SHAPE_BOX;
+			s.pos = vec3(0,0,0);
+			// s.dim = vec3(12,12,1);
+			s.dim = vec3(10000,10000,0.01f);
+			s.color = vec3(0.5f);
+			s.reflectionMod = 0.5f;
+			shapes[shapeCount++] = s;
 
+			s = {};
+			s.type = SHAPE_BOX;
+			s.pos = vec3(-15,2,0);
+			s.dim = vec3(1,10,50);
+			s.color = vec3(0,0.8f,0.5f);
+			s.reflectionMod = 0.5f;
+			shapes[shapeCount++] = s;
 
-
-		float pixelPercent = (float)1/texDim.w;
-
-		float camWidth = camDist * 2; // 90 degrees for now.
-		Vec2 camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
-
-		Vec3 camRight = normVec3(vec3(1,0,0));
-		Vec3 camUp = normVec3(vec3(0,0,1));
-		Vec3 camLeft = camRight * -1;
-
-		for(int y = 0; y < texDim.h; y++) {
-			for(int x = 0; x < texDim.w; x++) {
-
-				float xPercent = x/((float)texDim.w-1);
-				float yPercent = y/((float)texDim.h-1);
-				Vec3 p = camPos + camDir*camDist;
-
-				p += camLeft * -((camDim.w*(xPercent + pixelPercent*0.5f)) - camDim.w*0.5f);
-				p += camUp * -((camDim.h*(yPercent + pixelPercent*0.5f)) - camDim.h*0.5f);
-
-				Vec3 rayDir = normVec3(p - camPos);
-
-				Vec3 ambientColor = vec3(0.2f);
-				Vec3 finalColor = ambientColor;
+			s = {};
+			s.type = SHAPE_BOX;
+			s.pos = vec3(0,-10,1);
+			s.dim = vec3(2,2,2);
+			s.color = vec3(0.8f,0.3f,0.5f);
+			s.reflectionMod = 0.9f;
+			shapes[shapeCount++] = s;
 
 
 
-				for(int i = 0; i < shapeCount; i++) {
-					Shape* s = shapes + i;
+			s = {};
+			s.type = SHAPE_SPHERE;
+			float animSpeed = 0.5f;
+			// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
+			s.pos = vec3(8, -2, 1);
+			s.r = 4;
+			s.color = vec3(0.3f,0.5f,0.8f);
+			s.reflectionMod = 0.9f;
+			shapes[shapeCount++] = s;
 
-					Vec3 reflectionPos;
-					Vec3 reflectionDir;
-					bool intersection = lineShapeIntersection(camPos, rayDir, *s, &reflectionPos, &reflectionDir);
-					if(intersection) {
+			s = {};
+			s.type = SHAPE_SPHERE;
+			s.pos = vec3(-8,0,1);
+			s.r = 2;
+			s.color = vec3(0.0f);
+			s.emitColor = vec3(2,0,0);
+			s.reflectionMod = 1;
+			shapes[shapeCount++] = s;
 
-						// Just draw color if now reflection.
-						if(s->reflectionMod == 0) {
-							finalColor = s->color;
-						} else {
-							// Vec3 reflectionVector;
-							// bool intersection = lineShapeIntersection(camPos, rayDir, *s, &reflectionVector);
-							// if(intersection) {
+			s = {};
+			s.type = SHAPE_SPHERE;
+			s.pos = vec3(-2,20,10);
+			s.r = 8;
+			s.color = vec3(0.5f);
+			s.emitColor = vec3(0.0f);
+			s.reflectionMod = 1;
+			shapes[shapeCount++] = s;
 
-							// }
+
+			// Vec3 defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
+			Vec3 defaultEmitColor = vec3(0.95f);
+
+
+
+			Texture* tex = &ad->raycastTexture;
+
+			Vec2i texDim = tex->dim;
+			Vec3* data = (Vec3*)malloc(texDim.w * texDim.h * sizeof(Vec3));
+
+
+
+			float pixelPercent = (float)1/texDim.w;
+
+			float camWidth = camDist * 2; // 90 degrees for now.
+			Vec2 camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+
+			Vec3 camRight = normVec3(vec3(1,0,0));
+			Vec3 camUp = normVec3(vec3(0,0,1));
+			Vec3 camLeft = camRight * -1;
+
+			for(int y = 0; y < texDim.h; y++) {
+				for(int x = 0; x < texDim.w; x++) {
+
+					float xPercent = x/((float)texDim.w-1);
+					float yPercent = y/((float)texDim.h-1);
+					Vec3 p = camPos + camDir*camDist;
+
+					p += camLeft * -((camDim.w*(xPercent + pixelPercent*0.5f)) - camDim.w*0.5f);
+					p += camUp * -((camDim.h*(yPercent + pixelPercent*0.5f)) - camDim.h*0.5f);
+
+					Vec3 rayPos = camPos;
+					Vec3 rayDir = normVec3(p - camPos);
+
+					Vec3 finalColor = vec3(0,0,0);
+					Vec3 attenuation = vec3(1,1,1);
+
+					int rayIndex = 0;
+					int rayMaxCount = 10;
+
+					int lastShapeIndex = -1;
+
+					for(;;) {
+
+						// Find shape with closest intersection.
+
+						Vec3 shapeReflectionPos;
+						Vec3 shapeReflectionDir;
+						Vec3 shapeReflectionNormal;
+
+						int shapeIndex = -1;
+						float minDistance = FLT_MAX;
+						for(int i = 0; i < shapeCount; i++) {
+							if(lastShapeIndex == i) continue;
+
+							Shape* s = shapes + i;
+
+							Vec3 reflectionPos = vec3(0,0,0);
+							Vec3 reflectionDir = vec3(0,0,0);
+							Vec3 reflectionNormal = vec3(0,0,0);
+							bool intersection = lineShapeIntersection(rayPos, rayDir, *s, &reflectionPos, &reflectionDir, &reflectionNormal);
+
+							if(intersection) {
+								float distance = lenVec3(reflectionPos - rayPos);
+								if(distance < minDistance) {
+									minDistance = distance;
+									shapeIndex = i;
+
+									shapeReflectionPos = reflectionPos;
+									shapeReflectionDir = reflectionDir;
+									shapeReflectionNormal = reflectionNormal;
+								}
+							}
 						}
+
+						// if(x > 600 && y == 670) {
+						// 	// finalColor = vec3(1,0,0);
+						// 	// break;
+
+						// 	int stop = 234;
+						// }
+
+						if(shapeIndex != -1) {
+							Shape* s = shapes + shapeIndex;
+							lastShapeIndex = shapeIndex;
+
+							finalColor += attenuation * s->emitColor;
+							attenuation = attenuation * s->color;
+
+							rayPos = shapeReflectionPos;
+
+							Vec3 randomVec = vec3(randomFloat(0,1,0.01f), randomFloat(0,1,0.01f), randomFloat(0,1,0.01f));
+							Vec3 randomDir = normVec3(shapeReflectionNormal + randomVec);
+							rayDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
+							rayDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
+							rayDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
+							rayDir = normVec3(rayDir);
+
+							// rayDir = shapeReflectionDir;
+
+							// if(rayIndex == 1) {
+								// finalColor = vec3(abs(rayDir.x));
+								// break;
+							// }
+
+							if(attenuation == vec3(0,0,0)) break;
+
+						} else {
+							// finalColor += attenuation * defaultEmitColor;
+							Vec3 light = vec3(1,1,1);
+							light = light * dot(rayDir, normVec3(vec3(1,1,-1)));
+							finalColor += attenuation * (defaultEmitColor + light);
+
+							break;
+						}
+
+						rayIndex++;
+						if(rayIndex >= rayMaxCount) break;
 					}
+
+
+					data[y*texDim.w + x] = finalColor;
 				}
-
-
-					// // if(rayDir.z >= 0) {
-					// // 	finalColor = vec4(0.2f,0.2f + rayDir.z*0.6f,0.2f + rayDir.z*0.8f,1);
-					// // } else {
-					// // 	finalColor = vec4(0.2f - -rayDir.z*0.2f, 1);
-					// // }
-
-					// Vec3 lightIntersection;
-					// bool hitLight = lineSphereIntersection(camPos, camPos + rayDir*100, light.pos, light.r, &lightIntersection);
-					// if(hitLight) {
-					// 	finalColor = vec4(0,1,0,1);
-					// }
-
-
-
-					// float planeDist;
-					// bool hitPlane = boxRaycast(camPos, rayDir, plane, &planeDist);
-
-					// Vec3 sphereIntersection;
-					// bool hitSphere = lineSphereIntersection(camPos, camPos + rayDir*100, sphere.pos, sphere.r, &sphereIntersection);
-
-
-					// if(hitPlane && hitSphere) {
-					// 	if(planeDist < lenVec3(sphereIntersection-camPos)) hitSphere = false;
-					// 	else hitPlane = false;
-					// }
-
-					// if(hitPlane) finalColor = vec4(1,0,0,1);
-
-					// if(hitSphere) {
-					// 	Vec3 normal = normVec3(sphereIntersection - sphere.pos);
-					// 	Vec3 reflection = reflectionVector(rayDir, normal);
-
-					// 	finalColor = vec4(0,1);
-
-					// 	Vec3 lightIntersection;
-					// 	bool hitLight = lineSphereIntersection(sphereIntersection, sphereIntersection + reflection*100, light.pos, light.r, &lightIntersection);
-
-					// 	bool hitPlane = boxRaycast(sphereIntersection, reflection, plane);
-					// 	if(hitPlane) finalColor = vec4(1,0,0,1);
-					// 	else if(hitLight) {
-					// 		finalColor = vec4(0,1,0,1);
-					// 	} else {
-					// 		finalColor = vec4(0.2f,1);
-					// 		if(reflection.z >= 0) {
-					// 			finalColor = vec4(0.2f,0.2f + reflection.z*0.6f,0.2f + reflection.z*0.8f,1);
-					// 		} else {
-					// 			finalColor = vec4(0.2f - -reflection.z*0.2f, 1);
-					// 		}
-					// 	}
-					// }
-
-
-
-				data[y*texDim.w + x] = vec4(finalColor, 1);
 			}
+
+			glTextureSubImage2D(tex->id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, data);
+
+			free(data);
 		}
 
 
 		{
-			glTextureSubImage2D(tex->id, 0, 0, 0, texDim.w, texDim.h, GL_RGBA, GL_FLOAT, data);
+			Vec2 texDim = vec2(ad->raycastTexture.dim);
 
 			Rect tr = sr;
 			Vec2 sd = rectDim(sr);
@@ -638,7 +693,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
 			}
 			// tr = rectExpand(tr, vec2(-50));
-			drawRect(tr, rect(0,0,1,1), tex->id);
+			drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
 		}
 
 	}

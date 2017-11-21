@@ -14,8 +14,8 @@ struct Shape {
 	Quat rot;
 
 	Vec3 color;
-	float reflectionMod; // In percent.
-	bool emitsLight;
+	Vec3 emitColor;
+	float reflectionMod;
 
 	union {
 		// Box
@@ -31,20 +31,25 @@ struct Shape {
 };
 
 
-bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, Vec3* reflectionDir) {
+bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, Vec3* reflectionDir, Vec3* reflectionNormal) {
 
 	switch(shape.type) {
 		case SHAPE_BOX: {
 			float distance;
-			bool hit = boxRaycast(lp, ld, rect3CenDim(shape.pos, shape.dim), &distance);
+			int face;
+			bool hit = boxRaycast(lp, ld, rect3CenDim(shape.pos, shape.dim), &distance, &face);
 			if(hit) {
-				// *reflectionPos = lp + ld*distance;
-				// reflectVector(
+				*reflectionPos = lp + ld*distance;
+				Vec3 normal;
+				if(face == 0) normal = vec3(-1,0,0);
+				else if(face == 1) normal = vec3( 1, 0, 0);
+				else if(face == 2) normal = vec3( 0,-1, 0);
+				else if(face == 3) normal = vec3( 0, 1, 0);
+				else if(face == 4) normal = vec3( 0, 0,-1);
+				else if(face == 5) normal = vec3( 0, 0, 1);
 
-				// *reflectionVector = lp
-
-				*reflectionPos = vec3(0,0,0);
-				*reflectionDir = vec3(0,0,0);
+				*reflectionDir = reflectVector(ld, normal);
+				*reflectionNormal = normal;
 
 				return true;
 			}
@@ -53,9 +58,10 @@ bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, V
 		case SHAPE_SPHERE: {
 			bool hit = lineSphereIntersection(lp, lp + ld*1000, shape.pos, shape.r, reflectionPos);
 			if(hit) {
-				Vec3 normal = *reflectionPos - shape.pos;
+				Vec3 normal = normVec3(*reflectionPos - shape.pos);
 				*reflectionDir = reflectVector(ld, normal);
-				
+				*reflectionNormal = normal;
+
 				return true;
 			}
 		}

@@ -2057,7 +2057,7 @@ bool boxRaycast(Vec3 lp, Vec3 ld, Rect3 box, float* distance = 0, int* face = 0)
 	float tmax = min(min(max(t1, t2), max(t3, t4)), max(t5, t6));
 
 	float t;
-	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behing us
+	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behind us
 	if (tmax < 0) {
 	    t = tmax;
 	    return false;
@@ -2181,13 +2181,12 @@ bool lineSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter,
                                      linePoint0.y * (1 - t2) + t2 * linePoint1.y,
                                      linePoint0.z * (1 - t2) + t2 * linePoint1.z);
 
-    if (D < 0 || t1 > 1 || t2 > 1) return false;
-    
+    if (D < 0 || t1 > 1 || t1 < 0 || t2 > 1 || t2 < 0) return false;
+
     // D == 0 one solution;
 
 	if(intersection) {
-		if(t1 < t2) *intersection = solution1;
-		else *intersection = solution2;
+		*intersection = solution1;
 	} 
 
     return true;
