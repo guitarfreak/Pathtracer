@@ -443,8 +443,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		Rect sr = getScreenRect(ws);
 		// float th = 
-		Vec2i texSize = vec2i(1280/4,720/4);
-		// Vec2i texSize = vec2i(320,180);
+		// Vec2i texSize = vec2i(1280/4,720/4);
+		Vec2i texSize = vec2i(320,180);
 		// Vec2i texSize = vec2i(160,90);
 		float aspectRatio = (float)texSize.w / texSize.h;
 
@@ -478,35 +478,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		} 
 
 
-		// GL_CLAMP_TO_EDGE
-
-		int shapeCount = 0;
-		Shape* shapes = getTArray(Shape, 10);
-
-		// Shape* box = shapes + shapeCount++;
-
-		Shape box = {};
-		box.type = SHAPE_BOX;
-		box.pos = vec3(0,0,0);
-		box.dim = vec3(2,2,2);
-		box.rot = quat(0,0,0,0);
-
-		Shape sphere = {};
-		sphere.type = SHAPE_SPHERE;
-		float animSpeed = 0.5f;
-		sphere.pos = vec3(6*sin(ad->time*animSpeed), 0 ,5 + 2*cos(ad->time*animSpeed));
-		// sphere.pos = vec3(0,0,0);
-		sphere.r = 4;
-
-		// Shape plane = {};
-		// plane.type = SHAPE_BOX;
-		// plane.pos = vec3(0,0,0);
-
-		Vec3 planePos = vec3(0,0,0);
-		Vec3 planeNormal = vec3(0,0,1);
-		float planeSize = 15;
-		Rect3 plane = rect3(vec3(-planeSize*0.5f,-planeSize*0.5f,0), vec3(planeSize*0.5f,planeSize*0.5f,0));
-
 		// Vec3 camRot
 		Vec3 camPos = vec3(0, -20, 5);
 		Vec3 camDir = normVec3(vec3(0, 1, 0));
@@ -515,6 +486,31 @@ extern "C" APPMAINFUNCTION(appMain) {
 		float camDist = 1;
 
 
+		int shapeCount = 0;
+		Shape* shapes = getTArray(Shape, 10);
+
+		Shape s;
+
+		s = {};
+		s.type = SHAPE_SPHERE;
+		float animSpeed = 0.5f;
+		s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
+		s.r = 4;
+		s.color = vec3(0,0.2f,0.5f);
+		s.reflectionMod = 0;
+		shapes[shapeCount++] = s;
+
+		s = {};
+		s.type = SHAPE_BOX;
+		s.pos = vec3(0,0,0);
+		s.dim = vec3(12,12,1);
+		s.color = vec3(0.8f,0.3f,0);
+		shapes[shapeCount++] = s;
+
+		// Shape light = {};
+		// light.type = SHAPE_SPHERE;
+		// light.pos = vec3(-10,-10,10);
+		// light.r = 2;
 
 
 
@@ -522,8 +518,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec2i texDim = tex->dim;
 		Vec4* data = getTArray(Vec4, texDim.w * texDim.h);
-
-
 
 
 
@@ -539,88 +533,96 @@ extern "C" APPMAINFUNCTION(appMain) {
 		for(int y = 0; y < texDim.h; y++) {
 			for(int x = 0; x < texDim.w; x++) {
 
-
-				// float sx = x/((float)texDim.w-1);
-				// float sy = y/((float)texDim.h-1);
-
-				// // data[y*texDim.w + x] = vec4(1, sx, sy, 1);
-				// // data[y*texDim.w + x] = vec4(x%2, y%2, 0, 1);
-				// data[y*texDim.w + x] = vec4((x+y)%2, 1);
-				
-
-				// float xa = 
-
-				// Vec2 camDim = vec2(2, 2*(1/aspectRatio)); // 90 degrees for now.
-
-				// float camDist = 
-
-				// Vec3 p = camPos;
 				float xPercent = x/((float)texDim.w-1);
 				float yPercent = y/((float)texDim.h-1);
 				Vec3 p = camPos + camDir*camDist;
 
-
 				p += camLeft * -((camDim.w*(xPercent + pixelPercent*0.5f)) - camDim.w*0.5f);
 				p += camUp * -((camDim.h*(yPercent + pixelPercent*0.5f)) - camDim.h*0.5f);
 
-				Vec3 dir = normVec3(p - camPos);
+				Vec3 rayDir = normVec3(p - camPos);
+
+				Vec3 ambientColor = vec3(0.2f);
+				Vec3 finalColor = ambientColor;
 
 
-				// box.pos
 
-				Vec4 color = vec4(0.2f,1);
-				if(dir.z >= 0) {
-					color = vec4(0.2f,0.2f + dir.z*0.6f,0.2f + dir.z*0.8f,1);
-				} else {
-					color = vec4(0.2f - -dir.z*0.2f, 1);
-				}
+				for(int i = 0; i < shapeCount; i++) {
+					Shape* s = shapes + i;
 
-				// Plane
+					Vec3 reflectionPos;
+					Vec3 reflectionDir;
+					bool intersection = lineShapeIntersection(camPos, rayDir, *s, &reflectionPos, &reflectionDir);
+					if(intersection) {
 
-				float planeDist;
-				bool hitPlane = boxRaycast(camPos, dir, plane, &planeDist);
-
-				Vec3 sphereIntersection;
-				bool hitSphere = lineSphereIntersection(camPos, camPos + dir*100, sphere.pos, sphere.r, &sphereIntersection);
-
-
-				if(hitPlane && hitSphere) {
-					if(planeDist < lenVec3(sphereIntersection-camPos)) hitSphere = false;
-					else hitPlane = false;
-				}
-
-				if(hitPlane) color = vec4(1,0,0,1);
-
-				if(hitSphere) {
-					Vec3 normal = normVec3(sphereIntersection - sphere.pos);
-
-					color = vec4(0,1);
-					// color = vec4(1,1,0,1);
-
-					bool hitPlane = boxRaycast(sphere.pos, normal, plane);
-					if(hitPlane) color = vec4(1,0,0,1);
-					else {
-						color = vec4(0.2f,1);
-						if(normal.z >= 0) {
-							color = vec4(0.2f,0.2f + normal.z*0.6f,0.2f + normal.z*0.8f,1);
+						// Just draw color if now reflection.
+						if(s->reflectionMod == 0) {
+							finalColor = s->color;
 						} else {
-							color = vec4(0.2f - -normal.z*0.2f, 1);
+							// Vec3 reflectionVector;
+							// bool intersection = lineShapeIntersection(camPos, rayDir, *s, &reflectionVector);
+							// if(intersection) {
+
+							// }
 						}
 					}
 				}
 
-				// Vec3 projectedPoint = projectPointOnLine(camPos, dir, sphere.pos);
-				// float distanceToSphere = lenVec3(projectedPoint - sphere.pos);
-				// if(distanceToSphere <= sphere.r) {
-				// 	color = vec4(1,1,0,1);
 
-				// }
+					// // if(rayDir.z >= 0) {
+					// // 	finalColor = vec4(0.2f,0.2f + rayDir.z*0.6f,0.2f + rayDir.z*0.8f,1);
+					// // } else {
+					// // 	finalColor = vec4(0.2f - -rayDir.z*0.2f, 1);
+					// // }
+
+					// Vec3 lightIntersection;
+					// bool hitLight = lineSphereIntersection(camPos, camPos + rayDir*100, light.pos, light.r, &lightIntersection);
+					// if(hitLight) {
+					// 	finalColor = vec4(0,1,0,1);
+					// }
 
 
 
+					// float planeDist;
+					// bool hitPlane = boxRaycast(camPos, rayDir, plane, &planeDist);
+
+					// Vec3 sphereIntersection;
+					// bool hitSphere = lineSphereIntersection(camPos, camPos + rayDir*100, sphere.pos, sphere.r, &sphereIntersection);
 
 
-				data[y*texDim.w + x] = color;
+					// if(hitPlane && hitSphere) {
+					// 	if(planeDist < lenVec3(sphereIntersection-camPos)) hitSphere = false;
+					// 	else hitPlane = false;
+					// }
+
+					// if(hitPlane) finalColor = vec4(1,0,0,1);
+
+					// if(hitSphere) {
+					// 	Vec3 normal = normVec3(sphereIntersection - sphere.pos);
+					// 	Vec3 reflection = reflectionVector(rayDir, normal);
+
+					// 	finalColor = vec4(0,1);
+
+					// 	Vec3 lightIntersection;
+					// 	bool hitLight = lineSphereIntersection(sphereIntersection, sphereIntersection + reflection*100, light.pos, light.r, &lightIntersection);
+
+					// 	bool hitPlane = boxRaycast(sphereIntersection, reflection, plane);
+					// 	if(hitPlane) finalColor = vec4(1,0,0,1);
+					// 	else if(hitLight) {
+					// 		finalColor = vec4(0,1,0,1);
+					// 	} else {
+					// 		finalColor = vec4(0.2f,1);
+					// 		if(reflection.z >= 0) {
+					// 			finalColor = vec4(0.2f,0.2f + reflection.z*0.6f,0.2f + reflection.z*0.8f,1);
+					// 		} else {
+					// 			finalColor = vec4(0.2f - -reflection.z*0.2f, 1);
+					// 		}
+					// 	}
+					// }
+
+
+
+				data[y*texDim.w + x] = vec4(finalColor, 1);
 			}
 		}
 

@@ -2181,16 +2181,23 @@ bool lineSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter,
                                      linePoint0.y * (1 - t2) + t2 * linePoint1.y,
                                      linePoint0.z * (1 - t2) + t2 * linePoint1.z);
 
-    if (D < 0 || t1 > 1 || t2 >1) return false;
+    if (D < 0 || t1 > 1 || t2 > 1) return false;
     
     // D == 0 one solution;
 
-	if(intersection) *intersection = solution1;
+	if(intersection) {
+		if(t1 < t2) *intersection = solution1;
+		else *intersection = solution2;
+	} 
 
     return true;
 }
 
-
+Vec3 reflectVector(Vec3 dir, Vec3 normal) {
+	normal = normVec3(normal);
+	Vec3 result = dir - 2*(dot(dir, normal))*normal;
+	return result;
+}
 
 //
 //
