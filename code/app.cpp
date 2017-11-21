@@ -2,6 +2,7 @@
 =================================================================================
 
 	ToDo:
+	- Blue noise.
 
 	Done Today: 
 
@@ -443,8 +444,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		Rect sr = getScreenRect(ws);
 		// float th = 
-		// Vec2i texSize = vec2i(1920,1080);
-		Vec2i texSize = vec2i(1280,720);
+		Vec2i texSize = vec2i(1920,1080);
+		// Vec2i texSize = vec2i(1280,720);
 		// Vec2i texSize = vec2i(1280/2,720/2);
 		// Vec2i texSize = vec2i(320,180);
 		// Vec2i texSize = vec2i(160,90);
@@ -551,8 +552,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 			shapes[shapeCount++] = s;
 
 
-			// Vec3 defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
-			Vec3 defaultEmitColor = vec3(0.95f);
+			Vec3 defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
+			// Vec3 defaultEmitColor = vec3(0.95f);
+			// Vec3 defaultEmitColor = vec3(0.0f);
+			// Vec3 globalLightDir = normVec3(vec3(1,1,-1));
+			Vec3 globalLightDir = normVec3(vec3(-1,0,-1));
+			Vec3 globalLightColor = vec3(1,1,1);
 
 
 
@@ -579,8 +584,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					float yPercent = y/((float)texDim.h-1);
 					Vec3 p = camPos + camDir*camDist;
 
-					p += camLeft * -((camDim.w*(xPercent + pixelPercent*0.5f)) - camDim.w*0.5f);
-					p += camUp * -((camDim.h*(yPercent + pixelPercent*0.5f)) - camDim.h*0.5f);
+					p += camLeft * -((camDim.w*(xPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camDim.w*0.5f);
+					p += camUp * -((camDim.h*(yPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camDim.h*0.5f);
 
 					Vec3 rayPos = camPos;
 					Vec3 rayDir = normVec3(p - camPos);
@@ -656,13 +661,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 								// break;
 							// }
 
+							// float test = dot(rayDir, -globalLightDir);
+							// finalColor = vec3(test);
+							// break;
+
 							if(attenuation == vec3(0,0,0)) break;
 
 						} else {
-							// finalColor += attenuation * defaultEmitColor;
-							Vec3 light = vec3(1,1,1);
-							light = light * dot(rayDir, normVec3(vec3(1,1,-1)));
-							finalColor += attenuation * (defaultEmitColor + light);
+							// Sky hit.
+							if(rayIndex == 0) {
+								finalColor = defaultEmitColor;
+							} else {
+								// finalColor += attenuation * defaultEmitColor;
+
+								Vec3 light = globalLightColor * dot(rayDir, -globalLightDir);
+								// finalColor += attenuation * (defaultEmitColor + light);
+								finalColor += attenuation * (light);
+							}
 
 							break;
 						}
