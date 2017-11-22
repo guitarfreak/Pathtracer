@@ -3,6 +3,7 @@
 
 	ToDo:
 	- Blue noise.
+	- Replace rand().
 
 	Done Today: 
 
@@ -447,115 +448,130 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 	{
-		World* world = &ad->world;
-		world->camPos = vec3(0, -20, 4);
-		world->camDir = normVec3(vec3(0, 1, 0));
-		// Vec3 camRot
-		// float camFov = 90;
-		// float camAspect = (float)texDim.w / (float)texDim.h;
-		world->camDist = 1;
 
-
-		world->shapeCount = 0;
-		world->shapes = getTArray(Shape, 10);
-
-		Shape s;
-
-		s = {};
-		s.type = SHAPE_BOX;
-		s.pos = vec3(0,0,0);
-		// s.dim = vec3(12,12,1);
-		s.dim = vec3(10000,10000,0.01f);
-		s.color = vec3(0.5f);
-		s.reflectionMod = 0.5f;
-		world->shapes[world->shapeCount++] = s;
-
-		s = {};
-		s.type = SHAPE_BOX;
-		s.pos = vec3(-15,2,0);
-		s.dim = vec3(1,10,50);
-		s.color = vec3(0,0.8f,0.5f);
-		s.reflectionMod = 0.5f;
-		world->shapes[world->shapeCount++] = s;
-
-		s = {};
-		s.type = SHAPE_BOX;
-		s.pos = vec3(0,-10,1);
-		s.dim = vec3(2,2,2);
-		s.color = vec3(0.8f,0.3f,0.5f);
-		s.reflectionMod = 0.9f;
-		world->shapes[world->shapeCount++] = s;
-
-
-
-		s = {};
-		s.type = SHAPE_SPHERE;
-		float animSpeed = 0.5f;
-		// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
-		s.pos = vec3(8, -2, 1);
-		s.r = 4;
-		s.color = vec3(0.3f,0.5f,0.8f);
-		s.reflectionMod = 0.9f;
-		world->shapes[world->shapeCount++] = s;
-
-		s = {};
-		s.type = SHAPE_SPHERE;
-		s.pos = vec3(-8,0,1);
-		s.r = 2;
-		s.color = vec3(0.0f);
-		s.emitColor = vec3(2,0,0);
-		s.reflectionMod = 1;
-		world->shapes[world->shapeCount++] = s;
-
-		s = {};
-		s.type = SHAPE_SPHERE;
-		Vec3 animRange = vec3(5,5,5);
-		// s.pos = vec3(-2 + animRange.x*sin(ad->time*animSpeed), 20 + animRange.y*cos(ad->time*animSpeed) , 10 + animRange.z*cos(ad->time*animSpeed*0.5f));
-		s.pos = vec3(-2,20,10);
-		s.r = 8;
-		s.color = vec3(0.5f);
-		s.emitColor = vec3(0.0f);
-		s.reflectionMod = 1;
-		world->shapes[world->shapeCount++] = s;
-
-
-		world->defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
-		// world->defaultEmitColor = vec3(0.95f);
-		// world->defaultEmitColor = vec3(0.0f);
-		// world->globalLightDir = normVec3(vec3(1,1,-1));
-		world->globalLightDir = normVec3(vec3(-1,0,-1));
-		world->globalLightColor = vec3(1,1,1);
 
 
 
 		// Vec2i texDim = vec2i(1920*2,1080*2);
-		Vec2i texDim = vec2i(1920,1080);
-		// Vec2i texDim = vec2i(1280,720);
+		// Vec2i texDim = vec2i(1920,1080);
+		Vec2i texDim = vec2i(1280,720);
 		// Vec2i texDim = vec2i(1280/2,720/2);
 		// Vec2i texDim = vec2i(320,180);
 		// Vec2i texDim = vec2i(160,90);
 		// Vec2i texDim = vec2i(8,8);
 
+
 		Texture* texture = &ad->raycastTexture;
 		if(!texture->isCreated || (texDim != texture->dim)) {
 			if(texDim != texture->dim) deleteTexture(texture);
 
-			// initTexture(texture, 8, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
-			initTexture(texture, getMaximumMipmapsFromSize(texDim.w, texDim.h), INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+			initTexture(texture, 8, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+			// initTexture(texture, getMaximumMipmapsFromSize(texDim.w, texDim.h), INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
 		}
 
-
-		float camWidth = world->camDist * 2; // 90 degrees for now.
-		float aspectRatio = (float)texDim.w / texDim.h;
-	
-		world->camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
-		world->camRight = normVec3(vec3(1,0,0));
-		world->camUp = normVec3(vec3(0,0,1));
 
 
 		if((input->keysPressed[KEYCODE_SPACE] || reload || init) && (ad->activeProcessing == false)) {
 		// if(true) {
 			ad->activeProcessing = true;
+
+
+
+
+
+			World* world = &ad->world;
+			world->camPos = vec3(0, -20, 4);
+			world->camDir = normVec3(vec3(0, 1, 0));
+			// Vec3 camRot
+			// float camFov = 90;
+			// float camAspect = (float)texDim.w / (float)texDim.h;
+			world->camDist = 1;
+
+
+			world->shapeCount = 0;
+			world->shapes = getTArray(Shape, 10);
+
+			Shape s;
+
+			s = {};
+			s.type = SHAPE_BOX;
+			s.pos = vec3(0,0,0);
+			// s.dim = vec3(12,12,1);
+			s.dim = vec3(10000,10000,0.01f);
+			s.color = vec3(0.5f);
+			s.reflectionMod = 0.5f;
+			world->shapes[world->shapeCount++] = s;
+
+			s = {};
+			s.type = SHAPE_BOX;
+			s.pos = vec3(-15,2,0);
+			s.dim = vec3(1,10,50);
+			s.color = vec3(0,0.8f,0.5f);
+			s.reflectionMod = 0.7f;
+			world->shapes[world->shapeCount++] = s;
+
+			s = {};
+			s.type = SHAPE_BOX;
+			s.pos = vec3(0,-10,1);
+			s.dim = vec3(2,2,2);
+			s.color = vec3(0.8f,0.3f,0.5f);
+			s.reflectionMod = 0.9f;
+			world->shapes[world->shapeCount++] = s;
+
+
+
+			s = {};
+			s.type = SHAPE_SPHERE;
+			float animSpeed = 0.5f;
+			// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
+			s.pos = vec3(8, -2, 1);
+			s.r = 4;
+			s.color = vec3(0.3f,0.5f,0.8f);
+			s.reflectionMod = 0.8f;
+			world->shapes[world->shapeCount++] = s;
+
+			s = {};
+			s.type = SHAPE_SPHERE;
+			s.pos = vec3(-8,0,1);
+			s.r = 2;
+			s.color = vec3(0.0f);
+			s.emitColor = vec3(2,0,0);
+			s.reflectionMod = 1;
+			world->shapes[world->shapeCount++] = s;
+
+			s = {};
+			s.type = SHAPE_SPHERE;
+			Vec3 animRange = vec3(5,5,5);
+			// s.pos = vec3(-2 + animRange.x*sin(ad->time*animSpeed), 20 + animRange.y*cos(ad->time*animSpeed) , 10 + animRange.z*cos(ad->time*animSpeed*0.5f));
+			s.pos = vec3(-2,20,10);
+			s.r = 8;
+			s.color = vec3(0.5f);
+			s.emitColor = vec3(0.0f);
+			s.reflectionMod = 1;
+			world->shapes[world->shapeCount++] = s;
+
+
+			world->defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
+			// world->defaultEmitColor = vec3(0.95f);
+			// world->defaultEmitColor = vec3(0.0f);
+			// world->globalLightDir = normVec3(vec3(1,1,-1));
+			world->globalLightDir = normVec3(vec3(-1,0,-1));
+			world->globalLightColor = vec3(1);
+
+
+
+
+
+
+			float camWidth = world->camDist * 2; // 90 degrees for now.
+			float aspectRatio = (float)texDim.w / texDim.h;
+			
+			world->camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+			world->camRight = normVec3(vec3(1,0,0));
+			world->camUp = normVec3(vec3(0,0,1));
+
+
+
 
 			if(ad->buffer != 0) free(ad->buffer);
 			ad->buffer = mallocArray(Vec3, texDim.w * texDim.h);
@@ -602,7 +618,44 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	}
 
+	if(false)
+	{
+		int cellCount = 8;
+		float cellSize = 800;
+		Rect r = rectTLDim(vec2(100,-100), vec2(cellSize,cellSize));
+		static Vec2* noiseSamples;
+		static int sampleCount;
 
+		if(init || reload) {
+			// sampleCount = blueNoise(r, 0, &noiseSamples, 8*8);
+			// sampleCount = blueNoise(r, (800/8)/M_SQRT2*0.4f, &noiseSamples);
+			sampleCount = blueNoise(r, 50, &noiseSamples);
+			// sampleCount = blueNoise(r, cellSize/cellCount/M_SQRT2, &noiseSamples);
+			// sampleCount = blueNoise(r, cellSize/cellCount/2, &noiseSamples);
+		}
+
+		drawRect(r, vec4(0,1));
+
+		// for(int y = 0; y < cellCount; y++) {
+		// 	for(int x = 0; x < cellCount; x++) {
+		// 		drawPoint(vec2(
+		// 	}
+		// }
+
+		Vec2 tl = rectTL(r);
+		for(int i = 0; i < cellCount; i++) drawLine(tl + vec2(0,-cellSize) * i/(cellCount), tl + vec2(0,-cellSize) * i/(cellCount) + vec2(cellSize,0), vec4(0,1,0,1));
+		for(int i = 0; i < cellCount; i++) drawLine(tl + vec2(cellSize,0) * i/(cellCount), tl + vec2(cellSize,0) * i/(cellCount) + vec2(0,-cellSize), vec4(0,1,0,1));
+
+		glPointSize(10);
+		for(int i = 0; i < sampleCount; i++) {
+			Vec2 p = noiseSamples[i];
+			drawPoint(p, vec4(1,0,0,1));
+		}
+		// drawRect(rectCenDim(100,-100,100,100), vec4(1,0,0,1));
+
+		// free(noiseSamples);
+
+	}
 
 
 

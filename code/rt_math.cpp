@@ -3028,7 +3028,7 @@ int blueNoise(Rect region, float radius, Vec2** noiseSamples, int numOfSamples =
 		radius = (regionDim.w*regionDim.h*(float)M_SQRT2) / (2*numOfSamples);
 	}
 	float cs = (radius/(float)M_SQRT2)*2; // Square diagonal
-	int sampleMax = ((regionDim.w+1)*(regionDim.h+1)) / cs;
+	int sampleMax = ((regionDim.w+1)*(regionDim.h+1)) / (cs*cs);
 
 	Vec2* samples = *noiseSamples;
 	samples = (Vec2*)malloc(sizeof(Vec2) * sampleMax);

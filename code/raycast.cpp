@@ -162,8 +162,19 @@ void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 
 			rayPos = shapeReflectionPos;
 
-			Vec3 randomVec = vec3(randomFloat(0,1,0.01f), randomFloat(0,1,0.01f), randomFloat(0,1,0.01f));
-			Vec3 randomDir = normVec3(shapeReflectionNormal + randomVec);
+			// Vec3 randomVec = vec3(randomFloat(0,1,0.01f), randomFloat(0,1,0.01f), randomFloat(0,1,0.01f));
+			// Vec3 randomDir = normVec3(shapeReflectionNormal + randomVec);
+
+
+
+
+			Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
+			// if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
+
+			while(dot(randomDir, shapeReflectionNormal) <= 0.9f) {
+				randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
+			}
+
 			rayDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
 			rayDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
 			rayDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
@@ -189,9 +200,13 @@ void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 			} else {
 				// finalColor += attenuation * defaultEmitColor;
 
-				Vec3 light = world->globalLightColor * dot(rayDir, -world->globalLightDir);
-				// finalColor += attenuation * (defaultEmitColor + light);
+				float lightDot = dot(rayDir, -world->globalLightDir);
+				// lightDot = clampMin(lightDot, 0);
+				Vec3 light = world->globalLightColor * lightDot;
+
+				// finalColor += attenuation * (world->defaultEmitColor + light);
 				finalColor += attenuation * light;
+				// finalColor += attenuation * world->defaultEmitColor;
 			}
 
 			break;

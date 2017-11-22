@@ -23,7 +23,7 @@ set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Li
 set INC=%INC% -I"C:\Standalone\iaca"
 
 
-set BUILD_MODE=-O2
+set BUILD_MODE=-Od
 set MODE_DEFINE=
 if "%~2"=="-release" (
 	rem -Oy
