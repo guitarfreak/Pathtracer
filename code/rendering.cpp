@@ -128,6 +128,8 @@ char* fillString(char* text, ...) {
 // 
 
 struct Texture {
+	bool isCreated;
+
 	// char* name;
 	uint id;
 	Vec2i dim;
@@ -141,7 +143,9 @@ struct Texture {
 	int msaa;
 };
 
-int getMaximumMipmapsFromSize(int size) {
+int getMaximumMipmapsFromSize(int w, int h) {
+	int size = min(w, h);
+
 	int mipLevels = 1;
 	while(size >= 2) {
 		size /= 2;
@@ -176,7 +180,7 @@ void loadTextureFromFile(Texture* texture, char* path, int mipLevels, int intern
 	int x,y,n;
 	unsigned char* stbData = stbi_load(path, &x, &y, &n, 0);
 
-	if(mipLevels == -1) mipLevels = getMaximumMipmapsFromSize(min(x,y));
+	if(mipLevels == -1) mipLevels = getMaximumMipmapsFromSize(x,y);
 	
 	loadTexture(texture, stbData, x, y, mipLevels, internalFormat, channelType, channelFormat, reload);
 
@@ -187,7 +191,7 @@ void loadTextureFromMemory(Texture* texture, char* buffer, int length, int mipLe
 	int x,y,n;
 	unsigned char* stbData = stbi_load_from_memory((uchar*)buffer, length, &x, &y, &n, 0);
 
-	if(mipLevels == -1) mipLevels = getMaximumMipmapsFromSize(min(x,y));
+	if(mipLevels == -1) mipLevels = getMaximumMipmapsFromSize(x,y);
 	
 	loadTexture(texture, stbData, x, y, mipLevels, internalFormat, channelType, channelFormat, reload);
 
@@ -208,6 +212,26 @@ void recreateTexture(Texture* t) {
 
 void deleteTexture(Texture* t) {
 	glDeleteTextures(1, &t->id);
+}
+
+void initTexture(Texture* texture, int mipLevels, int internalFormat, Vec2i dim, int channels, int filterMode, int wrapMode) {
+	*texture = {};
+
+	glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
+	glTextureStorage2D(texture->id, mipLevels, internalFormat, dim.w, dim.h);
+
+	texture->dim = vec2i(dim.w,dim.h);
+	texture->channels = channels;
+	texture->levels = mipLevels;
+
+	glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, filterMode);
+	glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, filterMode);
+	glTextureParameteri(texture->id, GL_TEXTURE_WRAP_S, wrapMode);
+	glTextureParameteri(texture->id, GL_TEXTURE_WRAP_T, wrapMode);
+
+	glGenerateTextureMipmap(texture->id);
+
+	texture->isCreated = true;
 }
 
 //

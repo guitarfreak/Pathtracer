@@ -143,7 +143,12 @@ struct AppData {
 
 	// 
 
+	World world;
+	Vec3* buffer;
 	Texture raycastTexture;
+	bool activeProcessing;
+
+	ProcessPixelsData threadData[8];
 };
 
 
@@ -442,264 +447,148 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 	{
-		Rect sr = getScreenRect(ws);
-		// float th = 
-		Vec2i texSize = vec2i(1920,1080);
-		// Vec2i texSize = vec2i(1280,720);
-		// Vec2i texSize = vec2i(1280/2,720/2);
-		// Vec2i texSize = vec2i(320,180);
-		// Vec2i texSize = vec2i(160,90);
-		float aspectRatio = (float)texSize.w / texSize.h;
+		World* world = &ad->world;
+		world->camPos = vec3(0, -20, 4);
+		world->camDir = normVec3(vec3(0, 1, 0));
+		// Vec3 camRot
+		// float camFov = 90;
+		// float camAspect = (float)texDim.w / (float)texDim.h;
+		world->camDist = 1;
 
-		if(init) {
-			Texture* tex = &ad->raycastTexture;
-			*tex = {};
 
-			int mipLevels = 1;
-			int internalFormat = INTERNAL_TEXTURE_FORMAT;
+		world->shapeCount = 0;
+		world->shapes = getTArray(Shape, 10);
 
-			int w = texSize.w;
-			int h = texSize.h;
+		Shape s;
 
-			glCreateTextures(GL_TEXTURE_2D, 1, &tex->id);
-			glTextureStorage2D(tex->id, mipLevels, internalFormat, w, h);
+		s = {};
+		s.type = SHAPE_BOX;
+		s.pos = vec3(0,0,0);
+		// s.dim = vec3(12,12,1);
+		s.dim = vec3(10000,10000,0.01f);
+		s.color = vec3(0.5f);
+		s.reflectionMod = 0.5f;
+		world->shapes[world->shapeCount++] = s;
 
-			tex->dim = vec2i(w,h);
-			tex->channels = 4;
-			tex->levels = mipLevels;
+		s = {};
+		s.type = SHAPE_BOX;
+		s.pos = vec3(-15,2,0);
+		s.dim = vec3(1,10,50);
+		s.color = vec3(0,0.8f,0.5f);
+		s.reflectionMod = 0.5f;
+		world->shapes[world->shapeCount++] = s;
 
-			glTextureParameteri(tex->id, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-			glTextureParameteri(tex->id, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		s = {};
+		s.type = SHAPE_BOX;
+		s.pos = vec3(0,-10,1);
+		s.dim = vec3(2,2,2);
+		s.color = vec3(0.8f,0.3f,0.5f);
+		s.reflectionMod = 0.9f;
+		world->shapes[world->shapeCount++] = s;
 
-			// glTextureParameteri(tex->id, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-			// glTextureParameteri(tex->id, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-			glTextureParameteri(tex->id, GL_TEXTURE_WRAP_S, GL_CLAMP);
-			glTextureParameteri(tex->id, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
-			glGenerateTextureMipmap(tex->id);
-		} 
+		s = {};
+		s.type = SHAPE_SPHERE;
+		float animSpeed = 0.5f;
+		// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
+		s.pos = vec3(8, -2, 1);
+		s.r = 4;
+		s.color = vec3(0.3f,0.5f,0.8f);
+		s.reflectionMod = 0.9f;
+		world->shapes[world->shapeCount++] = s;
 
-		if(input->keysPressed[KEYCODE_SPACE] || reload || init) {
+		s = {};
+		s.type = SHAPE_SPHERE;
+		s.pos = vec3(-8,0,1);
+		s.r = 2;
+		s.color = vec3(0.0f);
+		s.emitColor = vec3(2,0,0);
+		s.reflectionMod = 1;
+		world->shapes[world->shapeCount++] = s;
+
+		s = {};
+		s.type = SHAPE_SPHERE;
+		Vec3 animRange = vec3(5,5,5);
+		// s.pos = vec3(-2 + animRange.x*sin(ad->time*animSpeed), 20 + animRange.y*cos(ad->time*animSpeed) , 10 + animRange.z*cos(ad->time*animSpeed*0.5f));
+		s.pos = vec3(-2,20,10);
+		s.r = 8;
+		s.color = vec3(0.5f);
+		s.emitColor = vec3(0.0f);
+		s.reflectionMod = 1;
+		world->shapes[world->shapeCount++] = s;
+
+
+		world->defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
+		// world->defaultEmitColor = vec3(0.95f);
+		// world->defaultEmitColor = vec3(0.0f);
+		// world->globalLightDir = normVec3(vec3(1,1,-1));
+		world->globalLightDir = normVec3(vec3(-1,0,-1));
+		world->globalLightColor = vec3(1,1,1);
+
+
+
+		// Vec2i texDim = vec2i(1920*2,1080*2);
+		Vec2i texDim = vec2i(1920,1080);
+		// Vec2i texDim = vec2i(1280,720);
+		// Vec2i texDim = vec2i(1280/2,720/2);
+		// Vec2i texDim = vec2i(320,180);
+		// Vec2i texDim = vec2i(160,90);
+		// Vec2i texDim = vec2i(8,8);
+
+		Texture* texture = &ad->raycastTexture;
+		if(!texture->isCreated || (texDim != texture->dim)) {
+			if(texDim != texture->dim) deleteTexture(texture);
+
+			// initTexture(texture, 8, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+			initTexture(texture, getMaximumMipmapsFromSize(texDim.w, texDim.h), INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+		}
+
+
+		float camWidth = world->camDist * 2; // 90 degrees for now.
+		float aspectRatio = (float)texDim.w / texDim.h;
+	
+		world->camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+		world->camRight = normVec3(vec3(1,0,0));
+		world->camUp = normVec3(vec3(0,0,1));
+
+
+		if((input->keysPressed[KEYCODE_SPACE] || reload || init) && (ad->activeProcessing == false)) {
 		// if(true) {
+			ad->activeProcessing = true;
 
-			// Vec3 camRot
-			Vec3 camPos = vec3(0, -20, 4);
-			Vec3 camDir = normVec3(vec3(0, 1, 0));
-			// float camFov = 90;
-			// float camAspect = (float)texSize.w / (float)texSize.h;
-			float camDist = 1;
+			if(ad->buffer != 0) free(ad->buffer);
+			ad->buffer = mallocArray(Vec3, texDim.w * texDim.h);
 
+			int threadCount = 8;
+			int pixelCount = texDim.w*texDim.h;
+			int pixelCountPerThread = pixelCount/threadCount;
+			int pixelCountRest = pixelCount % threadCount;
 
-			int shapeCount = 0;
-			Shape* shapes = getTArray(Shape, 10);
+			for(int i = 0; i < threadCount; i++) {
+				ProcessPixelsData* data = ad->threadData + i;
+				*data = {};
+				data->pixelIndex = i*pixelCountPerThread;
+				data->pixelCount = i < threadCount-1 ? pixelCountPerThread : pixelCountPerThread + pixelCountRest;
+				data->world = world;
+				data->dim = texDim;
+				data->buffer = ad->buffer;
 
-			Shape s;
-
-			s = {};
-			s.type = SHAPE_BOX;
-			s.pos = vec3(0,0,0);
-			// s.dim = vec3(12,12,1);
-			s.dim = vec3(10000,10000,0.01f);
-			s.color = vec3(0.5f);
-			s.reflectionMod = 0.5f;
-			shapes[shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_BOX;
-			s.pos = vec3(-15,2,0);
-			s.dim = vec3(1,10,50);
-			s.color = vec3(0,0.8f,0.5f);
-			s.reflectionMod = 0.5f;
-			shapes[shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_BOX;
-			s.pos = vec3(0,-10,1);
-			s.dim = vec3(2,2,2);
-			s.color = vec3(0.8f,0.3f,0.5f);
-			s.reflectionMod = 0.9f;
-			shapes[shapeCount++] = s;
-
-
-
-			s = {};
-			s.type = SHAPE_SPHERE;
-			float animSpeed = 0.5f;
-			// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
-			s.pos = vec3(8, -2, 1);
-			s.r = 4;
-			s.color = vec3(0.3f,0.5f,0.8f);
-			s.reflectionMod = 0.9f;
-			shapes[shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_SPHERE;
-			s.pos = vec3(-8,0,1);
-			s.r = 2;
-			s.color = vec3(0.0f);
-			s.emitColor = vec3(2,0,0);
-			s.reflectionMod = 1;
-			shapes[shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_SPHERE;
-			s.pos = vec3(-2,20,10);
-			s.r = 8;
-			s.color = vec3(0.5f);
-			s.emitColor = vec3(0.0f);
-			s.reflectionMod = 1;
-			shapes[shapeCount++] = s;
-
-
-			Vec3 defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
-			// Vec3 defaultEmitColor = vec3(0.95f);
-			// Vec3 defaultEmitColor = vec3(0.0f);
-			// Vec3 globalLightDir = normVec3(vec3(1,1,-1));
-			Vec3 globalLightDir = normVec3(vec3(-1,0,-1));
-			Vec3 globalLightColor = vec3(1,1,1);
-
-
-
-			Texture* tex = &ad->raycastTexture;
-
-			Vec2i texDim = tex->dim;
-			Vec3* data = (Vec3*)malloc(texDim.w * texDim.h * sizeof(Vec3));
-
-
-
-			float pixelPercent = (float)1/texDim.w;
-
-			float camWidth = camDist * 2; // 90 degrees for now.
-			Vec2 camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
-
-			Vec3 camRight = normVec3(vec3(1,0,0));
-			Vec3 camUp = normVec3(vec3(0,0,1));
-			Vec3 camLeft = camRight * -1;
-
-			for(int y = 0; y < texDim.h; y++) {
-				for(int x = 0; x < texDim.w; x++) {
-
-					float xPercent = x/((float)texDim.w-1);
-					float yPercent = y/((float)texDim.h-1);
-					Vec3 p = camPos + camDir*camDist;
-
-					p += camLeft * -((camDim.w*(xPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camDim.w*0.5f);
-					p += camUp * -((camDim.h*(yPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camDim.h*0.5f);
-
-					Vec3 rayPos = camPos;
-					Vec3 rayDir = normVec3(p - camPos);
-
-					Vec3 finalColor = vec3(0,0,0);
-					Vec3 attenuation = vec3(1,1,1);
-
-					int rayIndex = 0;
-					int rayMaxCount = 10;
-
-					int lastShapeIndex = -1;
-
-					for(;;) {
-
-						// Find shape with closest intersection.
-
-						Vec3 shapeReflectionPos;
-						Vec3 shapeReflectionDir;
-						Vec3 shapeReflectionNormal;
-
-						int shapeIndex = -1;
-						float minDistance = FLT_MAX;
-						for(int i = 0; i < shapeCount; i++) {
-							if(lastShapeIndex == i) continue;
-
-							Shape* s = shapes + i;
-
-							Vec3 reflectionPos = vec3(0,0,0);
-							Vec3 reflectionDir = vec3(0,0,0);
-							Vec3 reflectionNormal = vec3(0,0,0);
-							bool intersection = lineShapeIntersection(rayPos, rayDir, *s, &reflectionPos, &reflectionDir, &reflectionNormal);
-
-							if(intersection) {
-								float distance = lenVec3(reflectionPos - rayPos);
-								if(distance < minDistance) {
-									minDistance = distance;
-									shapeIndex = i;
-
-									shapeReflectionPos = reflectionPos;
-									shapeReflectionDir = reflectionDir;
-									shapeReflectionNormal = reflectionNormal;
-								}
-							}
-						}
-
-						// if(x > 600 && y == 670) {
-						// 	// finalColor = vec3(1,0,0);
-						// 	// break;
-
-						// 	int stop = 234;
-						// }
-
-						if(shapeIndex != -1) {
-							Shape* s = shapes + shapeIndex;
-							lastShapeIndex = shapeIndex;
-
-							finalColor += attenuation * s->emitColor;
-							attenuation = attenuation * s->color;
-
-							rayPos = shapeReflectionPos;
-
-							Vec3 randomVec = vec3(randomFloat(0,1,0.01f), randomFloat(0,1,0.01f), randomFloat(0,1,0.01f));
-							Vec3 randomDir = normVec3(shapeReflectionNormal + randomVec);
-							rayDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
-							rayDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
-							rayDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
-							rayDir = normVec3(rayDir);
-
-							// rayDir = shapeReflectionDir;
-
-							// if(rayIndex == 1) {
-								// finalColor = vec3(abs(rayDir.x));
-								// break;
-							// }
-
-							// float test = dot(rayDir, -globalLightDir);
-							// finalColor = vec3(test);
-							// break;
-
-							if(attenuation == vec3(0,0,0)) break;
-
-						} else {
-							// Sky hit.
-							if(rayIndex == 0) {
-								finalColor = defaultEmitColor;
-							} else {
-								// finalColor += attenuation * defaultEmitColor;
-
-								Vec3 light = globalLightColor * dot(rayDir, -globalLightDir);
-								// finalColor += attenuation * (defaultEmitColor + light);
-								finalColor += attenuation * (light);
-							}
-
-							break;
-						}
-
-						rayIndex++;
-						if(rayIndex >= rayMaxCount) break;
-					}
-
-
-					data[y*texDim.w + x] = finalColor;
-				}
+				threadQueueAdd(globalThreadQueue, processPixelsThreaded, data);
 			}
+		}
 
-			glTextureSubImage2D(tex->id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, data);
+		glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
 
-			free(data);
+		if(ad->activeProcessing && threadQueueFinished(threadQueue)) {
+			ad->activeProcessing = false;
 		}
 
 
 		{
 			Vec2 texDim = vec2(ad->raycastTexture.dim);
 
+			Rect sr = getScreenRect(ws);
 			Rect tr = sr;
 			Vec2 sd = rectDim(sr);
 			if(((float)texDim.h / texDim.w) > (sd.h / sd.w)) {
