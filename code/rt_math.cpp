@@ -2368,6 +2368,21 @@ inline Mat4 operator*(Mat4 a, Mat4 b) {
 	return r;
 }
 
+inline Vec4 operator*(Mat4 m, Vec4 v) {
+	Vec4 result;
+	result.x = m.xa*v.x + m.xb*v.y + m.xc+v.z + m.xd+v.w;
+	result.y = m.ya*v.x + m.yb*v.y + m.yc+v.z + m.yd+v.w;
+	result.z = m.za*v.x + m.zb*v.y + m.zc+v.z + m.zd+v.w;
+	result.w = m.wa*v.x + m.wb*v.y + m.wc+v.z + m.wd+v.w;
+
+	return result;
+}
+
+inline Vec3 operator*(Mat4 m, Vec3 v) {
+	Vec4 result = m*vec4(v,0);
+	return result.xyz;
+}
+
 inline void rowToColumn(Mat4* m) {
 	for(int x = 1; x < 4; x++) {
 		for(int y = 0; y < x; y++) {
@@ -2565,8 +2580,10 @@ Mat4 quatRotationMatrix(Quat q) {
 }
 
 Vec3 operator*(Quat q, Vec3 v) {
-	Quat r = q*quat(0, v.x, v.y, v.z);
-	return r.xyz;
+	Vec3 t = 2 * cross(q.xyz, v);
+	Vec3 result = v + q.w * t + cross(q.xyz, t);
+
+	return result;
 }
 
 Vec3 rotateVec3(Vec3 v, float a, Vec3 axis) {

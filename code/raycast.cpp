@@ -72,15 +72,117 @@ bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, V
 	return false;
 }
 
+struct Camera {
+	Vec3 pos;
+	Vec3 rot;
+	Vec2 dim;
+	float dist;
+	// float fov;
+};
+
+struct Orientation {
+	Vec3 dir;
+	Vec3 up;
+	Vec3 right;
+};
+
+Vec3 getRotationFromVectors(Orientation) {
+	return {};
+}
+
+// Camera getCamData(Vec3 pos, Vec3 rot, Vec3 offset = vec3(0,0,0), Vec3 gUp = vec3(0,0,1), Vec3 startDir = vec3(0,1,0)) {
+// 	Camera c;
+// 	c.pos = pos + offset;
+// 	c.look = startDir;
+// 	rotateVec3(&c.look, rot.x, gUp);
+// 	rotateVec3(&c.look, rot.y, normVec3(cross(gUp, c.look)));
+// 	c.up = normVec3(cross(c.look, normVec3(cross(gUp, c.look))));
+// 	c.right = normVec3(cross(gUp, c.look));
+// 	c.look = -c.look;
+
+// 	return c;
+// }
+
+Orientation getVectorsFromRotation(Vec3 rot) {
+
+	Orientation baseOrientation = {vec3(0,1,0), vec3(0,0,1), vec3(1,0,0)};
+	Orientation o = baseOrientation;
+
+	// Quat q = quat();
+	// q.xyz = rot;
+
+	// Mat4 m = quatRotationMatrix(q);
+	// o.dir = m*baseOrientation.dir;
+	// o.up = m*baseOrientation.up;
+	// o.right = m*baseOrientation.right;
+
+
+
+	// Quat q = quat();
+	// q.xyz = rot;
+	// quatRotationMatrix(q);
+	// Mat4
+
+	// o.dir = baseOrientation.dir;
+	// rotateVec3(&o.dir, rot.x, vec3(1,0,0));
+	// rotateVec3(&o.dir, rot.y, vec3(0,1,0));
+	// rotateVec3(&o.dir, rot.z, vec3(0,0,1));
+
+
+	// o.up = baseOrientation.up;
+	// rotateVec3(&o.up, rot.x, vec3(1,0,0));
+	// rotateVec3(&o.up, rot.y, vec3(0,1,0));
+	// rotateVec3(&o.up, rot.z, vec3(0,0,1));
+
+
+	// o.right = baseOrientation.right;
+	// rotateVec3(&o.right, rot.x, vec3(1,0,0));
+	// rotateVec3(&o.right, rot.y, vec3(0,1,0));
+	// rotateVec3(&o.right, rot.z, vec3(0,0,1));
+
+
+
+	// o.dir = 	rotateVec3(baseOrientation.dir, rot.x, vec3(1,0,0));
+	// o.up = 		rotateVec3(baseOrientation.up, rot.y, vec3(1,0,0));
+	// o.right = 	rotateVec3(baseOrientation.right, rot.z, vec3(0,1,0));
+
+
+	// Quat q = quat(rot.x, baseOrientation.dir) * quat(rot.y, baseOrientation.up) * quat(rot.z, baseOrientation.right);
+	Quat q = quat(rot.x, vec3(1,0,0)) * quat(rot.y, vec3(0,1,0)) * quat(rot.z, vec3(0,0,1));
+
+	o.dir = normVec3(q*baseOrientation.dir);
+	o.up = normVec3(q*baseOrientation.up);
+	o.right = normVec3(q*baseOrientation.right);
+
+
+
+
+
+
+	o.dir = baseOrientation.dir;
+	rotateVec3(&o.dir, rot.x, baseOrientation.up);
+	rotateVec3(&o.dir, rot.y, normVec3(cross(baseOrientation.up, o.dir)));
+	o.up = normVec3(cross(o.dir, normVec3(cross(baseOrientation.up, o.dir))));
+	o.right = -normVec3(cross(o.up, o.dir));
+
+
+
+
+
+
+	// o.dir = baseOrientation.dir;
+	// rotateVec3(&o.dir, rot.x, baseOrientation.up);
+	// rotateVec3(&o.dir, rot.y, normVec3(cross(baseOrientation.up, o.dir)));
+	// o.up = normVec3(cross(o.dir, normVec3(cross(baseOrientation.up, o.dir))));
+	// o.right = normVec3(cross(baseOrientation.up, o.dir));
+	// // o.dir = -o.dir;
+
+
+	return o;
+}
 
 struct World {
-	Vec2 camDim;
-	Vec3 camPos;
-	Vec3 camDir;
-	Vec3 camRight;
-	Vec3 camUp;
-	float camDist;
-
+	Camera camera;
 	Shape* shapes;
 	int shapeCount;
 
@@ -89,21 +191,24 @@ struct World {
 	Vec3 globalLightDir;
 };
 
+// Vec3 castRay(Vec3 attenuationint rayMaxCount, 
+
 void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 
 	float pixelPercent = (float)1/dim.w;
 
-	Vec3 camLeft = world->camRight * -1;
+	Camera* camera = &world->camera;
+	Orientation camRot = getVectorsFromRotation(camera->rot);
 
 	float xPercent = x/((float)dim.w-1);
 	float yPercent = y/((float)dim.h-1);
-	Vec3 p = world->camPos + world->camDir*world->camDist;
+	Vec3 p = camera->pos + camRot.dir*camera->dist;
 
-	p += camLeft * -((world->camDim.w*(xPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - world->camDim.w*0.5f);
-	p += world->camUp * -((world->camDim.h*(yPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - world->camDim.h*0.5f);
+	p += (camRot.right*-1) * -((camera->dim.w*(xPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camera->dim.w*0.5f);
+	p += camRot.up * -((camera->dim.h*(yPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camera->dim.h*0.5f);
 
-	Vec3 rayPos = world->camPos;
-	Vec3 rayDir = normVec3(p - world->camPos);
+	Vec3 rayPos = camera->pos;
+	Vec3 rayDir = normVec3(p - camera->pos);
 
 	Vec3 finalColor = vec3(0,0,0);
 	Vec3 attenuation = vec3(1,1,1);
@@ -169,11 +274,11 @@ void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 
 
 			Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
-			// if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
+			if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
 
-			while(dot(randomDir, shapeReflectionNormal) <= 0.9f) {
-				randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
-			}
+			// while(dot(randomDir, shapeReflectionNormal) <= 0) {
+			// 	randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
+			// }
 
 			rayDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
 			rayDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);

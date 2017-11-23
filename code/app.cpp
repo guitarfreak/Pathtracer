@@ -454,9 +454,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Vec2i texDim = vec2i(1920*2,1080*2);
 		// Vec2i texDim = vec2i(1920,1080);
-		Vec2i texDim = vec2i(1280,720);
+		// Vec2i texDim = vec2i(1280,720);
 		// Vec2i texDim = vec2i(1280/2,720/2);
-		// Vec2i texDim = vec2i(320,180);
+		Vec2i texDim = vec2i(320,180);
 		// Vec2i texDim = vec2i(160,90);
 		// Vec2i texDim = vec2i(8,8);
 
@@ -470,9 +470,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 
+		if(init || reload) {
+			ad->world.camera.pos = vec3(0, -20, 4);
+			ad->world.camera.rot = vec3(0, 0, 0);
+		}
 
-		if((input->keysPressed[KEYCODE_SPACE] || reload || init) && (ad->activeProcessing == false)) {
-		// if(true) {
+		// if((input->keysPressed[KEYCODE_SPACE] || reload || init) && (ad->activeProcessing == false)) {
+		if(true && (ad->activeProcessing == false)) {
 			ad->activeProcessing = true;
 
 
@@ -480,12 +484,36 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 			World* world = &ad->world;
-			world->camPos = vec3(0, -20, 4);
-			world->camDir = normVec3(vec3(0, 1, 0));
-			// Vec3 camRot
-			// float camFov = 90;
-			// float camAspect = (float)texDim.w / (float)texDim.h;
-			world->camDist = 1;
+
+			Camera* cam = &world->camera;
+
+			// if(input->mouseDelta.x
+			if(input->mouseButtonDown[0]) {
+				float speed = 0.01f;
+				cam->rot.x += input->mouseDelta.x*speed;
+				cam->rot.y += -input->mouseDelta.y*speed;
+			}
+
+			Orientation o = getVectorsFromRotation(cam->rot);
+			if(input->keysDown[KEYCODE_W]) cam->pos += o.dir;
+			if(input->keysDown[KEYCODE_S]) cam->pos -= o.dir;
+			if(input->keysDown[KEYCODE_A]) cam->pos += -o.right;
+			if(input->keysDown[KEYCODE_D]) cam->pos += o.right;
+			if(input->keysDown[KEYCODE_E]) cam->pos += o.up;
+			if(input->keysDown[KEYCODE_Q]) cam->pos += -o.up;
+
+
+			cam->dist = 1;
+			float camWidth = cam->dist * 2; // 90 degrees for now.
+			float aspectRatio = (float)texDim.w / texDim.h;
+			cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+
+
+
+
+
+
+
 
 
 			world->shapeCount = 0;
@@ -563,12 +591,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
-			float camWidth = world->camDist * 2; // 90 degrees for now.
-			float aspectRatio = (float)texDim.w / texDim.h;
-			
-			world->camDim = vec2(camWidth, camWidth*(1/aspectRatio)); 
-			world->camRight = normVec3(vec3(1,0,0));
-			world->camUp = normVec3(vec3(0,0,1));
 
 
 
@@ -618,7 +640,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	}
 
-	if(false)
+
+	{
+
+
+		// drawRect(rectCenDim(vec2(100,-100), vec2(100,100)), vec4(1,0,0,1));
+	}
+
+
+	#if 0
 	{
 		int cellCount = 8;
 		float cellSize = 800;
@@ -656,7 +686,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// free(noiseSamples);
 
 	}
-
+	#endif
 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
