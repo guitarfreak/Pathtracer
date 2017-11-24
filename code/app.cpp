@@ -2,10 +2,10 @@
 =================================================================================
 
 	ToDo:
+	* Better sampling pattern.
 	- Blue noise.
 	- Replace rand().
 	- Better angle calculation.
-	- Better sampling pattern.
 	- Simd.
 	- Ui.
 	- Random placement.
@@ -556,6 +556,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// s.dim = vec3(12,12,1);
 			s.dim = vec3(10000,10000,0.0001f);
 			s.color = vec3(0.5f);
+			// s.reflectionMod = 0.3f;
 			s.reflectionMod = 0.7f;
 			world->shapes[world->shapeCount++] = s;
 
@@ -700,6 +701,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 				drawText(fillString("%i. pixels", ad->texDim.x * ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
 				drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
 				drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+
+				// Quat q = eulerAnglesToQuat(0,0.1f,0);
+				// Vec3 d = vec3(0,1,0);
+				// d = normVec3(q*d);
+
+				// drawText(fillString("%f,%f,%f\n", PVEC3(d)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+
 			}
 		}
 

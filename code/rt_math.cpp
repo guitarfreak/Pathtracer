@@ -2596,6 +2596,24 @@ void rotateVec3(Vec3* v, float a, Vec3 axis) {
 	*v = normVec3(*v);
 }
 
+// From Wikipedia.
+Quat eulerAnglesToQuat(float pitch, float roll, float yaw) {
+	Quat q;
+
+    // Abbreviations for the various angular functions
+	float cy = cos(yaw * 0.5);
+	float sy = sin(yaw * 0.5);
+	float cr = cos(roll * 0.5);
+	float sr = sin(roll * 0.5);
+	float cp = cos(pitch * 0.5);
+	float sp = sin(pitch * 0.5);
+
+	q.w = cy * cr * cp + sy * sr * sp;
+	q.x = cy * sr * cp - sy * cr * sp;
+	q.y = cy * cr * sp + sy * sr * cp;
+	q.z = sy * cr * cp - cy * sr * sp;
+	return q;
+}
 
 Mat4 modelMatrix(Vec3 trans, Vec3 scale, float degrees = 0, Vec3 rot = vec3(0,0,0)) {
 	Mat4 sm; scaleMatrix(&sm, scale);

@@ -180,33 +180,51 @@ Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIn
 
 		if(true) {
 
+			// Vec3 colorReflection = castRay(world, attenuation, shapeReflectionPos, shapeReflectionDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
 
-		// Vec3 colorReflection = castRay(world, attenuation, shapeReflectionPos, shapeReflectionDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
+			int diffuseRayCount = 4;
+			// int diffuseRayCount = 1;
+			Vec3 colorDiffusion = vec3(0,0,0);
+			for(int i = 0; i < diffuseRayCount; i++) {
+				// Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
+				// if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
 
-		int diffuseRayCount = 4;
-		// int diffuseRayCount = 1;
-		Vec3 colorDiffusion = vec3(0,0,0);
-		for(int i = 0; i < diffuseRayCount; i++) {
-			Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
-			if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
 
-			randomDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
-			randomDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
-			randomDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
-			randomDir = normVec3(randomDir);
+				// Quat q = eulerAnglesToQuat(randomFloat(0,M_2PI, 0.001f), randomFloat(0,M_2PI, 0.001f), randomFloat(0,M_2PI, 0.001f));
+				// Vec3 d = vec3(0,1,0);
+				// d = normVec3(q*d);
 
-			colorDiffusion += castRay(world, attenuation, shapeReflectionPos, randomDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
-		}
+				// Vec3 randomDir = d;
+				// if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
 
-		colorDiffusion = colorDiffusion/(float)diffuseRayCount;
 
-		// finalColor += colorReflection+colorDiffusion / 2.0f;
+				// Cube discard method.
+				Vec3 randomDir;
+				do {
+					randomDir = vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f));
+				} while(lenVec3(randomDir) > 1);
+				randomDir = normVec3(randomDir);
+				if(randomDir == vec3(0,0,0)) randomDir = shapeReflectionNormal;
 
-		finalColor += colorDiffusion;
+				if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
 
-		// finalColor.r += lerp(s->reflectionMod, colorDiffusion.r, colorReflection.r);
-		// finalColor.g += lerp(s->reflectionMod, colorDiffusion.g, colorReflection.g);
-		// finalColor.b += lerp(s->reflectionMod, colorDiffusion.b, colorReflection.b);
+
+				randomDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
+				randomDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
+				randomDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
+				randomDir = normVec3(randomDir);
+
+				colorDiffusion += castRay(world, attenuation, shapeReflectionPos, randomDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
+			}
+
+			colorDiffusion = colorDiffusion/(float)diffuseRayCount;
+
+
+			finalColor += colorDiffusion;
+
+			// finalColor.r += lerp(s->reflectionMod, colorDiffusion.r, colorReflection.r);
+			// finalColor.g += lerp(s->reflectionMod, colorDiffusion.g, colorReflection.g);
+			// finalColor.b += lerp(s->reflectionMod, colorDiffusion.b, colorReflection.b);
 
 		}
 
