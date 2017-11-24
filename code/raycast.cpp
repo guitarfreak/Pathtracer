@@ -1,5 +1,4 @@
 
-
 enum {
 	SHAPE_BOX = 0,
 	SHAPE_SPHERE,
@@ -29,7 +28,6 @@ struct Shape {
 		};
 	};
 };
-
 
 bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, Vec3* reflectionDir, Vec3* reflectionNormal) {
 
@@ -90,93 +88,22 @@ Vec3 getRotationFromVectors(Orientation) {
 	return {};
 }
 
-// Camera getCamData(Vec3 pos, Vec3 rot, Vec3 offset = vec3(0,0,0), Vec3 gUp = vec3(0,0,1), Vec3 startDir = vec3(0,1,0)) {
-// 	Camera c;
-// 	c.pos = pos + offset;
-// 	c.look = startDir;
-// 	rotateVec3(&c.look, rot.x, gUp);
-// 	rotateVec3(&c.look, rot.y, normVec3(cross(gUp, c.look)));
-// 	c.up = normVec3(cross(c.look, normVec3(cross(gUp, c.look))));
-// 	c.right = normVec3(cross(gUp, c.look));
-// 	c.look = -c.look;
-
-// 	return c;
-// }
-
 Orientation getVectorsFromRotation(Vec3 rot) {
 
 	Orientation baseOrientation = {vec3(0,1,0), vec3(0,0,1), vec3(1,0,0)};
 	Orientation o = baseOrientation;
 
-	// Quat q = quat();
-	// q.xyz = rot;
-
-	// Mat4 m = quatRotationMatrix(q);
-	// o.dir = m*baseOrientation.dir;
-	// o.up = m*baseOrientation.up;
-	// o.right = m*baseOrientation.right;
-
-
-
-	// Quat q = quat();
-	// q.xyz = rot;
-	// quatRotationMatrix(q);
-	// Mat4
-
-	// o.dir = baseOrientation.dir;
-	// rotateVec3(&o.dir, rot.x, vec3(1,0,0));
-	// rotateVec3(&o.dir, rot.y, vec3(0,1,0));
-	// rotateVec3(&o.dir, rot.z, vec3(0,0,1));
-
-
-	// o.up = baseOrientation.up;
-	// rotateVec3(&o.up, rot.x, vec3(1,0,0));
-	// rotateVec3(&o.up, rot.y, vec3(0,1,0));
-	// rotateVec3(&o.up, rot.z, vec3(0,0,1));
-
-
-	// o.right = baseOrientation.right;
-	// rotateVec3(&o.right, rot.x, vec3(1,0,0));
-	// rotateVec3(&o.right, rot.y, vec3(0,1,0));
-	// rotateVec3(&o.right, rot.z, vec3(0,0,1));
-
-
-
-	// o.dir = 	rotateVec3(baseOrientation.dir, rot.x, vec3(1,0,0));
-	// o.up = 		rotateVec3(baseOrientation.up, rot.y, vec3(1,0,0));
-	// o.right = 	rotateVec3(baseOrientation.right, rot.z, vec3(0,1,0));
-
-
-	// Quat q = quat(rot.x, baseOrientation.dir) * quat(rot.y, baseOrientation.up) * quat(rot.z, baseOrientation.right);
 	Quat q = quat(rot.x, vec3(1,0,0)) * quat(rot.y, vec3(0,1,0)) * quat(rot.z, vec3(0,0,1));
 
 	o.dir = normVec3(q*baseOrientation.dir);
 	o.up = normVec3(q*baseOrientation.up);
 	o.right = normVec3(q*baseOrientation.right);
 
-
-
-
-
-
 	o.dir = baseOrientation.dir;
 	rotateVec3(&o.dir, rot.x, baseOrientation.up);
 	rotateVec3(&o.dir, rot.y, normVec3(cross(baseOrientation.up, o.dir)));
 	o.up = normVec3(cross(o.dir, normVec3(cross(baseOrientation.up, o.dir))));
 	o.right = -normVec3(cross(o.up, o.dir));
-
-
-
-
-
-
-	// o.dir = baseOrientation.dir;
-	// rotateVec3(&o.dir, rot.x, baseOrientation.up);
-	// rotateVec3(&o.dir, rot.y, normVec3(cross(baseOrientation.up, o.dir)));
-	// o.up = normVec3(cross(o.dir, normVec3(cross(baseOrientation.up, o.dir))));
-	// o.right = normVec3(cross(baseOrientation.up, o.dir));
-	// // o.dir = -o.dir;
-
 
 	return o;
 }
@@ -306,9 +233,25 @@ Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIn
 	return finalColor;
 }
 
-void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffer) {
+const Vec2 msaa4xPatternSamples[] = { 
+	vec2(1/8.0f, 3/8.0f), 
+	vec2(3/8.0f, 7/8.0f), 
+	vec2(5/8.0f, 1/8.0f), 
+	vec2(7/8.0f, 5/8.0f), 
+};
 
-	// float pixelPercent = (float)1/texDim.w;
+const Vec2 msaa8xPatternSamples[] = { 
+	vec2( 1/16.0f, 11/16.0f), 
+	vec2( 3/16.0f,  3/16.0f), 
+	vec2( 5/16.0f, 15/16.0f), 
+	vec2( 7/16.0f,  7/16.0f), 
+	vec2( 9/16.0f,  1/16.0f), 
+	vec2(11/16.0f,  9/16.0f), 
+	vec2(13/16.0f, 13/16.0f), 
+	vec2(15/16.0f,  5/16.0f), 
+};
+
+void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffer) {
 
 	Camera* camera = &world->camera;
 	Orientation camRot = getVectorsFromRotation(camera->rot);
@@ -316,43 +259,43 @@ void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffe
 	int rayMaxCount = 5;
 	// int rayMaxCount = 3;
 
-	Vec3 finalColor;
+	bool sampleModeFixedGrid = false; // Grid or MSAA.
+	// int sampleCount = 1;
+	// int sampleCount = pow(2,2);
+	// int sampleCount = 4;
+	int sampleCount = 8;
 
-	// int samplesPerPixel = 8;
-	int samplesPerPixel = 4;
+	myAssert(sampleCount <= 8*8);
 
-	if(false) {
-		Vec3 camTopLeft = camera->pos + camRot.dir*camera->dist + (camRot.right*-1)*(camera->dim.w/2.0f) + (camRot.up)*(camera->dim.h/2.0f);
-
-		Vec3 p = camTopLeft;
-		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
-
-		Vec2 centerOffset = vec2((1/(float)texDim.w)/2.0f, (1/(float)texDim.h)/2.0f);
-		percent += centerOffset;
-
-		p += camRot.right * (camera->dim.w * percent.x);
-		p += -camRot.up * (camera->dim.h * percent.y);
-
-		finalColor = castRay(world, vec3(1,1,1), camera->pos, normVec3(p - camera->pos), 0, rayMaxCount, -1);
-	} else {
-
-		Vec3 camTopLeft = camera->pos + camRot.dir*camera->dist + (camRot.right*-1)*(camera->dim.w/2.0f) + (camRot.up)*(camera->dim.h/2.0f);
-		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
-		Vec2 pixelPercent = vec2(1/(float)texDim.w, 1/(float)texDim.h);
-
-		finalColor = vec3(0,0,0);
-		int sampleCount = samplesPerPixel*samplesPerPixel;
-		float fraction = samplesPerPixel*2;
+	Vec2 samples[8*8];
+	if(sampleModeFixedGrid) {
+		int sampleCount2 = sampleCount/2;
 		for(int i = 0; i < sampleCount; i++) {
-			Vec2 offset = vec2((i%samplesPerPixel)*samplesPerPixel + 1, (i/samplesPerPixel)*samplesPerPixel + 1);
-
-			Vec3 p = camTopLeft;
-			p += camRot.right * (camera->dim.w * percent.x + (pixelPercent.w/fraction)*offset.x);
-			p += -camRot.up   * (camera->dim.h * percent.y + (pixelPercent.h/fraction)*offset.y);
-			finalColor += castRay(world, vec3(1,1,1), camera->pos, normVec3(p - camera->pos), 0, rayMaxCount, -1);
+			samples[i] = vec2(((i%sampleCount2)*sampleCount2 + 1) / (float)sampleCount, 
+			                  ((i/sampleCount2)*sampleCount2 + 1) / (float)sampleCount);
 		}
-		finalColor = finalColor/sampleCount;
+	} else {
+		myAssert(sampleCount == 4 || sampleCount == 8);
+
+		for(int i = 0; i < sampleCount; i++) {
+			if(sampleCount == 4)      samples[i] = msaa4xPatternSamples[i];
+			else if(sampleCount == 8) samples[i] = msaa8xPatternSamples[i];
+		}
 	}
+
+	Vec3 camTopLeft = camera->pos + camRot.dir*camera->dist + (camRot.right*-1)*(camera->dim.w/2.0f) + (camRot.up)*(camera->dim.h/2.0f);
+	Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
+	Vec2 pixelPercent = vec2(1/(float)texDim.w, 1/(float)texDim.h);
+
+	Vec3 finalColor = vec3(0,0,0);
+	for(int i = 0; i < sampleCount; i++) {
+		Vec3 p = camTopLeft;
+		p += camRot.right * (camera->dim.w*percent.x + pixelPercent.w*samples[i].x);
+		p += -camRot.up   * (camera->dim.h*percent.y + pixelPercent.h*samples[i].y);
+		finalColor += castRay(world, vec3(1,1,1), camera->pos, normVec3(p - camera->pos), 0, rayMaxCount, -1);
+	}
+	finalColor = finalColor/(float)sampleCount;
+
 
 	clampMax(&finalColor.r, 1);
 	clampMax(&finalColor.g, 1);
@@ -360,9 +303,6 @@ void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffe
 
 	buffer[y*texDim.w + x] = finalColor;
 }
-
-
-
 
 void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 

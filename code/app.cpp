@@ -5,7 +5,12 @@
 	- Blue noise.
 	- Replace rand().
 	- Better angle calculation.
-	- Better sampling patter.
+	- Better sampling pattern.
+	- Simd.
+	- Ui.
+	- Random placement.
+	- Entity editor.
+	- More Shapes and rotations.
 
 	Done Today: 
 
@@ -479,7 +484,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Vec2i texDim = vec2i(2,2);
 
 		ad->texDim = texDim;
-		ad->keepUpdating = false;
+		// ad->keepUpdating = true;
 
 		Texture* texture = &ad->raycastTexture;
 		if(!texture->isCreated || (texDim != texture->dim)) {
