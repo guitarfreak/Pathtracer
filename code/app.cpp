@@ -4,6 +4,7 @@
 	ToDo:
 	- Blue noise.
 	- Replace rand().
+	- Better angle calculation.
 
 	Done Today: 
 
@@ -115,6 +116,8 @@ void appTempDefault(AppTempSettings* at, Rect monitor) {
 
 
 
+#define THREAD_JOB_COUNT 8*4
+
 struct AppData {
 
 	// General.
@@ -131,12 +134,14 @@ struct AppData {
 	i64 swapTime;
 
 	bool updateFrameBuffers;
-	int msaaSamples;
+	int msaaSamples; 
 
 	// Window.
 
 	Rect clientRect;
 	Vec2i frameBufferSize;
+
+	bool captureMouse;
 
 	// App.
 
@@ -144,12 +149,19 @@ struct AppData {
 
 	// 
 
+	bool keepUpdating;
+
+	Vec2i texDim;
+
 	World world;
 	Vec3* buffer;
 	Texture raycastTexture;
 	bool activeProcessing;
 
-	ProcessPixelsData threadData[8];
+	ProcessPixelsData threadData[THREAD_JOB_COUNT];
+
+	f64 processStartTime;
+	f64 processTime;
 };
 
 
@@ -453,13 +465,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 		// Vec2i texDim = vec2i(1920*2,1080*2);
-		// Vec2i texDim = vec2i(1920,1080);
+		Vec2i texDim = vec2i(1920,1080);
 		// Vec2i texDim = vec2i(1280,720);
 		// Vec2i texDim = vec2i(1280/2,720/2);
-		Vec2i texDim = vec2i(320,180);
+		// Vec2i texDim = vec2i(320,180);
 		// Vec2i texDim = vec2i(160,90);
 		// Vec2i texDim = vec2i(8,8);
 
+		ad->texDim = texDim;
 
 		Texture* texture = &ad->raycastTexture;
 		if(!texture->isCreated || (texDim != texture->dim)) {
@@ -475,49 +488,54 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->world.camera.rot = vec3(0, 0, 0);
 		}
 
-		// if((input->keysPressed[KEYCODE_SPACE] || reload || init) && (ad->activeProcessing == false)) {
-		if(true && (ad->activeProcessing == false)) {
+		if(input->keysPressed[KEYCODE_F3]) {
+			ad->captureMouse = !ad->captureMouse;
+		}
+
+		captureMouse(windowHandle, ad->captureMouse, input);
+
+		ad->keepUpdating = false;
+
+
+
+
+
+		if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
 			ad->activeProcessing = true;
-
-
-
-
 
 			World* world = &ad->world;
 
-			Camera* cam = &world->camera;
+			{
+				Camera* cam = &ad->world.camera;
 
-			// if(input->mouseDelta.x
-			if(input->mouseButtonDown[0]) {
-				float speed = 0.01f;
-				cam->rot.x += input->mouseDelta.x*speed;
-				cam->rot.y += -input->mouseDelta.y*speed;
+				if((!ad->captureMouse && input->mouseButtonDown[0]) || ad->captureMouse) {
+					float speed = 0.1f;
+					
+					cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
+					cam->rot.y += input->mouseDelta.y*speed*ad->dt;
+				}
+
+				Orientation o = getVectorsFromRotation(cam->rot);
+				if(input->keysDown[KEYCODE_W]) cam->pos += o.dir;
+				if(input->keysDown[KEYCODE_S]) cam->pos += -o.dir;
+				if(input->keysDown[KEYCODE_A]) cam->pos += -o.right;
+				if(input->keysDown[KEYCODE_D]) cam->pos += o.right;
+				if(input->keysDown[KEYCODE_E]) cam->pos += vec3(0,0,1);
+				if(input->keysDown[KEYCODE_Q]) cam->pos += vec3(0,0,-1);
+
+
+				cam->dist = 1;
+				float camWidth = cam->dist * 2; // 90 degrees for now.
+				float aspectRatio = (float)texDim.w / texDim.h;
+				cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
 			}
-
-			Orientation o = getVectorsFromRotation(cam->rot);
-			if(input->keysDown[KEYCODE_W]) cam->pos += o.dir;
-			if(input->keysDown[KEYCODE_S]) cam->pos -= o.dir;
-			if(input->keysDown[KEYCODE_A]) cam->pos += -o.right;
-			if(input->keysDown[KEYCODE_D]) cam->pos += o.right;
-			if(input->keysDown[KEYCODE_E]) cam->pos += o.up;
-			if(input->keysDown[KEYCODE_Q]) cam->pos += -o.up;
-
-
-			cam->dist = 1;
-			float camWidth = cam->dist * 2; // 90 degrees for now.
-			float aspectRatio = (float)texDim.w / texDim.h;
-			cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
-
-
-
-
-
-
 
 
 
 			world->shapeCount = 0;
-			world->shapes = getTArray(Shape, 10);
+			if(init) {
+				world->shapes = getPArray(Shape, 100);
+			}
 
 			Shape s;
 
@@ -527,7 +545,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// s.dim = vec3(12,12,1);
 			s.dim = vec3(10000,10000,0.01f);
 			s.color = vec3(0.5f);
-			s.reflectionMod = 0.5f;
+			s.reflectionMod = 0.7f;
 			world->shapes[world->shapeCount++] = s;
 
 			s = {};
@@ -538,7 +556,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			s.reflectionMod = 0.7f;
 			world->shapes[world->shapeCount++] = s;
 
-			s = {};
+			// s = {};
 			s.type = SHAPE_BOX;
 			s.pos = vec3(0,-10,1);
 			s.dim = vec3(2,2,2);
@@ -579,7 +597,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			world->shapes[world->shapeCount++] = s;
 
 
-			world->defaultEmitColor = vec3(0.5f, 0.8f, 0.9f);
+			world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
 			// world->defaultEmitColor = vec3(0.95f);
 			// world->defaultEmitColor = vec3(0.0f);
 			// world->globalLightDir = normVec3(vec3(1,1,-1));
@@ -588,17 +606,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
-
-
-
-
-
-
-
 			if(ad->buffer != 0) free(ad->buffer);
 			ad->buffer = mallocArray(Vec3, texDim.w * texDim.h);
 
-			int threadCount = 8;
+			int threadCount = THREAD_JOB_COUNT;
 			int pixelCount = texDim.w*texDim.h;
 			int pixelCountPerThread = pixelCount/threadCount;
 			int pixelCountRest = pixelCount % threadCount;
@@ -614,13 +625,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				threadQueueAdd(globalThreadQueue, processPixelsThreaded, data);
 			}
+
+			ad->processStartTime = ad->time;
 		}
 
-		glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
-
+		bool doneProcessing = false;
 		if(ad->activeProcessing && threadQueueFinished(threadQueue)) {
 			ad->activeProcessing = false;
+			doneProcessing = true;
+
+			ad->processTime = ad->time - ad->processStartTime;
 		}
+
+		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing))
+			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
+
 
 
 		{
@@ -689,8 +708,25 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#endif
 
 
-	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
+	{
+		Font* font = getFont("OpenSans-Bold.ttf", 20);
+		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 2, vec4(0,0,0,1));
 
+		Rect sr = getScreenRect(ws);
+		Vec2 p = rectTR(sr) + vec2(-font->height*0.2f,0);;
+		float lh = font->height * 0.8f;
+		drawText(fillString("%i x %i", ad->texDim.x, ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%i. pixels", ad->texDim.x * ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		// drawText(fillString("%f", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
+
+		// int asdf = 234;
+		// fillString("a");
+		// getTString(1000);
+	}
+
+	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
 
 	// Save app state.
 	#if 1

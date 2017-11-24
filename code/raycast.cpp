@@ -191,7 +191,149 @@ struct World {
 	Vec3 globalLightDir;
 };
 
-// Vec3 castRay(Vec3 attenuationint rayMaxCount, 
+Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIndex, int rayMaxCount, int lastShapeIndex) {
+
+	if(rayIndex >= rayMaxCount) return vec3(0,0,0);
+	if(attenuation == vec3(0,0,0)) return vec3(0,0,0);
+
+	Vec3 finalColor = vec3(0,0,0);
+
+	// Find shape with closest intersection.
+
+	Vec3 shapeReflectionPos;
+	Vec3 shapeReflectionDir;
+	Vec3 shapeReflectionNormal;
+
+	int shapeIndex = -1;
+	float minDistance = FLT_MAX;
+	for(int i = 0; i < world->shapeCount; i++) {
+		if(lastShapeIndex == i) continue;
+
+		Shape* s = world->shapes + i;
+
+		Vec3 reflectionPos = vec3(0,0,0);
+		Vec3 reflectionDir = vec3(0,0,0);
+		Vec3 reflectionNormal = vec3(0,0,0);
+		bool intersection = lineShapeIntersection(rayPos, rayDir, *s, &reflectionPos, &reflectionDir, &reflectionNormal);
+
+		if(intersection) {
+			float distance = lenVec3(reflectionPos - rayPos);
+			if(distance < minDistance) {
+				minDistance = distance;
+				shapeIndex = i;
+
+				shapeReflectionPos = reflectionPos;
+				shapeReflectionDir = reflectionDir;
+				shapeReflectionNormal = reflectionNormal;
+			}
+		}
+	}
+
+	if(shapeIndex != -1) {
+		Shape* s = world->shapes + shapeIndex;
+		lastShapeIndex = shapeIndex;
+
+		finalColor += attenuation * s->emitColor;
+		attenuation = attenuation * s->color;
+
+			// rayPos = shapeReflectionPos;
+
+			// Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
+			// if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
+
+			// rayDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
+			// rayDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
+			// rayDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
+			// rayDir = normVec3(rayDir);
+
+			// finalColor += castRay(world, attenuation, rayPos, rayDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
+
+
+
+
+		if(true) {
+
+
+		// Vec3 colorReflection = castRay(world, attenuation, shapeReflectionPos, shapeReflectionDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
+
+		int diffuseRayCount = 4;
+		// int diffuseRayCount = 1;
+		Vec3 colorDiffusion = vec3(0,0,0);
+		for(int i = 0; i < diffuseRayCount; i++) {
+			Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
+			if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
+
+			randomDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
+			randomDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
+			randomDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
+			randomDir = normVec3(randomDir);
+
+			colorDiffusion += castRay(world, attenuation, shapeReflectionPos, randomDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
+		}
+
+		colorDiffusion = colorDiffusion/(float)diffuseRayCount;
+
+		// finalColor += colorReflection+colorDiffusion / 2.0f;
+
+		finalColor += colorDiffusion;
+
+		// finalColor.r += lerp(s->reflectionMod, colorDiffusion.r, colorReflection.r);
+		// finalColor.g += lerp(s->reflectionMod, colorDiffusion.g, colorReflection.g);
+		// finalColor.b += lerp(s->reflectionMod, colorDiffusion.b, colorReflection.b);
+
+		}
+
+
+	} else {
+
+		// Sky hit.
+
+		if(rayIndex == 0) {
+			finalColor += world->defaultEmitColor;
+		} else {
+			// finalColor += attenuation * defaultEmitColor;
+
+			float lightDot = dot(rayDir, -world->globalLightDir);
+			// lightDot = clampMin(lightDot, 0);
+			Vec3 light = world->globalLightColor * lightDot;
+
+			// finalColor += attenuation * (world->defaultEmitColor + light);
+			finalColor += attenuation * light;
+			finalColor += attenuation * world->defaultEmitColor;
+		}
+	}
+
+	return finalColor;
+}
+
+void processPixelRecursive(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
+
+	float pixelPercent = (float)1/dim.w;
+
+	Camera* camera = &world->camera;
+	Orientation camRot = getVectorsFromRotation(camera->rot);
+
+	float xPercent = x/((float)dim.w-1);
+	float yPercent = y/((float)dim.h-1);
+	Vec3 p = camera->pos + camRot.dir*camera->dist;
+
+	p += (camRot.right*-1) * -((camera->dim.w*(xPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camera->dim.w*0.5f);
+	p += camRot.up * -((camera->dim.h*(yPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camera->dim.h*0.5f);
+
+	Vec3 rayPos = camera->pos;
+	Vec3 rayDir = normVec3(p - camera->pos);
+
+	// Vec3 finalColor = vec3(0,0,0);
+
+	int rayMaxCount = 5;
+	// int rayMaxCount = 3;
+	Vec3 finalColor = castRay(world, vec3(1,1,1), rayPos, rayDir, 0, rayMaxCount, -1);
+
+	buffer[y*dim.w + x] = finalColor;
+}
+
+
+
 
 void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 
@@ -343,7 +485,8 @@ void processPixelsThreaded(void* data) {
 		int y = i / d->dim.w;
 		int x = i % d->dim.w;
 
-		processPixel(d->world, d->dim, x, y, d->buffer);
+		// processPixel(d->world, d->dim, x, y, d->buffer);
+		processPixelRecursive(d->world, d->dim, x, y, d->buffer);
 	}
 
 }
