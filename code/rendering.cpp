@@ -217,6 +217,8 @@ void deleteTexture(Texture* t) {
 void initTexture(Texture* texture, int mipLevels, int internalFormat, Vec2i dim, int channels, int filterMode, int wrapMode) {
 	*texture = {};
 
+	if(mipLevels == -1) mipLevels = getMaximumMipmapsFromSize(dim.w, dim.h);
+
 	glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
 	glTextureStorage2D(texture->id, mipLevels, internalFormat, dim.w, dim.h);
 

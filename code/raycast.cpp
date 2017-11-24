@@ -306,30 +306,59 @@ Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIn
 	return finalColor;
 }
 
-void processPixelRecursive(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
+void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffer) {
 
-	float pixelPercent = (float)1/dim.w;
+	// float pixelPercent = (float)1/texDim.w;
 
 	Camera* camera = &world->camera;
 	Orientation camRot = getVectorsFromRotation(camera->rot);
 
-	float xPercent = x/((float)dim.w-1);
-	float yPercent = y/((float)dim.h-1);
-	Vec3 p = camera->pos + camRot.dir*camera->dist;
-
-	p += (camRot.right*-1) * -((camera->dim.w*(xPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camera->dim.w*0.5f);
-	p += camRot.up * -((camera->dim.h*(yPercent + (pixelPercent*0.5f + pixelPercent*randomFloat(-0.5f,0.5f,0.0001f)))) - camera->dim.h*0.5f);
-
-	Vec3 rayPos = camera->pos;
-	Vec3 rayDir = normVec3(p - camera->pos);
-
-	// Vec3 finalColor = vec3(0,0,0);
-
 	int rayMaxCount = 5;
 	// int rayMaxCount = 3;
-	Vec3 finalColor = castRay(world, vec3(1,1,1), rayPos, rayDir, 0, rayMaxCount, -1);
 
-	buffer[y*dim.w + x] = finalColor;
+	Vec3 finalColor;
+
+	// int samplesPerPixel = 8;
+	int samplesPerPixel = 4;
+
+	if(false) {
+		Vec3 camTopLeft = camera->pos + camRot.dir*camera->dist + (camRot.right*-1)*(camera->dim.w/2.0f) + (camRot.up)*(camera->dim.h/2.0f);
+
+		Vec3 p = camTopLeft;
+		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
+
+		Vec2 centerOffset = vec2((1/(float)texDim.w)/2.0f, (1/(float)texDim.h)/2.0f);
+		percent += centerOffset;
+
+		p += camRot.right * (camera->dim.w * percent.x);
+		p += -camRot.up * (camera->dim.h * percent.y);
+
+		finalColor = castRay(world, vec3(1,1,1), camera->pos, normVec3(p - camera->pos), 0, rayMaxCount, -1);
+	} else {
+
+		Vec3 camTopLeft = camera->pos + camRot.dir*camera->dist + (camRot.right*-1)*(camera->dim.w/2.0f) + (camRot.up)*(camera->dim.h/2.0f);
+		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
+		Vec2 pixelPercent = vec2(1/(float)texDim.w, 1/(float)texDim.h);
+
+		finalColor = vec3(0,0,0);
+		int sampleCount = samplesPerPixel*samplesPerPixel;
+		float fraction = samplesPerPixel*2;
+		for(int i = 0; i < sampleCount; i++) {
+			Vec2 offset = vec2((i%samplesPerPixel)*samplesPerPixel + 1, (i/samplesPerPixel)*samplesPerPixel + 1);
+
+			Vec3 p = camTopLeft;
+			p += camRot.right * (camera->dim.w * percent.x + (pixelPercent.w/fraction)*offset.x);
+			p += -camRot.up   * (camera->dim.h * percent.y + (pixelPercent.h/fraction)*offset.y);
+			finalColor += castRay(world, vec3(1,1,1), camera->pos, normVec3(p - camera->pos), 0, rayMaxCount, -1);
+		}
+		finalColor = finalColor/sampleCount;
+	}
+
+	clampMax(&finalColor.r, 1);
+	clampMax(&finalColor.g, 1);
+	clampMax(&finalColor.b, 1);
+
+	buffer[y*texDim.w + x] = finalColor;
 }
 
 

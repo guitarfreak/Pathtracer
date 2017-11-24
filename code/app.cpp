@@ -5,10 +5,12 @@
 	- Blue noise.
 	- Replace rand().
 	- Better angle calculation.
+	- Better sampling patter.
 
 	Done Today: 
 
 	Bugs:
+	- Black pixels.
 
 =================================================================================
 */
@@ -28,6 +30,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
 #include "external\stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "external\stb_image_write.h"
 
 #define STB_RECT_PACK_IMPLEMENTATION
 #include "external\stb_rect_pack.h"
@@ -471,15 +476,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Vec2i texDim = vec2i(320,180);
 		// Vec2i texDim = vec2i(160,90);
 		// Vec2i texDim = vec2i(8,8);
+		// Vec2i texDim = vec2i(2,2);
 
 		ad->texDim = texDim;
+		ad->keepUpdating = false;
 
 		Texture* texture = &ad->raycastTexture;
 		if(!texture->isCreated || (texDim != texture->dim)) {
 			if(texDim != texture->dim) deleteTexture(texture);
 
-			initTexture(texture, 8, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
-			// initTexture(texture, getMaximumMipmapsFromSize(texDim.w, texDim.h), INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+			// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+			initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
 		}
 
 
@@ -494,7 +501,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		captureMouse(windowHandle, ad->captureMouse, input);
 
-		ad->keepUpdating = false;
 
 
 
@@ -543,7 +549,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			s.type = SHAPE_BOX;
 			s.pos = vec3(0,0,0);
 			// s.dim = vec3(12,12,1);
-			s.dim = vec3(10000,10000,0.01f);
+			s.dim = vec3(10000,10000,0.0001f);
 			s.color = vec3(0.5f);
 			s.reflectionMod = 0.7f;
 			world->shapes[world->shapeCount++] = s;
@@ -556,10 +562,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			s.reflectionMod = 0.7f;
 			world->shapes[world->shapeCount++] = s;
 
-			// s = {};
+			s = {};
 			s.type = SHAPE_BOX;
-			s.pos = vec3(0,-10,1);
-			s.dim = vec3(2,2,2);
+			s.dim = vec3(5,2,0.3f);
+			s.pos = vec3(0,-10,s.dim.z*0.5f + 0.5f);
 			s.color = vec3(0.8f,0.3f,0.5f);
 			s.reflectionMod = 0.9f;
 			world->shapes[world->shapeCount++] = s;
@@ -570,7 +576,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			s.type = SHAPE_SPHERE;
 			float animSpeed = 0.5f;
 			// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
-			s.pos = vec3(8, -2, 1);
+			s.pos = vec3(8, -2, 0);
 			s.r = 4;
 			s.color = vec3(0.3f,0.5f,0.8f);
 			s.reflectionMod = 0.8f;
@@ -610,6 +616,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->buffer = mallocArray(Vec3, texDim.w * texDim.h);
 
 			int threadCount = THREAD_JOB_COUNT;
+			// int threadCount = 1;
 			int pixelCount = texDim.w*texDim.h;
 			int pixelCountPerThread = pixelCount/threadCount;
 			int pixelCountRest = pixelCount % threadCount;
@@ -640,6 +647,26 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing))
 			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
 
+		if(input->keysPressed[KEYCODE_RETURN] && !ad->activeProcessing) {
+			// int stbi_write_png(char const *filename, int w, int h, int comp, const void *data, int stride_in_bytes);
+
+			Vec2i texDim = ad->texDim;
+
+			int size = texDim.w * texDim.h;
+			char* intBuffer = mallocArray(char, size*3);
+
+			Vec3* floatBuffer = ad->buffer;
+			for(int i = 0; i < size; i++) {
+				intBuffer[i*3 + 0] = colorFloatToInt(floatBuffer[i].r);
+				intBuffer[i*3 + 1] = colorFloatToInt(floatBuffer[i].g);
+				intBuffer[i*3 + 2] = colorFloatToInt(floatBuffer[i].b);
+			}
+
+			stbi_write_png("test.png", texDim.w, texDim.h, 3, intBuffer, 0);
+
+			free(intBuffer);
+		}
+
 
 
 		{
@@ -655,6 +682,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 			// tr = rectExpand(tr, vec2(-50));
 			drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
+
+
+			// Draw Info.
+			{
+				Font* font = getFont("OpenSans-Bold.ttf", 20);
+				TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 1.5, vec4(0,0,0,1));
+
+				Vec2 p = rectTR(tr) + vec2(-font->height*0.25f,0);
+				float lh = font->height * 0.8f;
+				drawText(fillString("%i x %i", ad->texDim.x, ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+				drawText(fillString("%i. pixels", ad->texDim.x * ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+				drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
+				drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+			}
 		}
 
 	}
@@ -708,23 +749,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#endif
 
 
-	{
-		Font* font = getFont("OpenSans-Bold.ttf", 20);
-		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 2, vec4(0,0,0,1));
 
-		Rect sr = getScreenRect(ws);
-		Vec2 p = rectTR(sr) + vec2(-font->height*0.2f,0);;
-		float lh = font->height * 0.8f;
-		drawText(fillString("%i x %i", ad->texDim.x, ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%i. pixels", ad->texDim.x * ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		// drawText(fillString("%f", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-		// int asdf = 234;
-		// fillString("a");
-		// getTString(1000);
-	}
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
 
