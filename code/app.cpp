@@ -16,6 +16,7 @@
 
 	Bugs:
 	- Black pixels.
+	- Grid sampling wrong on many samples.
 
 =================================================================================
 */
@@ -475,8 +476,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 		// Vec2i texDim = vec2i(1920*2,1080*2);
-		Vec2i texDim = vec2i(1920,1080);
-		// Vec2i texDim = vec2i(1280,720);
+		// Vec2i texDim = vec2i(1920,1080);
+		Vec2i texDim = vec2i(1280,720);
 		// Vec2i texDim = vec2i(1280/2,720/2);
 		// Vec2i texDim = vec2i(320,180);
 		// Vec2i texDim = vec2i(160,90);
@@ -507,41 +508,37 @@ extern "C" APPMAINFUNCTION(appMain) {
 		captureMouse(windowHandle, ad->captureMouse, input);
 
 
+		{
+			Camera* cam = &ad->world.camera;
 
+			if((!ad->captureMouse && input->mouseButtonDown[0]) || ad->captureMouse) {
+				float speed = 0.1f;
+				
+				cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
+				cam->rot.y += input->mouseDelta.y*speed*ad->dt;
+			}
 
+			Orientation o = getVectorsFromRotation(cam->rot);
+			float speed = 5.0f*ad->dt;
 
+			if(input->keysDown[KEYCODE_W]) cam->pos += o.dir * speed;
+			if(input->keysDown[KEYCODE_S]) cam->pos += -o.dir * speed;
+			if(input->keysDown[KEYCODE_A]) cam->pos += -o.right * speed;
+			if(input->keysDown[KEYCODE_D]) cam->pos += o.right * speed;
+			if(input->keysDown[KEYCODE_E]) cam->pos += vec3(0,0,1) * speed;
+			if(input->keysDown[KEYCODE_Q]) cam->pos += vec3(0,0,-1) * speed;
+
+			cam->dist = 1;
+			float camWidth = cam->dist * 2; // 90 degrees for now.
+			float aspectRatio = (float)texDim.w / texDim.h;
+			cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+		}
 
 		if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
+		// if(false) {
 			ad->activeProcessing = true;
 
 			World* world = &ad->world;
-
-			{
-				Camera* cam = &ad->world.camera;
-
-				if((!ad->captureMouse && input->mouseButtonDown[0]) || ad->captureMouse) {
-					float speed = 0.1f;
-					
-					cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
-					cam->rot.y += input->mouseDelta.y*speed*ad->dt;
-				}
-
-				Orientation o = getVectorsFromRotation(cam->rot);
-				if(input->keysDown[KEYCODE_W]) cam->pos += o.dir;
-				if(input->keysDown[KEYCODE_S]) cam->pos += -o.dir;
-				if(input->keysDown[KEYCODE_A]) cam->pos += -o.right;
-				if(input->keysDown[KEYCODE_D]) cam->pos += o.right;
-				if(input->keysDown[KEYCODE_E]) cam->pos += vec3(0,0,1);
-				if(input->keysDown[KEYCODE_Q]) cam->pos += vec3(0,0,-1);
-
-
-				cam->dist = 1;
-				float camWidth = cam->dist * 2; // 90 degrees for now.
-				float aspectRatio = (float)texDim.w / texDim.h;
-				cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
-			}
-
-
 
 			world->shapeCount = 0;
 			if(init) {
@@ -556,8 +553,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// s.dim = vec3(12,12,1);
 			s.dim = vec3(10000,10000,0.0001f);
 			s.color = vec3(0.5f);
+			// s.color = vec3(0.99f);
 			// s.reflectionMod = 0.3f;
-			s.reflectionMod = 0.7f;
+			s.reflectionMod = 0.5f;
+			// s.reflectionMod = 0.1f;
 			world->shapes[world->shapeCount++] = s;
 
 			s = {};
@@ -613,7 +612,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// world->defaultEmitColor = vec3(0.95f);
 			// world->defaultEmitColor = vec3(0.0f);
 			// world->globalLightDir = normVec3(vec3(1,1,-1));
+			// world->globalLightDir = normVec3(vec3(-1,1,-1));
 			world->globalLightDir = normVec3(vec3(-1,0,-1));
+			// world->globalLightDir = normVec3(vec3(0,0,-1));
 			world->globalLightColor = vec3(1);
 
 
@@ -653,11 +654,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing))
 			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
 
+		// Screenshot.
 		if(input->keysPressed[KEYCODE_RETURN] && !ad->activeProcessing) {
-			// int stbi_write_png(char const *filename, int w, int h, int comp, const void *data, int stride_in_bytes);
-
 			Vec2i texDim = ad->texDim;
-
 			int size = texDim.w * texDim.h;
 			char* intBuffer = mallocArray(char, size*3);
 
@@ -702,11 +701,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 				drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
 				drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 
+				drawText(fillString("cam: %f%f%f", PVEC3(ad->world.camera.pos)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+
 				// Quat q = eulerAnglesToQuat(0,0.1f,0);
 				// Vec3 d = vec3(0,1,0);
 				// d = normVec3(q*d);
 
 				// drawText(fillString("%f,%f,%f\n", PVEC3(d)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+
+
+				// float a = dot(vec3(1,0,0), normVec3(vec3(1,1,0)));
+				// a = dotUnitPercent(vec3(1,0,0), normVec3(vec3(-1,1,0)));
+
+				// drawText(fillString("%f\n", a), p, vec2i(1,1), settings); p += vec2(0,-lh);
 
 			}
 		}
@@ -714,10 +721,106 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 
+	if(false)
 	{
 
 
 		// drawRect(rectCenDim(vec2(100,-100), vec2(100,100)), vec4(1,0,0,1));
+
+		// drawLine(vec3(100,-100,0), vec3(200,-100,0), vec4(1,0,0,1));
+
+		// void glFrustum(	GLdouble left,
+		//  	GLdouble right,
+		//  	GLdouble bottom,
+		//  	GLdouble top,
+		//  	GLdouble nearVal,
+		//  	GLdouble farVal);
+
+
+		Camera* cam = &ad->world.camera;
+		// float camWidth = cam->dist * 2; // 90 degrees for now.
+		// float aspectRatio = (float)texDim.w / texDim.h;
+		// cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+
+		Vec2 d = cam->dim;
+		// glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, 1, 10);
+		// glFrustum(-1,1,-1,1,1,100);
+
+		// glOrtho(-1, 1, -1, 1, -10,10);
+		// glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, -10, 10);
+		float left = -d.w/2.0f;
+
+		// glRotatef(ad->time, 0,0,1);
+
+
+		glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
+
+
+		// void glTranslatef(	GLfloat x,
+		//  	GLfloat y,
+		//  	GLfloat z);
+		// void glRotatef(	GLfloat angle,
+		//  	GLfloat x,
+		//  	GLfloat y,
+		//  	GLfloat z);
+
+		// glTranslatef(-1,-1,-3);
+		glFrustum(-1,1,-1,1,1,100);
+
+
+		glScalef(-1,1,1);
+		// glRotatef(sin(ad->time*2)*10,0,1,0);
+		glRotatef(-cam->rot.x*10,0,1,0);
+
+
+		glTranslatef(cam->pos.x, -cam->pos.z, cam->pos.y);
+		// glTranslatef(cam->pos.x, cam->pos.y, cam->pos.z);
+
+
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
+
+		// glFrustum(-1, 1, -1, 1, -10, 10);
+
+
+
+		// void glScalef(	GLfloat x,
+		//  	GLfloat y,
+		//  	GLfloat z);
+
+		// void glRotatef(	GLfloat angle,
+		//  	GLfloat x,
+		//  	GLfloat y,
+		//  	GLfloat z);
+
+		// void glTranslatef(	GLfloat x,
+		//  	GLfloat y,
+		//  	GLfloat z);
+
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+		Vec4 c = COLOR_SRGB(vec4(1,1,1,1));
+		glColor4f(c.r, c.g, c.b, c.a);
+		glBegin(GL_TRIANGLES);
+			glColor4f(1,0,0,1); glVertex3f(-0.5f,-0.5f,1);
+			glColor4f(0,0,1,1); glVertex3f( 0.5f,-0.5f,1);
+			glColor4f(0,1,0,1); glVertex3f( 0,0.5f,    1);
+		glEnd();
+
+		drawLine(vec3(-10,0,0), vec3(10,0,0), vec4(1,0,0,1));
+		drawLine(vec3(0,-10,0), vec3(0,10,0), vec4(0,1,0,1));
+		drawLine(vec3(0,0,-10), vec3(0,0,10), vec4(0,0,1,1));
+
+
+		// drawLine(vec3(100,-100,0), vec3(200,-100,0), vec4(1,0,0,1));
+		// drawLine(vec3(0,0,0), vec3(1,0,0), vec4(1,0,0,1));
+
+
+		glMatrixMode(GL_PROJECTION);
+		glLoadIdentity();
+		glMatrixMode(GL_MODELVIEW);
+		glLoadIdentity();
 	}
 
 
@@ -760,6 +863,29 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	}
 	#endif
+
+	if(false)
+	{
+		// printf("asdf\n");
+
+		// float sum = 0;
+		// int elements = 100;
+
+		// for(int i = 0; i < elements; i++) sum += randomFloat(-1,1, 0.01f);
+		// printf("sum: %f\n", sum/(float)elements);
+
+		// sum = 0;
+		// for(int i = 0; i < elements; i++) sum += randomFloatPCG(-1,1,0.01f);
+		// printf("sum: %f\n", sum/(float)elements);
+
+
+		Vec3 v = cross(vec3(0,1,0), normVec3(vec3(1,0,0)));
+		printf("%f,%f,%f\n", PVEC3(v));
+		printf("%f\n", lenVec3(v));
+
+
+		exit(0);
+	}
 
 
 

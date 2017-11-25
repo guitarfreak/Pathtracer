@@ -1085,6 +1085,32 @@ void drawCross(Vec2 p, float size, float size2, Vec2 dir, Vec4 color) {
 }
 
 
+// 3D
+
+void drawLine(Vec3 p0, Vec3 p1, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	glBegin(GL_LINES);
+		glVertex3f(p0.x, p0.y, p0.z);
+		glVertex3f(p1.x, p1.y, p1.z);
+	glEnd();
+}
+
+// void drawLine(Vec3 p0, Vec3 p1, Vec4 color) {
+// 	glBindTexture(GL_TEXTURE_2D, 0);
+
+// 	Vec4 c = COLOR_SRGB(color);
+// 	glColor4f(c.r, c.g, c.b, c.a);
+// 	glBegin(GL_QUADS);
+// 		glVertex3f(p0.x, p0.y, p0.z);
+// 		glVertex3f(p1.x, p1.y, p1.z);
+// 	glEnd();
+// }
+
+//
+
 enum TextStatus {
 	TEXTSTATUS_END = 0, 
 	TEXTSTATUS_NEWLINE, 

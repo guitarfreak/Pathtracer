@@ -1,4 +1,6 @@
 
+#include "external\pcg_basic.c"
+
 enum {
 	SHAPE_BOX = 0,
 	SHAPE_SPHERE,
@@ -182,8 +184,8 @@ Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIn
 
 			// Vec3 colorReflection = castRay(world, attenuation, shapeReflectionPos, shapeReflectionDir, rayIndex + 1, rayMaxCount, lastShapeIndex);
 
-			int diffuseRayCount = 4;
-			// int diffuseRayCount = 1;
+			// int diffuseRayCount = 4;
+			int diffuseRayCount = 1;
 			Vec3 colorDiffusion = vec3(0,0,0);
 			for(int i = 0; i < diffuseRayCount; i++) {
 				// Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
@@ -201,7 +203,12 @@ Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIn
 				// Cube discard method.
 				Vec3 randomDir;
 				do {
-					randomDir = vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f));
+					// randomDir = vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f));
+
+					randomDir = vec3(randomFloatPCG(-1,1,0.01f), randomFloatPCG(-1,1,0.01f), randomFloatPCG(-1,1,0.01f));
+
+					// randomDir = shapeReflectionNormal;
+
 				} while(lenVec3(randomDir) > 1);
 				randomDir = normVec3(randomDir);
 				if(randomDir == vec3(0,0,0)) randomDir = shapeReflectionNormal;
@@ -221,31 +228,41 @@ Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIn
 
 
 			finalColor += colorDiffusion;
-
-			// finalColor.r += lerp(s->reflectionMod, colorDiffusion.r, colorReflection.r);
-			// finalColor.g += lerp(s->reflectionMod, colorDiffusion.g, colorReflection.g);
-			// finalColor.b += lerp(s->reflectionMod, colorDiffusion.b, colorReflection.b);
-
 		}
 
 
 	} else {
 
-		// Sky hit.
 
 		if(rayIndex == 0) {
+			// Sky hit.
 			finalColor += world->defaultEmitColor;
 		} else {
 			// finalColor += attenuation * defaultEmitColor;
 
 			float lightDot = dot(rayDir, -world->globalLightDir);
-			// lightDot = clampMin(lightDot, 0);
+			lightDot = clampMin(lightDot, 0);
+			lightDot = dotUnitToPercent(lightDot);
 			Vec3 light = world->globalLightColor * lightDot;
 
-			// finalColor += attenuation * (world->defaultEmitColor + light);
-			finalColor += attenuation * light;
-			finalColor += attenuation * world->defaultEmitColor;
+			finalColor += attenuation * (world->defaultEmitColor + light);
+			// finalColor += attenuation * light;
+			// finalColor += attenuation * world->defaultEmitColor;
 		}
+
+
+		// // if(rayIndex == 0) {
+		// 	// finalColor += world->defaultEmitColor;
+		// // } else {
+		// 	// float lightDot = dot(rayDir, -world->globalLightDir);
+		// 	// lightDot = clampMin(lightDot, 0);
+		// 	// Vec3 light = world->globalLightColor * lightDot;
+
+		// 	// finalColor += attenuation * (world->defaultEmitColor + light);
+		// 	// finalColor += attenuation * light;
+		// 	finalColor += attenuation * world->defaultEmitColor;
+		// // }
+
 	}
 
 	return finalColor;
@@ -277,17 +294,19 @@ void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffe
 	int rayMaxCount = 5;
 	// int rayMaxCount = 3;
 
-	bool sampleModeFixedGrid = false; // Grid or MSAA.
+	bool sampleModeFixedGrid = true; // Grid or MSAA.
 	// int sampleCount = 1;
-	// int sampleCount = pow(2,2);
+	int sampleCount = pow(32,2);
+	// int sampleCount = pow(4,2);
 	// int sampleCount = 4;
-	int sampleCount = 8;
+	// int sampleCount = 8;
 
-	myAssert(sampleCount <= 8*8);
+	// myAssert(sampleCount <= 8*8);
 
-	Vec2 samples[8*8];
+	Vec2 samples[32*32];
 	if(sampleModeFixedGrid) {
-		int sampleCount2 = sampleCount/2;
+		// int sampleCount2 = sampleCount/2;
+		int sampleCount2 = sqrt(sampleCount);
 		for(int i = 0; i < sampleCount; i++) {
 			samples[i] = vec2(((i%sampleCount2)*sampleCount2 + 1) / (float)sampleCount, 
 			                  ((i/sampleCount2)*sampleCount2 + 1) / (float)sampleCount);
@@ -322,6 +341,33 @@ void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffe
 	buffer[y*texDim.w + x] = finalColor;
 }
 
+struct ProcessPixelsData {
+	World* world;
+	Vec2i dim;
+	int pixelIndex;
+	int pixelCount;
+	Vec3* buffer;
+};
+	
+void processPixelsThreaded(void* data) {
+	ProcessPixelsData* d = (ProcessPixelsData*)data;
+
+	int totalPixelCount = d->dim.w * d->dim.h;
+	for(int i = d->pixelIndex; i < d->pixelIndex+d->pixelCount; i++) {
+
+		if(i >= totalPixelCount) break;
+
+		int y = i / d->dim.w;
+		int x = i % d->dim.w;
+
+		// processPixel(d->world, d->dim, x, y, d->buffer);
+		processPixelRecursive(d->world, d->dim, x, y, d->buffer);
+	}
+
+}
+
+
+#if 0
 void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 
 	float pixelPercent = (float)1/dim.w;
@@ -452,28 +498,4 @@ void processPixel(World* world, Vec2i dim, int x, int y, Vec3* buffer) {
 
 	buffer[y*dim.w + x] = finalColor;
 }
-
-struct ProcessPixelsData {
-	World* world;
-	Vec2i dim;
-	int pixelIndex;
-	int pixelCount;
-	Vec3* buffer;
-};
-	
-void processPixelsThreaded(void* data) {
-	ProcessPixelsData* d = (ProcessPixelsData*)data;
-
-	int totalPixelCount = d->dim.w * d->dim.h;
-	for(int i = d->pixelIndex; i < d->pixelIndex+d->pixelCount; i++) {
-
-		if(i >= totalPixelCount) break;
-
-		int y = i / d->dim.w;
-		int x = i % d->dim.w;
-
-		// processPixel(d->world, d->dim, x, y, d->buffer);
-		processPixelRecursive(d->world, d->dim, x, y, d->buffer);
-	}
-
-}
+#endif 

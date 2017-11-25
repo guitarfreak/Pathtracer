@@ -2004,6 +2004,12 @@ inline float dot(Vec3 a, Vec3 b) {
 	return result;
 }
 
+// A and B assumed to be unit vectors.
+inline float dotUnitToPercent(float dotProduct) {
+	float result = 1 - acos(dotProduct)/M_PI_2;
+	return result;
+}
+
 inline Vec3 cross(Vec3 a, Vec3 b) {
 	Vec3 result;
 	result.x = a.y*b.z - a.z*b.y;
