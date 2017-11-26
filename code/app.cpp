@@ -160,23 +160,24 @@ struct AppData {
 
 	// 
 
-	bool keepUpdating;
-
-	Vec2i texDim;
-
 	World world;
+	RaytraceSettings settings;
 	Vec3* buffer;
 	Texture raycastTexture;
-	bool activeProcessing;
+	Rect textureScreenRect;
 
+	bool activeProcessing;
+	bool keepUpdating;
+	bool drawSceneWired;
+
+	int threadCount;
 	ProcessPixelsData threadData[THREAD_JOB_COUNT];
+	bool waitingForThreadStop;
 
 	f64 processStartTime;
 	f64 processTime;
 
-	Rect textureScreenRect;
-
-	bool drawSceneWired;
+	int texFastMode;
 };
 
 
@@ -372,7 +373,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 
-
+		pcg32_srandom(0, __rdtsc());
 	}
 
 
@@ -475,34 +476,52 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 	{
+		// ad->settings.texDim = vec2i(1920*2,1080*2);
+		// ad->settings.texDim = vec2i(1920,1080);
+		// ad->settings.texDim = vec2i(1280,720);
+		// ad->settings.texDim = vec2i(1280/2,720/2);
+		// ad->settings.texDim = vec2i(320,180);
+		// ad->settings.texDim = vec2i(160,90);
+		// ad->settings.texDim = vec2i(8,8);
+		// ad->settings.texDim = vec2i(2,2);
 
+		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
+		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
+		ad->settings.sampleMode = SAMPLE_MODE_GRID;
+		ad->settings.sampleCount = 8;
+		ad->settings.rayBouncesMax = 6;
 
-
-		// Vec2i texDim = vec2i(1920*2,1080*2);
-		// Vec2i texDim = vec2i(1920,1080);
-		Vec2i texDim = vec2i(1280,720);
-		// Vec2i texDim = vec2i(1280/2,720/2);
-		// Vec2i texDim = vec2i(320,180);
-		// Vec2i texDim = vec2i(160,90);
-		// Vec2i texDim = vec2i(8,8);
-		// Vec2i texDim = vec2i(2,2);
-
-		ad->texDim = texDim;
 		ad->keepUpdating = false;
 
-		Texture* texture = &ad->raycastTexture;
-		if(!texture->isCreated || (texDim != texture->dim)) {
-			if(texDim != texture->dim) deleteTexture(texture);
+		ad->threadCount = THREAD_JOB_COUNT;
+		// ad->threadCount = 1;
 
-			// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
-			initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+		if(init) {
+			ad->drawSceneWired = true;
 
-			Texture* t = &ad->raycastTexture;
-			Vec3 black = vec3(0.2f);
-			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
+			{
+				int count = 20000;
+
+				ad->settings.randomDirectionCount = count;
+				ad->settings.randomDirections = mallocArray(Vec3, count);
+				float precision = 0.001f;
+
+				for(int i = 0; i < count; i++) {
+
+					// Cube discard method.
+
+					Vec3 randomDir;
+					do {
+						randomDir = vec3(randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision));
+					} while(lenVec3(randomDir) > 1);
+					randomDir = normVec3(randomDir);
+					if(randomDir == vec3(0,0,0)) randomDir = vec3(1,0,0);
+
+					ad->settings.randomDirections[i] = randomDir;
+				}
+			}
 		}
-
 
 		// if(init || reload) {
 		if(init) {
@@ -515,11 +534,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->captureMouse = !ad->captureMouse;
 		}
 
-		ad->fpsMode = ad->captureMouse && windowHasFocus(windowHandle);
-		// printf("%i\n", windowHasFocus(windowHandle));
-		if(ad->fpsMode) captureMouse(windowHandle, ad->captureMouse, input);
-
 		{
+			ad->fpsMode = ad->captureMouse && windowHasFocus(windowHandle);
+			if(ad->fpsMode) captureMouse(windowHandle, ad->captureMouse, input);
+
 			Camera* cam = &ad->world.camera;
 
 			if((!ad->fpsMode && input->mouseButtonDown[0]) || ad->fpsMode) {
@@ -548,127 +566,176 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			cam->dist = 1;
 			float camWidth = cam->dist * 2; // 90 degrees for now.
-			float aspectRatio = (float)texDim.w / texDim.h;
+			float aspectRatio = (float)ad->settings.texDim.w / ad->settings.texDim.h;
 			cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
+		}
+
+		{
+			Texture* texture = &ad->raycastTexture;
+			Vec2i texDim = ad->settings.texDim;
+			if(!texture->isCreated || (texDim != texture->dim)) {
+				if(texDim != texture->dim) deleteTexture(texture);
+
+				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+
+				Texture* t = &ad->raycastTexture;
+				Vec3 black = vec3(0.2f);
+				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
+			}
 		}
 
 		{
 			World* world = &ad->world;
 
-			world->shapeCount = 0;
+
+
 			if(init) {
-				world->shapes = getPArray(Shape, 100);
 
-				const int count = 20000;
-				world->randomDirectionCount = count;
-				world->randomDirections = mallocArray(Vec3, count);
-				float precision = 0.001f;
+				// Old scene.
+				#if 0
+				Shape s;
 
+				s = {};
+				s.type = SHAPE_BOX;
+				s.pos = vec3(0,0,0);
+				// s.dim = vec3(12,12,1);
+				s.dim = vec3(10000,10000,0.0001f);
+				s.color = vec3(0.5f);
+				// s.color = vec3(0.99f);
+				// s.reflectionMod = 0.3f;
+				s.reflectionMod = 0.5f;
+				// s.reflectionMod = 0.1f;
+				world->shapes[world->shapeCount++] = s;
+
+				s = {};
+				s.type = SHAPE_BOX;
+				s.pos = vec3(-15,2,0);
+				s.dim = vec3(1,10,50);
+				s.color = vec3(0,0.8f,0.5f);
+				s.reflectionMod = 0.7f;
+				world->shapes[world->shapeCount++] = s;
+
+				s = {};
+				s.type = SHAPE_BOX;
+				s.dim = vec3(5,2,0.3f);
+				s.pos = vec3(0,-10,s.dim.z*0.5f + 0.5f);
+				s.color = vec3(0.8f,0.3f,0.5f);
+				s.reflectionMod = 0.9f;
+				world->shapes[world->shapeCount++] = s;
+
+				s = {};
+				s.type = SHAPE_BOX;
+				s.dim = vec3(1,1,1);
+				s.pos = vec3(0,0,0);
+				s.color = vec3(0,0,0);
+				s.reflectionMod = 0.1f;
+				world->shapes[world->shapeCount++] = s;
+
+
+				s = {};
+				s.type = SHAPE_SPHERE;
+				float animSpeed = 0.5f;
+				// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
+				s.pos = vec3(8, -2, 0);
+				s.r = 4;
+				s.color = vec3(0.3f,0.5f,0.8f);
+				s.reflectionMod = 0.8f;
+				world->shapes[world->shapeCount++] = s;
+
+				s = {};
+				s.type = SHAPE_SPHERE;
+				s.pos = vec3(-8,0,1);
+				s.r = 2;
+				s.color = vec3(0.0f);
+				s.emitColor = vec3(2,0,0);
+				s.reflectionMod = 1;
+				world->shapes[world->shapeCount++] = s;
+
+				s = {};
+				s.type = SHAPE_SPHERE;
+				Vec3 animRange = vec3(5,5,5);
+				// s.pos = vec3(-2 + animRange.x*sin(ad->time*animSpeed), 20 + animRange.y*cos(ad->time*animSpeed) , 10 + animRange.z*cos(ad->time*animSpeed*0.5f));
+				s.pos = vec3(-2,20,10);
+				s.r = 8;
+				s.color = vec3(0.5f);
+				s.emitColor = vec3(0.0f);
+				s.reflectionMod = 1;
+				world->shapes[world->shapeCount++] = s;
+				#endif
+
+				world->shapeCount = 0;
+				world->shapes = getPArray(Shape, 1000);
+
+				int count = 30;
+				float r = 10;
+				Vec3 offset = vec3(0,0,r);
 				for(int i = 0; i < count; i++) {
+					int type = randomIntPCG(0, SHAPE_COUNT-1);
+					Vec3 pos = vec3(randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r,r,0.01f));
+					pos += offset;
+					float size = randomFloatPCG(1,5,0.01f);
 
-					// Cube discard method.
-					Vec3 randomDir;
-					do {
-						randomDir = vec3(randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision));
-					} while(lenVec3(randomDir) > 1);
-					randomDir = normVec3(randomDir);
-					if(randomDir == vec3(0,0,0)) randomDir = vec3(1,0,0);
+					bool emitter = randomIntPCG(0,1);
+					Vec3 c = vec3(randomFloatPCG(0,1,0.01f), randomFloatPCG(0,1,0.01f), randomFloatPCG(0,1,0.01f));
+					float rm = randomFloatPCG(0,1,0.01f);
 
-					world->randomDirections[i] = randomDir;
+					Shape s = {};
+
+					s.type = type;
+					s.pos = pos;
+					if(type == SHAPE_SPHERE) s.r = size/2.0f;
+					else if(type == SHAPE_BOX) s.dim = vec3(size/2.0f);
+					s.color = c;
+					if(emitter) s.emitColor = c;
+					else s.color = c;
+					s.reflectionMod = rm;
+
+					world->shapes[world->shapeCount++] = s;
 				}
+
+				Shape s = {};
+				s.type = SHAPE_BOX;
+				s.pos = vec3(0,0,0);
+				// s.dim = vec3(12,12,1);
+				s.dim = vec3(10000,10000,0.0001f);
+				s.color = vec3(0.5f);
+				// s.color = vec3(0.99f);
+				// s.reflectionMod = 0.3f;
+				s.reflectionMod = 0.5f;
+				// s.reflectionMod = 0.1f;
+				world->shapes[world->shapeCount++] = s;
+
+
+				world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
+				// world->defaultEmitColor = vec3(0.1f);
+				// world->defaultEmitColor = vec3(0.95f);
+				// world->defaultEmitColor = vec3(0.0f);
+				// world->globalLightDir = normVec3(vec3(1,1,-1));
+				// world->globalLightDir = normVec3(vec3(-1,1,-1));
+				world->globalLightDir = normVec3(vec3(-1,0,-1));
+				// world->globalLightDir = normVec3(vec3(0,0,-1));
+				world->globalLightColor = vec3(1);
 			}
 
-			Shape s;
-
-			s = {};
-			s.type = SHAPE_BOX;
-			s.pos = vec3(0,0,0);
-			// s.dim = vec3(12,12,1);
-			s.dim = vec3(10000,10000,0.0001f);
-			s.color = vec3(0.5f);
-			// s.color = vec3(0.99f);
-			// s.reflectionMod = 0.3f;
-			s.reflectionMod = 0.5f;
-			// s.reflectionMod = 0.1f;
-			world->shapes[world->shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_BOX;
-			s.pos = vec3(-15,2,0);
-			s.dim = vec3(1,10,50);
-			s.color = vec3(0,0.8f,0.5f);
-			s.reflectionMod = 0.7f;
-			world->shapes[world->shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_BOX;
-			s.dim = vec3(5,2,0.3f);
-			s.pos = vec3(0,-10,s.dim.z*0.5f + 0.5f);
-			s.color = vec3(0.8f,0.3f,0.5f);
-			s.reflectionMod = 0.9f;
-			world->shapes[world->shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_BOX;
-			s.dim = vec3(1,1,1);
-			s.pos = vec3(0,0,0);
-			s.color = vec3(0,0,0);
-			s.reflectionMod = 0.1f;
-			world->shapes[world->shapeCount++] = s;
-
-
-			s = {};
-			s.type = SHAPE_SPHERE;
-			float animSpeed = 0.5f;
-			// s.pos = vec3(6*sin(ad->time*animSpeed), 3*cos(ad->time*animSpeed) , 7 + 1*cos(ad->time*animSpeed*0.5f));
-			s.pos = vec3(8, -2, 0);
-			s.r = 4;
-			s.color = vec3(0.3f,0.5f,0.8f);
-			s.reflectionMod = 0.8f;
-			world->shapes[world->shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_SPHERE;
-			s.pos = vec3(-8,0,1);
-			s.r = 2;
-			s.color = vec3(0.0f);
-			s.emitColor = vec3(2,0,0);
-			s.reflectionMod = 1;
-			world->shapes[world->shapeCount++] = s;
-
-			s = {};
-			s.type = SHAPE_SPHERE;
-			Vec3 animRange = vec3(5,5,5);
-			// s.pos = vec3(-2 + animRange.x*sin(ad->time*animSpeed), 20 + animRange.y*cos(ad->time*animSpeed) , 10 + animRange.z*cos(ad->time*animSpeed*0.5f));
-			s.pos = vec3(-2,20,10);
-			s.r = 8;
-			s.color = vec3(0.5f);
-			s.emitColor = vec3(0.0f);
-			s.reflectionMod = 1;
-			world->shapes[world->shapeCount++] = s;
-
-
-			world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-			// world->defaultEmitColor = vec3(0.95f);
-			// world->defaultEmitColor = vec3(0.0f);
-			// world->globalLightDir = normVec3(vec3(1,1,-1));
-			// world->globalLightDir = normVec3(vec3(-1,1,-1));
-			world->globalLightDir = normVec3(vec3(-1,0,-1));
-			// world->globalLightDir = normVec3(vec3(0,0,-1));
-			world->globalLightColor = vec3(1);
 		}
 
-		if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
+		// if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
+		if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating) && (ad->activeProcessing == false)) {
 		// if(false) {
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
 
-			if(ad->buffer != 0) free(ad->buffer);
-			ad->buffer = mallocArray(Vec3, texDim.w * texDim.h);
+			Texture* t = &ad->raycastTexture;
+			Vec3 black = vec3(0.2f);
+			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
 
-			int threadCount = THREAD_JOB_COUNT;
+			int pixelCount = ad->settings.texDim.w*ad->settings.texDim.h;
+			if(ad->buffer != 0) free(ad->buffer);
+			ad->buffer = mallocArray(Vec3, pixelCount);
+
+			int threadCount = ad->threadCount;
 			// int threadCount = 1;
-			int pixelCount = texDim.w*texDim.h;
 			int pixelCountPerThread = pixelCount/threadCount;
 			int pixelCountRest = pixelCount % threadCount;
 
@@ -678,7 +745,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				data->pixelIndex = i*pixelCountPerThread;
 				data->pixelCount = i < threadCount-1 ? pixelCountPerThread : pixelCountPerThread + pixelCountRest;
 				data->world = &ad->world;
-				data->dim = texDim;
+				data->settings = &ad->settings;
 				data->buffer = ad->buffer;
 
 				threadQueueAdd(globalThreadQueue, processPixelsThreaded, data);
@@ -696,11 +763,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing))
-			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, texDim.w, texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
+			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
 
 		// Screenshot.
 		if(input->keysPressed[KEYCODE_RETURN] && !ad->activeProcessing) {
-			Vec2i texDim = ad->texDim;
+			Vec2i texDim = ad->settings.texDim;
 			int size = texDim.w * texDim.h;
 			char* intBuffer = mallocArray(char, size*3);
 
@@ -716,30 +783,45 @@ extern "C" APPMAINFUNCTION(appMain) {
 			free(intBuffer);
 		}
 
+		if(input->keysPressed[KEYCODE_1]) ad->texFastMode = 0;
+		if(input->keysPressed[KEYCODE_2]) ad->texFastMode = 1;
+		if(input->keysPressed[KEYCODE_3]) ad->texFastMode = 2;
+		if(input->keysPressed[KEYCODE_4]) ad->texFastMode = 3;
+		if(input->keysPressed[KEYCODE_5]) ad->texFastMode = 4;
+
 
 
 		{
-			Vec2 texDim = vec2(ad->raycastTexture.dim);
 
 			Rect sr = getScreenRect(ws);
 			Rect tr = sr;
 			Vec2 sd = rectDim(sr);
+			Vec2 texDim = vec2(ad->raycastTexture.dim);
 			if(((float)texDim.h / texDim.w) > (sd.h / sd.w)) {
 				tr = rectSetW(tr, ((float)texDim.w / texDim.h)*sd.h);
 			} else {
 				tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
 			}
-			ad->textureScreenRect = tr;
-			// tr = rectExpand(tr, vec2(-50));
+
 			glDepthMask(false);
 			drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
 			glDepthMask(true);
+
+			ad->textureScreenRect = tr;
 		}
 
 		if(input->keysPressed[KEYCODE_R]) {
+			for(int i = 0; i < ad->threadCount; i++) ad->threadData[i].stopProcessing = true;
+			ad->waitingForThreadStop = true;
+		}
+
+		if(ad->waitingForThreadStop && threadQueueFinished(threadQueue)) {
+			ad->waitingForThreadStop = false;
+
 			Texture* t = &ad->raycastTexture;
 			Vec3 black = vec3(0.2f);
 			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
+			zeroMemory(ad->buffer, ad->raycastTexture.dim.w*ad->raycastTexture.dim.h*sizeof(Vec3));
 
 			ad->drawSceneWired = true;
 		}
@@ -874,12 +956,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Font* font = getFont("OpenSans-Bold.ttf", 20);
 		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 1.5, vec4(0,0,0,1));
 
+		Vec2i texDim = ad->settings.texDim;
+
 		Vec2 p = rectTR(tr) + vec2(-font->height*0.25f,0);
 		float lh = font->height * 0.8f;
-		drawText(fillString("%i x %i", ad->texDim.x, ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%i. pixels", ad->texDim.x * ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%i x %i", texDim.x, texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%i. pixels", texDim.x * texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%fms per pixel", (float)(ad->processTime/(texDim.x*texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 
 		drawText(fillString("cpos: %f,%f,%f", PVEC3(ad->world.camera.pos)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("crot: %f,%f,%f", PVEC3(ad->world.camera.rot)), p, vec2i(1,1), settings); p += vec2(0,-lh);

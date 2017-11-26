@@ -173,3 +173,10 @@ int threadIdToIndex(ThreadQueue* queue, int id) {
 
 	return -1;
 }
+
+// Not working.
+void threadQueueClear(ThreadQueue* queue) {
+    while(WaitForSingleObjectEx(queue->semaphore, 0, FALSE));
+    queue->readIndex = queue->writeIndex;
+    queue->completionCount = queue->completionGoal;
+}
