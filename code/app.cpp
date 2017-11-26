@@ -153,6 +153,7 @@ struct AppData {
 	Vec2i frameBufferSize;
 
 	bool captureMouse;
+	bool fpsMode;
 
 	// App.
 
@@ -173,6 +174,8 @@ struct AppData {
 
 	f64 processStartTime;
 	f64 processTime;
+
+	Rect textureScreenRect;
 };
 
 
@@ -477,15 +480,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Vec2i texDim = vec2i(1920*2,1080*2);
 		// Vec2i texDim = vec2i(1920,1080);
-		Vec2i texDim = vec2i(1280,720);
+		// Vec2i texDim = vec2i(1280,720);
 		// Vec2i texDim = vec2i(1280/2,720/2);
-		// Vec2i texDim = vec2i(320,180);
+		Vec2i texDim = vec2i(320,180);
 		// Vec2i texDim = vec2i(160,90);
 		// Vec2i texDim = vec2i(8,8);
 		// Vec2i texDim = vec2i(2,2);
 
 		ad->texDim = texDim;
-		// ad->keepUpdating = true;
+		ad->keepUpdating = true;
 
 		Texture* texture = &ad->raycastTexture;
 		if(!texture->isCreated || (texDim != texture->dim)) {
@@ -498,6 +501,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		if(init || reload) {
 			ad->world.camera.pos = vec3(0, -20, 4);
+			// ad->world.camera.pos = vec3(1, -1, -3);
 			ad->world.camera.rot = vec3(0, 0, 0);
 		}
 
@@ -505,22 +509,30 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->captureMouse = !ad->captureMouse;
 		}
 
-		captureMouse(windowHandle, ad->captureMouse, input);
-
+		ad->fpsMode = ad->captureMouse && windowHasFocus(windowHandle);
+		// printf("%i\n", windowHasFocus(windowHandle));
+		if(ad->fpsMode) captureMouse(windowHandle, ad->captureMouse, input);
 
 		{
 			Camera* cam = &ad->world.camera;
 
-			if((!ad->captureMouse && input->mouseButtonDown[0]) || ad->captureMouse) {
+			if((!ad->fpsMode && input->mouseButtonDown[0]) || ad->fpsMode) {
 				float speed = 0.1f;
 				
 				cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
 				cam->rot.y += input->mouseDelta.y*speed*ad->dt;
+				clamp(&cam->rot.y, -M_PI_2 + 0.001f, M_PI_2 - 0.001f);
 			}
 
 			Orientation o = getVectorsFromRotation(cam->rot);
 			float speed = 5.0f*ad->dt;
 
+			if(input->keysDown[KEYCODE_SHIFT]) {
+				speed *= 2;
+				// if(input->keysDown[KEYCODE_CTRL]) speed *= 2;
+			}
+
+			if(input->keysDown[KEYCODE_CTRL]) o.dir = normVec3(cross(vec3(0,0,1), o.right));
 			if(input->keysDown[KEYCODE_W]) cam->pos += o.dir * speed;
 			if(input->keysDown[KEYCODE_S]) cam->pos += -o.dir * speed;
 			if(input->keysDown[KEYCODE_A]) cam->pos += -o.right * speed;
@@ -575,6 +587,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			s.reflectionMod = 0.9f;
 			world->shapes[world->shapeCount++] = s;
 
+			s = {};
+			s.type = SHAPE_BOX;
+			s.dim = vec3(1,1,1);
+			s.pos = vec3(0,0,0);
+			s.color = vec3(0,0,0);
+			s.reflectionMod = 0.1f;
+			world->shapes[world->shapeCount++] = s;
 
 
 			s = {};
@@ -685,142 +704,61 @@ extern "C" APPMAINFUNCTION(appMain) {
 			} else {
 				tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
 			}
+			ad->textureScreenRect = tr;
 			// tr = rectExpand(tr, vec2(-50));
+			glDepthMask(false);
 			drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
+			glDepthMask(true);
 
 
-			// Draw Info.
-			{
-				Font* font = getFont("OpenSans-Bold.ttf", 20);
-				TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 1.5, vec4(0,0,0,1));
-
-				Vec2 p = rectTR(tr) + vec2(-font->height*0.25f,0);
-				float lh = font->height * 0.8f;
-				drawText(fillString("%i x %i", ad->texDim.x, ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
-				drawText(fillString("%i. pixels", ad->texDim.x * ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
-				drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
-				drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-				drawText(fillString("cam: %f%f%f", PVEC3(ad->world.camera.pos)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-				// Quat q = eulerAnglesToQuat(0,0.1f,0);
-				// Vec3 d = vec3(0,1,0);
-				// d = normVec3(q*d);
-
-				// drawText(fillString("%f,%f,%f\n", PVEC3(d)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-
-				// float a = dot(vec3(1,0,0), normVec3(vec3(1,1,0)));
-				// a = dotUnitPercent(vec3(1,0,0), normVec3(vec3(-1,1,0)));
-
-				// drawText(fillString("%f\n", a), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-			}
 		}
 
 	}
 
 
-	if(false)
+	if(true)
 	{
-
-
-		// drawRect(rectCenDim(vec2(100,-100), vec2(100,100)), vec4(1,0,0,1));
-
-		// drawLine(vec3(100,-100,0), vec3(200,-100,0), vec4(1,0,0,1));
-
-		// void glFrustum(	GLdouble left,
-		//  	GLdouble right,
-		//  	GLdouble bottom,
-		//  	GLdouble top,
-		//  	GLdouble nearVal,
-		//  	GLdouble farVal);
-
-
 		Camera* cam = &ad->world.camera;
-		// float camWidth = cam->dist * 2; // 90 degrees for now.
-		// float aspectRatio = (float)texDim.w / texDim.h;
-		// cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
-
 		Vec2 d = cam->dim;
-		// glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, 1, 10);
-		// glFrustum(-1,1,-1,1,1,100);
 
-		// glOrtho(-1, 1, -1, 1, -10,10);
-		// glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, -10, 10);
-		float left = -d.w/2.0f;
-
-		// glRotatef(ad->time, 0,0,1);
-
+		Rect tr = ad->textureScreenRect;
+		glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
 
 		glMatrixMode(GL_PROJECTION);
+		glPushMatrix();
 		glLoadIdentity();
-
-
-		// void glTranslatef(	GLfloat x,
-		//  	GLfloat y,
-		//  	GLfloat z);
-		// void glRotatef(	GLfloat angle,
-		//  	GLfloat x,
-		//  	GLfloat y,
-		//  	GLfloat z);
-
-		// glTranslatef(-1,-1,-3);
-		glFrustum(-1,1,-1,1,1,100);
-
-
-		glScalef(-1,1,1);
-		// glRotatef(sin(ad->time*2)*10,0,1,0);
-		glRotatef(-cam->rot.x*10,0,1,0);
-
-
-		glTranslatef(cam->pos.x, -cam->pos.z, cam->pos.y);
-		// glTranslatef(cam->pos.x, cam->pos.y, cam->pos.z);
-
+		glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, cam->dist, 100);
 
 		glMatrixMode(GL_MODELVIEW);
+		glPushMatrix();
 		glLoadIdentity();
 
-		// glFrustum(-1, 1, -1, 1, -10, 10);
+		Orientation o = getVectorsFromRotation(cam->rot);
+		Mat4 vm = viewMatrix(cam->pos, o.dir, o.up, o.right);
+		rowToColumn(&vm);
+		glLoadMatrixf(vm.e);
 
 
-
-		// void glScalef(	GLfloat x,
-		//  	GLfloat y,
-		//  	GLfloat z);
-
-		// void glRotatef(	GLfloat angle,
-		//  	GLfloat x,
-		//  	GLfloat y,
-		//  	GLfloat z);
-
-		// void glTranslatef(	GLfloat x,
-		//  	GLfloat y,
-		//  	GLfloat z);
-
-
+		glEnable(GL_DEPTH_TEST);
 		glBindTexture(GL_TEXTURE_2D, 0);
-		Vec4 c = COLOR_SRGB(vec4(1,1,1,1));
-		glColor4f(c.r, c.g, c.b, c.a);
-		glBegin(GL_TRIANGLES);
-			glColor4f(1,0,0,1); glVertex3f(-0.5f,-0.5f,1);
-			glColor4f(0,0,1,1); glVertex3f( 0.5f,-0.5f,1);
-			glColor4f(0,1,0,1); glVertex3f( 0,0.5f,    1);
-		glEnd();
 
-		drawLine(vec3(-10,0,0), vec3(10,0,0), vec4(1,0,0,1));
-		drawLine(vec3(0,-10,0), vec3(0,10,0), vec4(0,1,0,1));
-		drawLine(vec3(0,0,-10), vec3(0,0,10), vec4(0,0,1,1));
+		{
+			float l = 100;
+			drawLine(vec3(-l,0,0), vec3(0,0,0), vec4(1,0,0,1));
+			drawLine(vec3(0,0,0), vec3(l,0,0), vec4(1,0.5f,0.5f,1));
+			drawLine(vec3(0,-l,0), vec3(0,0,0), vec4(0,1,0,1));
+			drawLine(vec3(0,0,0), vec3(0,l,0), vec4(0.5f,1,0.5f,1));
+			drawLine(vec3(0,0,-l), vec3(0,0,0), vec4(0,0,1,1));
+			drawLine(vec3(0,0,0), vec3(0,0,l), vec4(0.5f,0.5f,1,1));
+		}
 
+		// drawBox(vec3(0,0,0), vec3(0.5f), vec4(1,0,0,1));
+		// drawBox(vec3(0,0,0), vec3(1.0f), vec4(1,0,0,1));
+		// drawBox(vec3(10,0,0), vec3(1,1,1), vec4(1,0,0,1));
 
-		// drawLine(vec3(100,-100,0), vec3(200,-100,0), vec4(1,0,0,1));
-		// drawLine(vec3(0,0,0), vec3(1,0,0), vec4(1,0,0,1));
-
-
-		glMatrixMode(GL_PROJECTION);
-		glLoadIdentity();
-		glMatrixMode(GL_MODELVIEW);
-		glLoadIdentity();
+		glMatrixMode(GL_PROJECTION); glPopMatrix();
+		glMatrixMode(GL_MODELVIEW); glPopMatrix();
+		glDisable(GL_DEPTH_TEST);
 	}
 
 
@@ -864,30 +802,38 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
-	if(false)
+
+
+
+	// Draw Info.
 	{
-		// printf("asdf\n");
+		Rect tr = ad->textureScreenRect;
+		Font* font = getFont("OpenSans-Bold.ttf", 20);
+		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 1.5, vec4(0,0,0,1));
 
-		// float sum = 0;
-		// int elements = 100;
+		Vec2 p = rectTR(tr) + vec2(-font->height*0.25f,0);
+		float lh = font->height * 0.8f;
+		drawText(fillString("%i x %i", ad->texDim.x, ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%i. pixels", ad->texDim.x * ad->texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%fms per pixel", (float)(ad->processTime/(ad->texDim.x*ad->texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 
-		// for(int i = 0; i < elements; i++) sum += randomFloat(-1,1, 0.01f);
-		// printf("sum: %f\n", sum/(float)elements);
+		drawText(fillString("cpos: %f,%f,%f", PVEC3(ad->world.camera.pos)), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("crot: %f,%f,%f", PVEC3(ad->world.camera.rot)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 
-		// sum = 0;
-		// for(int i = 0; i < elements; i++) sum += randomFloatPCG(-1,1,0.01f);
-		// printf("sum: %f\n", sum/(float)elements);
+		// Quat q = eulerAnglesToQuat(0,0.1f,0);
+		// Vec3 d = vec3(0,1,0);
+		// d = normVec3(q*d);
 
-
-		Vec3 v = cross(vec3(0,1,0), normVec3(vec3(1,0,0)));
-		printf("%f,%f,%f\n", PVEC3(v));
-		printf("%f\n", lenVec3(v));
+		// drawText(fillString("%f,%f,%f\n", PVEC3(d)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 
 
-		exit(0);
+		// float a = dot(vec3(1,0,0), normVec3(vec3(1,1,0)));
+		// a = dotUnitPercent(vec3(1,0,0), normVec3(vec3(-1,1,0)));
+
+		// drawText(fillString("%f\n", a), p, vec2i(1,1), settings); p += vec2(0,-lh);
+
 	}
-
-
 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);

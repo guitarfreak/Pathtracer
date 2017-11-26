@@ -294,12 +294,12 @@ void processPixelRecursive(World* world, Vec2i texDim, int x, int y, Vec3* buffe
 	int rayMaxCount = 5;
 	// int rayMaxCount = 3;
 
-	bool sampleModeFixedGrid = true; // Grid or MSAA.
+	bool sampleModeFixedGrid = false; // Grid or MSAA.
 	// int sampleCount = 1;
-	int sampleCount = pow(32,2);
+	// int sampleCount = pow(32,2);
 	// int sampleCount = pow(4,2);
 	// int sampleCount = 4;
-	// int sampleCount = 8;
+	int sampleCount = 8;
 
 	// myAssert(sampleCount <= 8*8);
 

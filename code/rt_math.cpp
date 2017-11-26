@@ -2478,9 +2478,10 @@ inline Mat4 translationMatrix(Vec3 a) {
 }
 
 inline void viewMatrix(Mat4* m, Vec3 cPos, Vec3 cLook, Vec3 cUp, Vec3 cRight) {
+	// Bug: Why does look have to be negated?
 	*m = {	cRight.x, cRight.y, cRight.z, -(dot(cPos,cRight)), 
 			cUp.x, 	  cUp.y, 	cUp.z,    -(dot(cPos,cUp)), 
-			cLook.x,  cLook.y,  cLook.z,  -(dot(cPos,cLook)), 
+			-cLook.x,  -cLook.y,  -cLook.z,  -(dot(cPos,-cLook)), 
 			0, 		  0, 		0, 		  1 };
 }
 

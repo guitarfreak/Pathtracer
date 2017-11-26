@@ -1098,16 +1098,29 @@ void drawLine(Vec3 p0, Vec3 p1, Vec4 color) {
 	glEnd();
 }
 
-// void drawLine(Vec3 p0, Vec3 p1, Vec4 color) {
-// 	glBindTexture(GL_TEXTURE_2D, 0);
+Vec3 boxVertices[] = {
+	vec3(-0.5f, 0.5f,-0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3(-0.5f,-0.5f, 0.5f), vec3(-0.5f,-0.5f,-0.5f), 
+	vec3( 0.5f,-0.5f,-0.5f), vec3( 0.5f,-0.5f, 0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3( 0.5f, 0.5f,-0.5f), 
+	vec3(-0.5f,-0.5f,-0.5f), vec3(-0.5f,-0.5f, 0.5f), vec3( 0.5f,-0.5f, 0.5f), vec3( 0.5f,-0.5f,-0.5f), 
+	vec3( 0.5f, 0.5f,-0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3(-0.5f, 0.5f,-0.5f), 
+	vec3(-0.5f, 0.5f,-0.5f), vec3(-0.5f,-0.5f,-0.5f), vec3( 0.5f,-0.5f,-0.5f), vec3( 0.5f, 0.5f,-0.5f), 
+	vec3(-0.5f,-0.5f, 0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3( 0.5f,-0.5f, 0.5f), 
+};
 
-// 	Vec4 c = COLOR_SRGB(color);
-// 	glColor4f(c.r, c.g, c.b, c.a);
-// 	glBegin(GL_QUADS);
-// 		glVertex3f(p0.x, p0.y, p0.z);
-// 		glVertex3f(p1.x, p1.y, p1.z);
-// 	glEnd();
-// }
+void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(vec4(1,1,1,1));
+	glColor4f(c.r, c.g, c.b, c.a);
+	glPushMatrix();
+	glTranslatef(pos.x, pos.y, pos.z);
+	glScalef(dim.x, dim.y, dim.z);
+	glBegin(GL_QUADS);
+		for(int i = 0; i < arrayCount(boxVertices); i++)
+			glVertex3f(boxVertices[i].x, boxVertices[i].y, boxVertices[i].z);
+	glEnd();
+	glPopMatrix();
+}
 
 //
 
@@ -1714,7 +1727,7 @@ void openglDefaultSetup() {
 	// glBindTexture(GL_TEXTURE_2D, getFrameBuffer(FRAMEBUFFER_2dMsaa)->colorSlot[0]->id);
 	// glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	glDepthFunc(GL_ALWAYS);
+	glDepthFunc(GL_LEQUAL);
 	glEnable(GL_DEPTH_TEST);
 	// glDepthFunc(GL_NEVER);
 	// glDisable(GL_DEPTH_TEST);
