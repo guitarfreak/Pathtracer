@@ -118,6 +118,9 @@ struct World {
 	Vec3 defaultEmitColor;
 	Vec3 globalLightColor;
 	Vec3 globalLightDir;
+
+	int randomDirectionCount;
+	Vec3* randomDirections;
 };
 
 Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIndex, int rayMaxCount, int lastShapeIndex) {
@@ -188,30 +191,9 @@ Vec3 castRay(World* world, Vec3 attenuation, Vec3 rayPos, Vec3 rayDir, int rayIn
 			int diffuseRayCount = 1;
 			Vec3 colorDiffusion = vec3(0,0,0);
 			for(int i = 0; i < diffuseRayCount; i++) {
-				// Vec3 randomDir = normVec3(vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f)));
-				// if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
 
-
-				// Quat q = eulerAnglesToQuat(randomFloat(0,M_2PI, 0.001f), randomFloat(0,M_2PI, 0.001f), randomFloat(0,M_2PI, 0.001f));
-				// Vec3 d = vec3(0,1,0);
-				// d = normVec3(q*d);
-
-				// Vec3 randomDir = d;
-				// if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
-
-
-				// Cube discard method.
-				Vec3 randomDir;
-				do {
-					// randomDir = vec3(randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f), randomFloat(-1,1,0.01f));
-
-					randomDir = vec3(randomFloatPCG(-1,1,0.01f), randomFloatPCG(-1,1,0.01f), randomFloatPCG(-1,1,0.01f));
-
-					// randomDir = shapeReflectionNormal;
-
-				} while(lenVec3(randomDir) > 1);
-				randomDir = normVec3(randomDir);
-				if(randomDir == vec3(0,0,0)) randomDir = shapeReflectionNormal;
+				int dirIndex = randomIntPCG(0, world->randomDirectionCount-1);
+				Vec3 randomDir = world->randomDirections[dirIndex];
 
 				if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
 

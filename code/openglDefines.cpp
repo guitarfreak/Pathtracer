@@ -156,8 +156,8 @@ typedef ptrdiff_t GLintptr;
 	GLOP(void, DrawArraysInstanced, GLenum mode, GLint first, GLsizei count, GLsizei primcount) \
 	GLOP(void, VertexAttribDivisor, GLuint index, GLuint divisor) \
 	GLOP(void, GetTextureImage, GLuint texture, GLint level, GLenum format, GLenum type, GLsizei bufSize, void *pixels) \
-	GLOP(void, glGetTextureSubImage, GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, GLsizei bufSize, void *pixels)
-
+	GLOP(void, ClearTexSubImage, GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void * data)
+	 
 
 
 #define GLOP(returnType, name, ...) makeGLFunction(returnType, name, __VA_ARGS__) 

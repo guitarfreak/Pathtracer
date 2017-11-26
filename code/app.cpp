@@ -3,9 +3,9 @@
 
 	ToDo:
 	* Better sampling pattern.
+	* Replace rand().
+	* Better angle calculation.
 	- Blue noise.
-	- Replace rand().
-	- Better angle calculation.
 	- Simd.
 	- Ui.
 	- Random placement.
@@ -16,7 +16,6 @@
 
 	Bugs:
 	- Black pixels.
-	- Grid sampling wrong on many samples.
 
 =================================================================================
 */
@@ -176,6 +175,8 @@ struct AppData {
 	f64 processTime;
 
 	Rect textureScreenRect;
+
+	bool drawSceneWired;
 };
 
 
@@ -480,15 +481,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Vec2i texDim = vec2i(1920*2,1080*2);
 		// Vec2i texDim = vec2i(1920,1080);
-		// Vec2i texDim = vec2i(1280,720);
+		Vec2i texDim = vec2i(1280,720);
 		// Vec2i texDim = vec2i(1280/2,720/2);
-		Vec2i texDim = vec2i(320,180);
+		// Vec2i texDim = vec2i(320,180);
 		// Vec2i texDim = vec2i(160,90);
 		// Vec2i texDim = vec2i(8,8);
 		// Vec2i texDim = vec2i(2,2);
 
 		ad->texDim = texDim;
-		ad->keepUpdating = true;
+		ad->keepUpdating = false;
 
 		Texture* texture = &ad->raycastTexture;
 		if(!texture->isCreated || (texDim != texture->dim)) {
@@ -496,10 +497,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
 			initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+
+			Texture* t = &ad->raycastTexture;
+			Vec3 black = vec3(0.2f);
+			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
 		}
 
 
-		if(init || reload) {
+		// if(init || reload) {
+		if(init) {
 			ad->world.camera.pos = vec3(0, -20, 4);
 			// ad->world.camera.pos = vec3(1, -1, -3);
 			ad->world.camera.rot = vec3(0, 0, 0);
@@ -546,15 +552,30 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cam->dim = vec2(camWidth, camWidth*(1/aspectRatio)); 
 		}
 
-		if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
-		// if(false) {
-			ad->activeProcessing = true;
-
+		{
 			World* world = &ad->world;
 
 			world->shapeCount = 0;
 			if(init) {
 				world->shapes = getPArray(Shape, 100);
+
+				const int count = 20000;
+				world->randomDirectionCount = count;
+				world->randomDirections = mallocArray(Vec3, count);
+				float precision = 0.001f;
+
+				for(int i = 0; i < count; i++) {
+
+					// Cube discard method.
+					Vec3 randomDir;
+					do {
+						randomDir = vec3(randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision));
+					} while(lenVec3(randomDir) > 1);
+					randomDir = normVec3(randomDir);
+					if(randomDir == vec3(0,0,0)) randomDir = vec3(1,0,0);
+
+					world->randomDirections[i] = randomDir;
+				}
 			}
 
 			Shape s;
@@ -635,8 +656,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 			world->globalLightDir = normVec3(vec3(-1,0,-1));
 			// world->globalLightDir = normVec3(vec3(0,0,-1));
 			world->globalLightColor = vec3(1);
+		}
 
-
+		if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
+		// if(false) {
+			ad->activeProcessing = true;
+			ad->drawSceneWired = false;
 
 			if(ad->buffer != 0) free(ad->buffer);
 			ad->buffer = mallocArray(Vec3, texDim.w * texDim.h);
@@ -652,7 +677,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				*data = {};
 				data->pixelIndex = i*pixelCountPerThread;
 				data->pixelCount = i < threadCount-1 ? pixelCountPerThread : pixelCountPerThread + pixelCountRest;
-				data->world = world;
+				data->world = &ad->world;
 				data->dim = texDim;
 				data->buffer = ad->buffer;
 
@@ -709,14 +734,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glDepthMask(false);
 			drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
 			glDepthMask(true);
+		}
 
+		if(input->keysPressed[KEYCODE_R]) {
+			Texture* t = &ad->raycastTexture;
+			Vec3 black = vec3(0.2f);
+			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
 
+			ad->drawSceneWired = true;
 		}
 
 	}
 
 
-	if(true)
+	if(ad->drawSceneWired)
 	{
 		Camera* cam = &ad->world.camera;
 		Vec2 d = cam->dim;
@@ -743,6 +774,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 		{
+			// glDisable(GL_CULL_FACE);
+			// drawBox(vec3(0,0,0), vec3(100), vec4(0,1,0,1));
+			// glEnable(GL_CULL_FACE);
+		}
+
+		{
 			float l = 100;
 			drawLine(vec3(-l,0,0), vec3(0,0,0), vec4(1,0,0,1));
 			drawLine(vec3(0,0,0), vec3(l,0,0), vec4(1,0.5f,0.5f,1));
@@ -752,6 +789,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			drawLine(vec3(0,0,0), vec3(0,0,l), vec4(0.5f,0.5f,1,1));
 		}
 
+		if(true)
 		{
 			World* world = &ad->world;
 			Shape* shapes = world->shapes;
@@ -774,6 +812,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 		}
+
+
 
 		glMatrixMode(GL_PROJECTION); glPopMatrix();
 		glMatrixMode(GL_MODELVIEW); glPopMatrix();
