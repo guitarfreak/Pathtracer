@@ -727,7 +727,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glMatrixMode(GL_PROJECTION);
 		glPushMatrix();
 		glLoadIdentity();
-		glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, cam->dist, 100);
+		glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, cam->dist, 10000);
 
 		glMatrixMode(GL_MODELVIEW);
 		glPushMatrix();
@@ -752,9 +752,28 @@ extern "C" APPMAINFUNCTION(appMain) {
 			drawLine(vec3(0,0,0), vec3(0,0,l), vec4(0.5f,0.5f,1,1));
 		}
 
-		// drawBox(vec3(0,0,0), vec3(0.5f), vec4(1,0,0,1));
-		// drawBox(vec3(0,0,0), vec3(1.0f), vec4(1,0,0,1));
-		// drawBox(vec3(10,0,0), vec3(1,1,1), vec4(1,0,0,1));
+		{
+			World* world = &ad->world;
+			Shape* shapes = world->shapes;
+
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+			for(int i = 0; i < world->shapeCount; i++) {
+				Shape* s = shapes + i;
+
+				switch(s->type) {
+					case SHAPE_BOX: {
+						drawBox(s->pos, s->dim, vec4(s->color, 1));
+					} break;
+
+					case SHAPE_SPHERE: {
+						drawCircle(s->pos, s->r, normVec3(cam->pos - s->pos), vec4(s->color, 1));
+					} break;
+				}
+			}
+
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		}
 
 		glMatrixMode(GL_PROJECTION); glPopMatrix();
 		glMatrixMode(GL_MODELVIEW); glPopMatrix();
@@ -807,6 +826,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	// Draw Info.
 	{
+		Rect sr = getScreenRect(ws);
+		glViewport(0,0, rectW(sr), rectH(sr));
+		// glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
+
 		Rect tr = ad->textureScreenRect;
 		Font* font = getFont("OpenSans-Bold.ttf", 20);
 		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 1.5, vec4(0,0,0,1));

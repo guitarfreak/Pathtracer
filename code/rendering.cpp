@@ -1110,7 +1110,7 @@ Vec3 boxVertices[] = {
 void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	Vec4 c = COLOR_SRGB(vec4(1,1,1,1));
+	Vec4 c = COLOR_SRGB(color);
 	glColor4f(c.r, c.g, c.b, c.a);
 	glPushMatrix();
 	glTranslatef(pos.x, pos.y, pos.z);
@@ -1120,6 +1120,26 @@ void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
 			glVertex3f(boxVertices[i].x, boxVertices[i].y, boxVertices[i].z);
 	glEnd();
 	glPopMatrix();
+}
+
+void drawCircle(Vec3 pos, float r, Vec3 dir, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	glBegin(GL_LINE_STRIP);
+
+	// Get any right angle vector.
+	Vec3 v = dir == vec3(1,0,0) ? vec3(0,1,0) : vec3(1,0,0);
+	v = normVec3(cross(dir, normVec3(v)));
+
+	int segments = (M_2PI * r) / 0.5f;
+	for(int i = 0; i < segments+1; i++) {
+		Vec3 dv = pos + rotateVec3(v, (i * M_2PI/(float)segments), dir) * r;
+		glVertex3f(dv.x, dv.y, dv.z);
+	}
+
+	glEnd();
 }
 
 //
