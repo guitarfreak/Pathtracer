@@ -320,6 +320,15 @@ inline double divZero(double a, double b) {
 	else return a/b;
 }
 
+inline float camDistanceFromFOVandWidth(float fovInDegrees, float w) {
+	float angle = degreeToRadian(fovInDegrees);
+	float sideAngle = ((M_PI-angle)/2.0f);
+	float side = w/sin(angle) * sin(sideAngle);
+	float h = side*sin(sideAngle);
+	
+	return h;
+}
+
 //
 
 inline int colorFloatToInt(float color) {
@@ -2199,7 +2208,7 @@ bool lineSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter,
 }
 
 Vec3 reflectVector(Vec3 dir, Vec3 normal) {
-	normal = normVec3(normal);
+	// normal = normVec3(normal);
 	Vec3 result = dir - 2*(dot(dir, normal))*normal;
 	return result;
 }
@@ -2268,6 +2277,35 @@ inline Vec3i & operator-=(Vec3i & a, Vec3i b) {
 inline bool operator==(Vec3i a, Vec3i b) {
 	bool equal = (a.x == b.x) && (a.y == b.y) && (a.z == b.z);
 	return equal;
+}
+
+inline Vec3 lerp(float percent, Vec3 a, Vec3 b) {
+	Vec3 result;
+	result.x = lerp(percent, a.x, b.x);
+	result.y = lerp(percent, a.y, b.y);
+	result.z = lerp(percent, a.z, b.z);
+	return result;
+}
+
+inline Vec3 clamp(Vec3 n, Vec3 min, Vec3 max) {
+	n.x = clamp(n.x, min.x, max.x);
+	n.y = clamp(n.y, min.y, max.y);
+	n.z = clamp(n.z, min.z, max.z);
+	return n;
+}
+
+inline Vec3 clampMin(Vec3 n, Vec3 min) {
+	n.x = clampMin(n.x, min.x);
+	n.y = clampMin(n.y, min.y);
+	n.z = clampMin(n.z, min.z);
+	return n;
+}
+
+inline Vec3 clampMax(Vec3 n, Vec3 max) {
+	n.x = clampMax(n.x, max.x);
+	n.y = clampMax(n.y, max.y);
+	n.z = clampMax(n.z, max.z);
+	return n;
 }
 
 //

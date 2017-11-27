@@ -72,28 +72,30 @@ bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, V
 	return false;
 }
 
-struct Camera {
-	Vec3 pos;
-	Vec3 rot;
-	Vec2 dim;
-	float dist;
-	// float fov;
-};
-
-struct Orientation {
+struct OrientationVectors {
 	Vec3 dir;
 	Vec3 up;
 	Vec3 right;
 };
 
-Vec3 getRotationFromVectors(Orientation) {
+struct Camera {
+	Vec3 pos;
+	Vec3 rot;
+	Vec2 dim;
+	float nearDist;
+	float farDist;
+	float fov;
+	OrientationVectors ovecs;
+};
+
+Vec3 getRotationFromVectors(OrientationVectors) {
 	return {};
 }
 
-Orientation getVectorsFromRotation(Vec3 rot) {
+OrientationVectors getVectorsFromRotation(Vec3 rot) {
 
-	Orientation baseOrientation = {vec3(0,1,0), vec3(0,0,1), vec3(1,0,0)};
-	Orientation o = baseOrientation;
+	OrientationVectors baseOrientation = {vec3(0,1,0), vec3(0,0,1), vec3(1,0,0)};
+	OrientationVectors o = baseOrientation;
 
 	Quat q = quat(rot.x, vec3(1,0,0)) * quat(rot.y, vec3(0,1,0)) * quat(rot.z, vec3(0,0,1));
 
@@ -132,12 +134,20 @@ struct RaytraceSettings {
 	Vec2i texDim;
 
 	int sampleMode;
-	int sampleCount;
+	int sampleCountGrid;
 
 	int rayBouncesMax;
 
 	int randomDirectionCount;
 	Vec3* randomDirections;
+
+	int sampleCount;
+	Vec2* samples;
+
+	// Precalc.
+
+	Vec3 camTopLeft;
+	Vec2 pixelPercent;
 };
 
 const Vec2 msaa4xPatternSamples[] = { 
@@ -159,55 +169,31 @@ const Vec2 msaa8xPatternSamples[] = {
 };
 
 void processPixel(World world, RaytraceSettings settings, int x, int y, Vec3* buffer) {
+	// IACA_VC64_START;
 
-	Vec2 samples[32*32];
-	int mode = settings.sampleMode;
-	int sampleCount;
-	switch(mode) {
-		case SAMPLE_MODE_GRID: {
-			int sampleCount2 = settings.sampleCount;
-			sampleCount = sampleCount2*sampleCount2;
-			for(int i = 0; i < sampleCount; i++) {
-				samples[i] = vec2(((i%sampleCount2)*sampleCount2 + 1) / (float)sampleCount, 
-				                  ((i/sampleCount2)*sampleCount2 + 1) / (float)sampleCount);
-			}
-		} break;
-
-		case SAMPLE_MODE_MSAA4X: {
-			sampleCount = 4;
-			for(int i = 0; i < sampleCount; i++) samples[i] = msaa4xPatternSamples[i];
-		} break;
-
-		case SAMPLE_MODE_MSAA8X: {
-			sampleCount = 8;
-			for(int i = 0; i < sampleCount; i++) samples[i] = msaa8xPatternSamples[i];
-		} break;
-	}
-
+	int sampleCount = settings.sampleCount;	
+	Vec2* samples = settings.samples;
 	Camera camera = world.camera;
-	Orientation camRot = getVectorsFromRotation(camera.rot);
-	Vec3 camTopLeft = camera.pos + camRot.dir*camera.dist + (camRot.right*-1)*(camera.dim.w/2.0f) + (camRot.up)*(camera.dim.h/2.0f);
+
+	Vec3 black = vec3(0.0f);
+	Vec3 white = vec3(1.0f);
+
 	Vec2 percent = vec2(x/(float)settings.texDim.w, y/(float)settings.texDim.h);
-	Vec2 pixelPercent = vec2(1/(float)settings.texDim.w, 1/(float)settings.texDim.h);
+	Vec3 finalColor = black;
 
-	Vec3 finalColor = vec3(0,0,0);
 	for(int i = 0; i < sampleCount; i++) {
-		Vec3 p = camTopLeft;
-		p += camRot.right * (camera.dim.w*percent.x + pixelPercent.w*samples[i].x);
-		p += -camRot.up   * (camera.dim.h*percent.y + pixelPercent.h*samples[i].y);
+		Vec3 rayPos = settings.camTopLeft;
+		rayPos += camera.ovecs.right * (world.camera.dim.w*percent.x + settings.pixelPercent.w*samples[i].x);
+		rayPos += -camera.ovecs.up   * (world.camera.dim.h*percent.y + settings.pixelPercent.h*samples[i].y);
 
-		// finalColor += castRay(world, vec3(1,1,1), camera.pos, normVec3(p - camera.pos), 0, rayMaxCount, -1);
-
-		// Cast rays.
+		Vec3 rayDir = normVec3(rayPos - world.camera.pos);
 	
+
+
 		int rayIndex = 0;
-		Vec3 attenuation = vec3(1,1,1);
-		Vec3 rayPos = p;
-		Vec3 rayDir = normVec3(p - camera.pos);
+		Vec3 attenuation = white;
 		int lastShapeIndex = -1;
 		for(;;) {
-			if(rayIndex >= settings.rayBouncesMax) break;
-			if(attenuation == vec3(0,0,0)) break;
 
 			// Find shape with closest intersection.
 
@@ -220,9 +206,9 @@ void processPixel(World world, RaytraceSettings settings, int x, int y, Vec3* bu
 
 					Shape* s = world.shapes + i;
 
-					Vec3 reflectionPos = vec3(0,0,0);
-					Vec3 reflectionDir = vec3(0,0,0);
-					Vec3 reflectionNormal = vec3(0,0,0);
+					Vec3 reflectionPos = black;
+					Vec3 reflectionDir = black;
+					Vec3 reflectionNormal = black;
 					bool intersection = lineShapeIntersection(rayPos, rayDir, *s, &reflectionPos, &reflectionDir, &reflectionNormal);
 
 					if(intersection) {
@@ -245,20 +231,24 @@ void processPixel(World world, RaytraceSettings settings, int x, int y, Vec3* bu
 
 				finalColor += attenuation * s->emitColor;
 				attenuation = attenuation * s->color;
+	
+				if(attenuation == black) break;
 
 				int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
 				Vec3 randomDir = settings.randomDirections[dirIndex];
 
-				if(dot(randomDir, shapeReflectionNormal) <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
+				// Reflect.
+				float d = dot(randomDir, shapeReflectionNormal);
+				if(d <= 0) randomDir = randomDir - 2*d*shapeReflectionNormal;
 
-				randomDir.x = lerp(s->reflectionMod, randomDir.x, shapeReflectionDir.x);
-				randomDir.y = lerp(s->reflectionMod, randomDir.y, shapeReflectionDir.y);
-				randomDir.z = lerp(s->reflectionMod, randomDir.z, shapeReflectionDir.z);
-				randomDir = normVec3(randomDir);
+				// randomDir = normVec3(lerp(s->reflectionMod, randomDir, shapeReflectionDir));
+				randomDir = lerp(s->reflectionMod, randomDir, shapeReflectionDir);
 
 				rayPos = shapeReflectionPos;
 				rayDir = randomDir;
+	
 				rayIndex++;
+				if(rayIndex >= settings.rayBouncesMax) break;
 
 			} else {
 
@@ -284,12 +274,11 @@ void processPixel(World world, RaytraceSettings settings, int x, int y, Vec3* bu
 	}
 
 	finalColor = finalColor/(float)sampleCount;
-
-	clampMax(&finalColor.r, 1);
-	clampMax(&finalColor.g, 1);
-	clampMax(&finalColor.b, 1);
+	finalColor = clampMax(finalColor, white);
 
 	buffer[y*settings.texDim.w + x] = finalColor;
+
+	// IACA_VC64_END;
 }
 
 struct ProcessPixelsData {
@@ -317,10 +306,6 @@ void processPixelsThreaded(void* data) {
 		
 		if(i >= totalPixelCount) break;
 
-		int y = i / texDim.w;
-		int x = i % texDim.w;
-
-		processPixel(*d->world, *d->settings, x, y, d->buffer);
+		processPixel(*d->world, *d->settings, i % texDim.w, i / texDim.w, d->buffer);
 	}
-
 }
