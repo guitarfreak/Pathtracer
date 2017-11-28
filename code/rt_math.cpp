@@ -1573,14 +1573,6 @@ Vec2 projectPointOnLine(Vec2 p0, Vec2 lp0, Vec2 lp1) {
 	Vec2 b = p0 - lp0;
 	Vec2 result = lp0 + (((a*b)*a) / pow(lenVec2(a),2));
 
- // Point e1 = new Point(v2.x - v1.x, v2.y - v1.y);
-  // Point e2 = new Point(p.x - v1.x, p.y - v1.y);
-  // double valDp = dotProduct(e1, e2);
-  // get squared length of e1
-  // double len2 = e1.x * e1.x + e1.y * e1.y;
-  // Point p = new Point((int)(v1.x + (val * e1.x) / len2),
-                      // (int)(v1.y + (val * e1.y) / len2));
-
 	return result;
 }
 
@@ -2136,9 +2128,9 @@ inline Vec3 rgbToHslFloat(Vec3 rgb) {
 	return hslFloat;
 }
 
-// inline linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn) {
+inline void linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn) {
 
-// }
+}
 
 // bool lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float r, Vec3* intersection = 0) {
 // 	// float a = 
@@ -2203,6 +2195,35 @@ bool lineSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter,
 	if(intersection) {
 		*intersection = solution1;
 	} 
+
+    return true;
+}
+
+bool lineSphereIntersection2(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+
+	// Pretend sphere is at origin.
+	Vec3 oldP = lp;
+	lp -= sp;
+
+	// float distance = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z) / 
+	// 				 2 * (x * sqrt(-ld.y*ld.y - ld.z*ld.z) + ld.y*lp.y + ld.z*lp.z)
+	
+					 
+	// float distance = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z) / 
+					  // 2 * (ld.x*lp.x + ld.y*lp.y + ld.z*lp.z);
+
+	float a = dot(lp, ld);
+	if(a == 0) return false;
+
+	// float top = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z);
+	// float bottom = 2 * (ld.x*lp.x + ld.y*lp.y + ld.z*lp.z);
+
+	float distance = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z) / 2*a;
+
+	if(intersection) {
+		*intersection = oldP + ld*distance;
+		if(intersectionNormal) *intersectionNormal = normVec3(*intersection - sp);
+	}
 
     return true;
 }

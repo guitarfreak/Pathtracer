@@ -1107,6 +1107,41 @@ Vec3 boxVertices[] = {
 	vec3(-0.5f,-0.5f, 0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3( 0.5f,-0.5f, 0.5f), 
 };
 
+inline void pushVec(Vec3 v) {
+	glVertex3f(v.x, v.y, v.z);
+}
+
+inline void pushTriangle(Vec3 v0, Vec3 v1, Vec3 v2) {
+	glVertex3f(v0.x, v0.y, v0.z);
+	glVertex3f(v1.x, v1.y, v1.z);
+	glVertex3f(v2.x, v2.y, v2.z);
+}
+
+inline void pushQuad(Vec3 v0, Vec3 v1, Vec3 v2, Vec3 v3) {
+	glVertex3f(v0.x, v0.y, v0.z);
+	glVertex3f(v1.x, v1.y, v1.z);
+	glVertex3f(v2.x, v2.y, v2.z);
+	glVertex3f(v3.x, v3.y, v3.z);
+}
+
+void drawPlane(Vec3 pos, Vec2 dim, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	glPushMatrix();
+	glTranslatef(pos.x, pos.y, pos.z);
+	glScalef(dim.x, dim.y, 1);
+	glBegin(GL_QUADS);
+		glNormal3f(0,0,1);
+		glVertex3f(-0.5f,-0.5f, 0);
+		glVertex3f(-0.5f, 0.5f, 0);
+		glVertex3f( 0.5f, 0.5f, 0);
+		glVertex3f( 0.5f,-0.5f, 0);
+	glEnd();
+	glPopMatrix();
+}
+
 void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -1116,8 +1151,13 @@ void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
 	glTranslatef(pos.x, pos.y, pos.z);
 	glScalef(dim.x, dim.y, dim.z);
 	glBegin(GL_QUADS);
-		for(int i = 0; i < arrayCount(boxVertices); i++)
-			glVertex3f(boxVertices[i].x, boxVertices[i].y, boxVertices[i].z);
+		int i = 0;
+		glNormal3f(-1,0,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
+		glNormal3f(1,0,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
+		glNormal3f(0,-1,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
+		glNormal3f(0,1,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
+		glNormal3f(0,0,-1); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
+		glNormal3f(0,0,1); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
 	glEnd();
 	glPopMatrix();
 }
@@ -1140,6 +1180,46 @@ void drawCircle(Vec3 pos, float r, Vec3 dir, Vec4 color) {
 	}
 
 	glEnd();
+}
+
+void drawTriangleSubDiv(Vec3 a, Vec3 b, Vec3 c, int divIndex) {
+	if(divIndex == 0) {
+		Vec3 n = normVec3((a+b+c)/3.0f);
+		glNormal3f(n.x, n.y, n.z);
+		pushTriangle(a,b,c);
+	} else {
+		Vec3 ab = normVec3((a+b)/2.0f);
+		Vec3 bc = normVec3((b+c)/2.0f);
+		Vec3 ca = normVec3((c+a)/2.0f);
+
+		drawTriangleSubDiv(a,ab,ca,  divIndex-1);
+		drawTriangleSubDiv(b,bc,ab,  divIndex-1);
+		drawTriangleSubDiv(c,ca,bc,  divIndex-1);
+		drawTriangleSubDiv(ab,bc,ca, divIndex-1);
+	}
+}
+
+void drawSphere(Vec3 pos, float r, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+
+	glPushMatrix();
+	glTranslatef(pos.x, pos.y, pos.z);
+	glScalef(r, r, r);
+
+	int div = 3;
+	glBegin(GL_TRIANGLES);
+	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div);
+	drawTriangleSubDiv(vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div);
+	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,-1,0), vec3(-1,0,0), div);
+	drawTriangleSubDiv(vec3(0,0,1),  vec3(1,0,0),  vec3(0,-1,0), div);
+	drawTriangleSubDiv(vec3(0,0,-1), vec3(1,0,0),  vec3(0,1,0),  div);
+	drawTriangleSubDiv(vec3(0,0,-1), vec3(0,1,0),  vec3(-1,0,0), div);
+	drawTriangleSubDiv(vec3(0,0,-1), vec3(-1,0,0), vec3(0,-1,0), div);
+	drawTriangleSubDiv(vec3(0,0,-1), vec3(0,-1,0), vec3(1,0,0),  div);
+	glEnd();
+	glPopMatrix();
 }
 
 //

@@ -168,119 +168,6 @@ const Vec2 msaa8xPatternSamples[] = {
 	vec2(15/16.0f,  5/16.0f), 
 };
 
-void processPixel(World world, RaytraceSettings settings, int x, int y, Vec3* buffer) {
-	// IACA_VC64_START;
-
-	int sampleCount = settings.sampleCount;	
-	Vec2* samples = settings.samples;
-	Camera camera = world.camera;
-
-	Vec3 black = vec3(0.0f);
-	Vec3 white = vec3(1.0f);
-
-	Vec2 percent = vec2(x/(float)settings.texDim.w, y/(float)settings.texDim.h);
-	Vec3 finalColor = black;
-
-	for(int i = 0; i < sampleCount; i++) {
-		Vec3 rayPos = settings.camTopLeft;
-		rayPos += camera.ovecs.right * (world.camera.dim.w*percent.x + settings.pixelPercent.w*samples[i].x);
-		rayPos += -camera.ovecs.up   * (world.camera.dim.h*percent.y + settings.pixelPercent.h*samples[i].y);
-
-		Vec3 rayDir = normVec3(rayPos - world.camera.pos);
-	
-
-
-		int rayIndex = 0;
-		Vec3 attenuation = white;
-		int lastShapeIndex = -1;
-		for(;;) {
-
-			// Find shape with closest intersection.
-
-			Vec3 shapeReflectionPos, shapeReflectionDir, shapeReflectionNormal;
-			int shapeIndex = -1;
-			{
-				float minDistance = FLT_MAX;
-				for(int i = 0; i < world.shapeCount; i++) {
-					if(lastShapeIndex == i) continue;
-
-					Shape* s = world.shapes + i;
-
-					Vec3 reflectionPos = black;
-					Vec3 reflectionDir = black;
-					Vec3 reflectionNormal = black;
-					bool intersection = lineShapeIntersection(rayPos, rayDir, *s, &reflectionPos, &reflectionDir, &reflectionNormal);
-
-					if(intersection) {
-						float distance = lenVec3(reflectionPos - rayPos);
-						if(distance < minDistance) {
-							minDistance = distance;
-							shapeIndex = i;
-
-							shapeReflectionPos = reflectionPos;
-							shapeReflectionDir = reflectionDir;
-							shapeReflectionNormal = reflectionNormal;
-						}
-					}
-				}
-			}
-
-			if(shapeIndex != -1) {
-				Shape* s = world.shapes + shapeIndex;
-				lastShapeIndex = shapeIndex;
-
-				finalColor += attenuation * s->emitColor;
-				attenuation = attenuation * s->color;
-	
-				if(attenuation == black) break;
-
-				int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
-				Vec3 randomDir = settings.randomDirections[dirIndex];
-
-				// Reflect.
-				float d = dot(randomDir, shapeReflectionNormal);
-				if(d <= 0) randomDir = randomDir - 2*d*shapeReflectionNormal;
-
-				// randomDir = normVec3(lerp(s->reflectionMod, randomDir, shapeReflectionDir));
-				randomDir = lerp(s->reflectionMod, randomDir, shapeReflectionDir);
-
-				rayPos = shapeReflectionPos;
-				rayDir = randomDir;
-	
-				rayIndex++;
-				if(rayIndex >= settings.rayBouncesMax) break;
-
-			} else {
-
-				if(rayIndex == 0) {
-					// Sky hit.
-					finalColor += world.defaultEmitColor;
-				} else {
-					// finalColor += attenuation * defaultEmitColor;
-
-					float lightDot = dot(rayDir, -world.globalLightDir);
-					lightDot = clampMin(lightDot, 0);
-					lightDot = dotUnitToPercent(lightDot);
-					Vec3 light = world.globalLightColor * lightDot;
-
-					finalColor += attenuation * (world.defaultEmitColor + light);
-					// finalColor += attenuation * light;
-					// finalColor += attenuation * world->defaultEmitColor;
-				}
-
-				break;
-			}
-		}
-	}
-
-	finalColor = finalColor/(float)sampleCount;
-	finalColor = clampMax(finalColor, white);
-
-	buffer[y*settings.texDim.w + x] = finalColor;
-
-	// IACA_VC64_END;
-}
-
 struct ProcessPixelsData {
 	World* world;
 	RaytraceSettings* settings;
@@ -295,17 +182,128 @@ struct ProcessPixelsData {
 void processPixelsThreaded(void* data) {
 	ProcessPixelsData* d = (ProcessPixelsData*)data;
 
-	Vec2i texDim = d->settings->texDim;
+	World world = *d->world;
+	RaytraceSettings settings = *d->settings;	
+	Vec3* buffer = d->buffer;
+
+	int sampleCount = settings.sampleCount;	
+	Vec2* samples = settings.samples;
+	Camera camera = world.camera;
+
+	Vec3 black = vec3(0.0f);
+	Vec3 white = vec3(1.0f);
+
+	Vec2i texDim = settings.texDim;
 	int totalPixelCount = texDim.w * texDim.h;
-	for(int i = d->pixelIndex; i < d->pixelIndex+d->pixelCount; i++) {
+	int pixelRangeEnd = d->pixelIndex+d->pixelCount;
+	for(int i = d->pixelIndex; i < pixelRangeEnd; i++) {
 
 		if(d->stopProcessing) {
 			d->stopProcessing = false;
 			break;
 		}
 		
-		if(i >= totalPixelCount) break;
+		int x = i % texDim.w;
+		int y = i / texDim.w;
 
-		processPixel(*d->world, *d->settings, i % texDim.w, i / texDim.w, d->buffer);
+		{
+			// IACA_VC64_START;
+
+			Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
+			Vec3 finalColor = black;
+
+			for(int i = 0; i < sampleCount; i++) {
+				Vec3 rayPos = settings.camTopLeft;
+				rayPos += camera.ovecs.right * (camera.dim.w*percent.w + settings.pixelPercent.w*samples[i].x);
+				rayPos += -camera.ovecs.up   * (camera.dim.h*percent.h + settings.pixelPercent.h*samples[i].y);
+
+				Vec3 rayDir = normVec3(rayPos - camera.pos);
+			
+
+
+				Vec3 attenuation = white;
+				int lastShapeIndex = -1;
+				for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
+
+					// Find shape with closest intersection.
+
+					Vec3 shapeReflectionPos, shapeReflectionDir, shapeReflectionNormal;
+					int shapeIndex = -1;
+					{
+						float minDistance = FLT_MAX;
+						for(int i = 0; i < world.shapeCount; i++) {
+							if(lastShapeIndex == i) continue;
+
+							Shape* s = world.shapes + i;
+
+							Vec3 reflectionPos, reflectionDir, reflectionNormal;
+							bool intersection = lineShapeIntersection(rayPos, rayDir, *s, &reflectionPos, &reflectionDir, &reflectionNormal);
+
+							if(intersection) {
+								float distance = lenVec3(reflectionPos - rayPos);
+								if(distance < minDistance) {
+									minDistance = distance;
+									shapeIndex = i;
+
+									shapeReflectionPos = reflectionPos;
+									shapeReflectionDir = reflectionDir;
+									shapeReflectionNormal = reflectionNormal;
+								}
+							}
+						}
+					}
+
+					if(shapeIndex != -1) {
+						Shape* s = world.shapes + shapeIndex;
+						lastShapeIndex = shapeIndex;
+
+						finalColor += attenuation * s->emitColor;
+						attenuation = attenuation * s->color;
+			
+						if(attenuation == black) break;
+
+						int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
+						Vec3 randomDir = settings.randomDirections[dirIndex];
+
+						// Reflect.
+						float d = dot(randomDir, shapeReflectionNormal);
+						if(d <= 0) randomDir = randomDir - 2*d*shapeReflectionNormal;
+
+						// randomDir = normVec3(lerp(s->reflectionMod, randomDir, shapeReflectionDir));
+						randomDir = lerp(s->reflectionMod, randomDir, shapeReflectionDir);
+
+						rayPos = shapeReflectionPos;
+						rayDir = randomDir;
+
+					} else {
+
+						if(rayIndex == 0) {
+							// Sky hit.
+							finalColor += world.defaultEmitColor;
+						} else {
+							// finalColor += attenuation * defaultEmitColor;
+
+							float lightDot = dot(rayDir, -world.globalLightDir);
+							lightDot = clampMin(lightDot, 0);
+							lightDot = dotUnitToPercent(lightDot);
+							Vec3 light = world.globalLightColor * lightDot;
+
+							finalColor += attenuation * (world.defaultEmitColor + light);
+							// finalColor += attenuation * light;
+							// finalColor += attenuation * world->defaultEmitColor;
+						}
+
+						break;
+					}
+				}
+			}
+
+			finalColor = finalColor/(float)sampleCount;
+			finalColor = clampMax(finalColor, white);
+
+			buffer[y*texDim.w + x] = finalColor;
+
+			// IACA_VC64_END;
+		}
 	}
 }

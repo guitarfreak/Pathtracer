@@ -12,6 +12,8 @@
 	- Ui.
 	- Entity editor.
 	- More Shapes and rotations.
+	- Split hit tests and reflection calculations.
+	- Better pre vis.
 
 	Done Today: 
 
@@ -488,9 +490,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
-		ad->settings.sampleMode = SAMPLE_MODE_MSAA4X;
+		ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
 		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
-		ad->settings.sampleCountGrid = 16;
+		ad->settings.sampleCountGrid = 10;
 		ad->settings.rayBouncesMax = 6;
 
 		ad->keepUpdating = false;
@@ -527,7 +529,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// if(init || reload) {
 		if(init) {
 			Camera* cam = &ad->world.camera;
-			cam->pos = vec3(0, -20, 4);
+			cam->pos = vec3(0, -50, 10);
 			cam->rot = vec3(0, 0, 0);
 			cam->fov = 100;
 
@@ -559,20 +561,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 			OrientationVectors o = getVectorsFromRotation(cam->rot);
 			cam->ovecs = o;
 
-			float speed = 5.0f*ad->dt;
+			float speed = 40.0f*ad->dt;
 
 			if(input->keysDown[KEYCODE_SHIFT]) {
 				speed *= 2;
 				// if(input->keysDown[KEYCODE_CTRL]) speed *= 2;
 			}
 
+			Vec3 vel = vec3(0,0,0);
 			if(input->keysDown[KEYCODE_CTRL]) o.dir = normVec3(cross(vec3(0,0,1), o.right));
-			if(input->keysDown[KEYCODE_W]) cam->pos += o.dir * speed;
-			if(input->keysDown[KEYCODE_S]) cam->pos += -o.dir * speed;
-			if(input->keysDown[KEYCODE_A]) cam->pos += -o.right * speed;
-			if(input->keysDown[KEYCODE_D]) cam->pos += o.right * speed;
-			if(input->keysDown[KEYCODE_E]) cam->pos += vec3(0,0,1) * speed;
-			if(input->keysDown[KEYCODE_Q]) cam->pos += vec3(0,0,-1) * speed;
+			if(input->keysDown[KEYCODE_W]) vel += o.dir;
+			if(input->keysDown[KEYCODE_S]) vel += -o.dir;
+			if(input->keysDown[KEYCODE_A]) vel += -o.right;
+			if(input->keysDown[KEYCODE_D]) vel += o.right;
+			if(input->keysDown[KEYCODE_E]) vel += vec3(0,0,1);
+			if(input->keysDown[KEYCODE_Q]) vel += vec3(0,0,-1);
+
+			if(vel != vec3(0,0,0)) cam->pos += normVec3(vel) * speed;
 		}
 
 		{
@@ -593,22 +598,24 @@ extern "C" APPMAINFUNCTION(appMain) {
 		{
 			World* world = &ad->world;
 
-			if(init) {
+			if(init || input->keysPressed[KEYCODE_T]) {
 
 				world->shapeCount = 0;
-				world->shapes = getPArray(Shape, 1000);
+				if(world->shapes) free(world->shapes);
+				world->shapes = mallocArray(Shape, 1000);
 
 				int count = 5;
-				float r = 5;
-				Vec3 offset = vec3(0,0,r);
+				float r = 30;
+				Vec3 offset = vec3(0,0,r/2.0f);
 				for(int i = 0; i < count; i++) {
 					int type = randomIntPCG(0, SHAPE_COUNT-1);
-					Vec3 pos = vec3(randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r,r,0.01f));
+					Vec3 pos = vec3(randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r/2.0f,r/2.0f,0.01f));
 					pos += offset;
-					float size = randomFloatPCG(3,7,0.01f);
+					float size = randomFloatPCG(15,30,0.01f);
 
 					bool emitter = randomIntPCG(0,1);
-					Vec3 c = vec3(randomFloatPCG(0,1,0.01f), randomFloatPCG(0,1,0.01f), randomFloatPCG(0,1,0.01f));
+					Vec3 c = hslToRgbFloat(vec3(randomFloatPCG(0,1,0.01f), randomFloatPCG(0.5f,1,0.01f), randomFloatPCG(0.25f,0.75f,0.01f)));
+
 					float rm = randomFloatPCG(0,1,0.01f);
 
 					Shape s = {};
@@ -628,8 +635,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Shape s = {};
 				s.type = SHAPE_BOX;
 				s.pos = vec3(0,0,0);
-				// s.dim = vec3(12,12,1);
-				s.dim = vec3(10000,10000,0.0001f);
+				s.dim = vec3(1000,1000,0.0001f);
 				s.color = vec3(0.5f);
 				// s.color = vec3(0.99f);
 				// s.reflectionMod = 0.3f;
@@ -638,8 +644,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				world->shapes[world->shapeCount++] = s;
 
 				world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-				world->globalLightDir = normVec3(vec3(-1,0,-1));
-				world->globalLightColor = vec3(1,1,0.5f);
+				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
+				world->globalLightColor = vec3(1,1,1);
 			}
 
 		}
@@ -654,7 +660,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			Texture* t = &ad->raycastTexture;
 			Vec3 black = vec3(0.2f);
-			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
+			if(!ad->keepUpdating)
+				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
 
 			int pixelCount = settings->texDim.w*settings->texDim.h;
 			if(ad->buffer != 0) free(ad->buffer);
@@ -802,17 +809,35 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	if(ad->drawSceneWired)
 	{
+		World* world = &ad->world;
 		Camera* cam = &ad->world.camera;
 		Vec2 d = cam->dim;
 
 		Rect tr = ad->textureScreenRect;
 		glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
 
+			// GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
+			// GLfloat mat_shininess[] = { 50.0 };
+			// // glClearColor (0.0, 0.0, 0.0, 0.0);
+			// glShadeModel (GL_SMOOTH);
+
+			// glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
+			// glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
+			// glLightfv(GL_LIGHT0, GL_POSITION, light_position);
+
+			// glShadeModel(GL_FLAT);
+			glShadeModel(GL_SMOOTH);
+
+			glEnable(GL_LIGHTING);
+			glEnable(GL_LIGHT0);
+
+			glEnable(GL_NORMALIZE);
+
 		glMatrixMode(GL_PROJECTION);
 		glPushMatrix();
 		glLoadIdentity();
 
-		glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, camDistanceFromFOVandWidth(cam->fov,d.w), 10000);
+		glFrustum(-d.w/2.0f, d.w/2.0f, -d.h/2.0f, d.h/2.0f, camDistanceFromFOVandWidth(cam->fov,d.w), cam->farDist);
 
 		glMatrixMode(GL_MODELVIEW);
 		glPushMatrix();
@@ -822,35 +847,57 @@ extern "C" APPMAINFUNCTION(appMain) {
 		rowToColumn(&vm);
 		glLoadMatrixf(vm.e);
 
+		Vec4 lp = vec4(-world->globalLightDir, 0);
+		glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
+
+		// Vec4 lightAmbientColor = vec4(world->defaultEmitColor,1);
+		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbientColor.e);
+		Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
+		glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
+
+		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
+		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
+
+
 
 		glEnable(GL_DEPTH_TEST);
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 		{
-			// glDisable(GL_CULL_FACE);
-			// drawBox(vec3(0,0,0), vec3(100), vec4(0,1,0,1));
-			// glEnable(GL_CULL_FACE);
-		}
-
-		{
-			float l = 100;
+			glDisable(GL_LIGHTING);
+			float l = 500;
 			drawLine(vec3(-l,0,0), vec3(0,0,0), vec4(1,0,0,1));
 			drawLine(vec3(0,0,0), vec3(l,0,0), vec4(1,0.5f,0.5f,1));
 			drawLine(vec3(0,-l,0), vec3(0,0,0), vec4(0,1,0,1));
 			drawLine(vec3(0,0,0), vec3(0,l,0), vec4(0.5f,1,0.5f,1));
-			drawLine(vec3(0,0,-l), vec3(0,0,0), vec4(0,0,1,1));
-			drawLine(vec3(0,0,0), vec3(0,0,l), vec4(0.5f,0.5f,1,1));
+			drawLine(vec3(0,0,-1), vec3(0,0,0), vec4(0,0,1,1));
+			drawLine(vec3(0,0,0), vec3(0,0,1), vec4(0.5f,0.5f,1,1));
+			glEnable(GL_LIGHTING);
 		}
 
-		if(true)
+		if(false)
 		{
-			World* world = &ad->world;
 			Shape* shapes = world->shapes;
 
-			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+			// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+			// glDisable(GL_CULL_FACE);
+
+			// Vec4 ambientColor = COLOR_SRGB(vec4(world->defaultEmitColor, 1));
+			// Vec4 ambientColor = COLOR_SRGB(vec4(vec3(1,0,0), 1));
+			// glMaterialfv(GL_FRONT, GL_AMBIENT, ambientColor.e);
 
 			for(int i = 0; i < world->shapeCount; i++) {
 				Shape* s = shapes + i;
+
+				Vec4 diffuseColor = COLOR_SRGB(vec4(s->color, 1));
+				// glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseColor.e);
+				glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, diffuseColor.e);
+
+				Vec4 emissionColor = COLOR_SRGB(vec4(s->emitColor, 1));
+				glMaterialfv(GL_FRONT, GL_EMISSION, emissionColor.e);
+
+				float shininess = lerp(s->reflectionMod, 0,128);
+				glMaterialf(GL_FRONT, GL_SHININESS, shininess);
 
 				switch(s->type) {
 					case SHAPE_BOX: {
@@ -858,21 +905,60 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} break;
 
 					case SHAPE_SPHERE: {
-						drawCircle(s->pos, s->r, normVec3(cam->pos - s->pos), vec4(s->color, 1));
+						drawSphere(s->pos, s->r, vec4(s->color, 1));
 					} break;
 				}
 			}
 
-			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+			// glEnable(GL_CULL_FACE);
+			// glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 		}
 
+		if(false)
+		{
+			// Vec4 ambientColor = vec4(world->defaultEmitColor, 1);
+			// Vec4 diffuseColor = vec4(1,0.5f,0.2f, 1);
+			// float shininess = 80;
+			// glMaterialfv(GL_FRONT, GL_AMBIENT,   ambientColor.e);
+			// glMaterialfv(GL_FRONT, GL_DIFFUSE,   diffuseColor.e);
+			// // glMaterialfv(GL_FRONT, GL_SPECULAR,  diffuseColor.e);
+			// // glMaterialfv(GL_FRONT, GL_EMISSION,  diffuseColor.e);
+			// glMaterialfv(GL_FRONT, GL_SHININESS, &shininess);
 
+
+			// Vec3 p = vec3(0,0,10);
+
+			// // drawPlane(p, vec2(5,5), vec3(0,0,1), vec4(1,1,1,1));
+			// drawBox(p, vec3(5.0f), vec4(1,1,1,1));
+
+			Vec3 p = vec3(0,0,10);
+			drawPlane(p, vec2(10,20), vec4(0.2f,1));
+
+			Vec3 lp = vec3(-10,0,20);
+			Vec3 ld = normVec3(vec3(1,0,-1));
+
+			glDisable(GL_LIGHTING);
+			drawLine(lp, lp + ld*100, vec4(1,0,0,1));
+		}
+
+		{
+			Vec3 lp = vec3(1,-10,0);
+			Vec3 ld = vec3(0,1,0);
+			Vec3 sp = vec3(2,1,0);
+			float sr = 5;
+
+			drawLine(lp, lp+ld*10, vec4(1,1,1,1));
+			drawSphere(sp, sr, vec4(1,1,1,1));
+
+			lineSphereIntersection2(lp, ld, sp, sr);
+		}
 
 		glMatrixMode(GL_PROJECTION); glPopMatrix();
 		glMatrixMode(GL_MODELVIEW); glPopMatrix();
 		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_LIGHTING);
+		glDisable(GL_NORMALIZE);
 	}
-
 
 	#if 0
 	{
@@ -910,12 +996,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// drawRect(rectCenDim(100,-100,100,100), vec4(1,0,0,1));
 
 		// free(noiseSamples);
-
 	}
 	#endif
-
-
-
 
 	// Draw Info.
 	{
@@ -938,19 +1020,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		drawText(fillString("cpos: %f,%f,%f", PVEC3(ad->world.camera.pos)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("crot: %f,%f,%f", PVEC3(ad->world.camera.rot)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-		// Quat q = eulerAnglesToQuat(0,0.1f,0);
-		// Vec3 d = vec3(0,1,0);
-		// d = normVec3(q*d);
-
-		// drawText(fillString("%f,%f,%f\n", PVEC3(d)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-
-		// float a = dot(vec3(1,0,0), normVec3(vec3(1,1,0)));
-		// a = dotUnitPercent(vec3(1,0,0), normVec3(vec3(-1,1,0)));
-
-		// drawText(fillString("%f\n", a), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
 	}
 
 
