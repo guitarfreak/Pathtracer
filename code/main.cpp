@@ -8,8 +8,8 @@
 
 #define Libcurl_Dll_File "External\\libcurl.dll"
 
-// #include <iacaMarks.h>
-// #include "rt_math.cpp"
+#include <iacaMarks.h>
+#include "rt_math.cpp"
 // #include "raycast.cpp"
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {

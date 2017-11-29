@@ -18,6 +18,8 @@ struct Shape {
 	Vec3 emitColor;
 	float reflectionMod;
 
+	float boundingSphereRadius;
+
 	union {
 		// Box
 		struct {
@@ -31,13 +33,13 @@ struct Shape {
 	};
 };
 
-bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, Vec3* reflectionDir, Vec3* reflectionNormal) {
+float lineShapeIntersection(Vec3 lp, Vec3 ld, Shape* shape, Vec3* reflectionPos, Vec3* reflectionNormal) {
 
-	switch(shape.type) {
+	float distance;
+	switch(shape->type) {
 		case SHAPE_BOX: {
-			float distance;
 			int face;
-			bool hit = boxRaycast(lp, ld, rect3CenDim(shape.pos, shape.dim), &distance, &face);
+			bool hit = boxRaycast(lp, ld, rect3CenDim(shape->pos, shape->dim), &distance, &face);
 			if(hit) {
 				*reflectionPos = lp + ld*distance;
 				Vec3 normal;
@@ -48,28 +50,41 @@ bool lineShapeIntersection(Vec3 lp, Vec3 ld, Shape shape, Vec3* reflectionPos, V
 				else if(face == 4) normal = vec3( 0, 0,-1);
 				else if(face == 5) normal = vec3( 0, 0, 1);
 
-				*reflectionDir = reflectVector(ld, normal);
 				*reflectionNormal = normal;
 
-				return true;
+				return distance;
 			}
 		} break;
 
 		case SHAPE_SPHERE: {
-			bool hit = lineSphereIntersection(lp, lp + ld*1000, shape.pos, shape.r, reflectionPos);
-			if(hit) {
-				Vec3 normal = normVec3(*reflectionPos - shape.pos);
-				*reflectionDir = reflectVector(ld, normal);
-				*reflectionNormal = normal;
+			distance = lineSphereIntersection(lp, ld, shape->pos, shape->r, reflectionPos);
 
-				return true;
+			if(distance > 0) {
+				*reflectionNormal = normVec3(*reflectionPos - shape->pos);
+
+				return distance;
 			}
 		}
 
 		default: break;
 	}
 
-	return false;
+	return -1;
+}
+
+void shapeBoundingSphere(Shape* s) {
+	float r;
+	switch(s->type) {
+		case SHAPE_BOX: {
+			r = lenVec3(s->dim);
+		} break;
+
+		case SHAPE_SPHERE: {
+			r = s->r;
+		} break;
+	}
+
+	s->boundingSphereRadius = r;
 }
 
 struct OrientationVectors {
@@ -178,8 +193,30 @@ struct ProcessPixelsData {
 
 	bool stopProcessing;
 };
-	
+
+struct TimeStamp {
+	i64 cycleStart;
+	i64 cycles;
+	i64 hits;
+	i64 cyclesOverHits;
+};
+void startTimeStamp(TimeStamp* t) { 
+	t->cycleStart = getCycleStamp(); 
+}
+void endTimeStamp(TimeStamp* t) { 
+	t->cycles += getCycleStamp() - t->cycleStart;
+	t->hits++;
+}
+void calcTimeStamp(TimeStamp* t) {
+	if(t->hits == 0) t->cyclesOverHits = 0;
+	else t->cyclesOverHits = t->cycles / t->hits;
+}
+
+TimeStamp processPixelsThreadedTimings[5] = {};
+
 void processPixelsThreaded(void* data) {
+	TimeStamp pixelTimings[5] = {};
+
 	ProcessPixelsData* d = (ProcessPixelsData*)data;
 
 	World world = *d->world;
@@ -197,6 +234,7 @@ void processPixelsThreaded(void* data) {
 	int totalPixelCount = texDim.w * texDim.h;
 	int pixelRangeEnd = d->pixelIndex+d->pixelCount;
 	for(int i = d->pixelIndex; i < pixelRangeEnd; i++) {
+		startTimeStamp(pixelTimings + 0);
 
 		if(d->stopProcessing) {
 			d->stopProcessing = false;
@@ -213,6 +251,8 @@ void processPixelsThreaded(void* data) {
 			Vec3 finalColor = black;
 
 			for(int i = 0; i < sampleCount; i++) {
+				startTimeStamp(pixelTimings + 1);
+
 				Vec3 rayPos = settings.camTopLeft;
 				rayPos += camera.ovecs.right * (camera.dim.w*percent.w + settings.pixelPercent.w*samples[i].x);
 				rayPos += -camera.ovecs.up   * (camera.dim.h*percent.h + settings.pixelPercent.h*samples[i].y);
@@ -224,50 +264,83 @@ void processPixelsThreaded(void* data) {
 				Vec3 attenuation = white;
 				int lastShapeIndex = -1;
 				for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
+					startTimeStamp(pixelTimings + 2);
 
 					// Find shape with closest intersection.
 
 					Vec3 shapeReflectionPos, shapeReflectionDir, shapeReflectionNormal;
 					int shapeIndex = -1;
 					{
+						startTimeStamp(pixelTimings + 3);
+
 						float minDistance = FLT_MAX;
 						for(int i = 0; i < world.shapeCount; i++) {
 							if(lastShapeIndex == i) continue;
 
 							Shape* s = world.shapes + i;
 
-							Vec3 reflectionPos, reflectionDir, reflectionNormal;
-							bool intersection = lineShapeIntersection(rayPos, rayDir, *s, &reflectionPos, &reflectionDir, &reflectionNormal);
+							// Check collision with bounding sphere.
+							bool possibleIntersection = lineSphereCollision(rayPos, rayDir, s->pos, s->boundingSphereRadius);
+							if(possibleIntersection) {
 
-							if(intersection) {
-								float distance = lenVec3(reflectionPos - rayPos);
-								if(distance < minDistance) {
+								Vec3 reflectionPos, reflectionNormal;
+								float distance = -1;
+								{
+									switch(s->type) {
+										case SHAPE_BOX: {
+											int face;
+											bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(s->pos, s->dim), &distance, &face);
+											if(hit) {
+												reflectionPos = rayPos + rayDir*distance;
+												reflectionNormal = boxRaycastNormals[face];
+											}
+										} break;
+
+										case SHAPE_SPHERE: {
+											distance = lineSphereIntersection(rayPos, rayDir, s->pos, s->r, &reflectionPos);
+											if(distance > 0) {
+												reflectionNormal = normVec3(reflectionPos - s->pos);
+											}
+										} break;
+									}
+								}
+
+								if(distance > 0 && distance < minDistance) {
 									minDistance = distance;
 									shapeIndex = i;
 
 									shapeReflectionPos = reflectionPos;
-									shapeReflectionDir = reflectionDir;
 									shapeReflectionNormal = reflectionNormal;
 								}
 							}
 						}
+
+						endTimeStamp(pixelTimings + 3);
 					}
 
 					if(shapeIndex != -1) {
+						startTimeStamp(pixelTimings + 4);
+
 						Shape* s = world.shapes + shapeIndex;
 						lastShapeIndex = shapeIndex;
 
 						finalColor += attenuation * s->emitColor;
 						attenuation = attenuation * s->color;
 			
-						if(attenuation == black) break;
+						if(attenuation == black) {
+							endTimeStamp(pixelTimings + 4);
+
+							break;
+						}
 
 						int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
 						Vec3 randomDir = settings.randomDirections[dirIndex];
 
 						// Reflect.
 						float d = dot(randomDir, shapeReflectionNormal);
-						if(d <= 0) randomDir = randomDir - 2*d*shapeReflectionNormal;
+						if(d <= 0) randomDir = reflectVector(randomDir, shapeReflectionNormal);
+
+						Vec3 shapeReflectionDir = reflectVector(rayDir, shapeReflectionNormal);
 
 						// randomDir = normVec3(lerp(s->reflectionMod, randomDir, shapeReflectionDir));
 						randomDir = lerp(s->reflectionMod, randomDir, shapeReflectionDir);
@@ -275,11 +348,11 @@ void processPixelsThreaded(void* data) {
 						rayPos = shapeReflectionPos;
 						rayDir = randomDir;
 
+						endTimeStamp(pixelTimings + 4);
 					} else {
 
 						if(rayIndex == 0) {
-							// Sky hit.
-							finalColor += world.defaultEmitColor;
+							finalColor += world.defaultEmitColor; // Sky hit.
 						} else {
 							// finalColor += attenuation * defaultEmitColor;
 
@@ -295,7 +368,11 @@ void processPixelsThreaded(void* data) {
 
 						break;
 					}
+
+					endTimeStamp(pixelTimings + 2);
 				}
+
+				endTimeStamp(pixelTimings + 1);
 			}
 
 			finalColor = finalColor/(float)sampleCount;
@@ -305,5 +382,16 @@ void processPixelsThreaded(void* data) {
 
 			// IACA_VC64_END;
 		}
+
+		endTimeStamp(pixelTimings + 0);
+	}
+
+	for(int i = 0; i < arrayCount(pixelTimings); i++) {
+		// calcTimeStamp(pixelTimings + i);
+
+		// printf("%i: hits: %6i, cycles: %6i\n", i, pixelTimings[i].hits, pixelTimings[i].cyclesOverHits);
+	
+		processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
+		processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
 	}
 }

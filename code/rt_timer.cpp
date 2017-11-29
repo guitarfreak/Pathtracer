@@ -135,3 +135,4 @@ struct TimerBlock {
 #define TIMER_BLOCK_END(ID) \
 	addTimerSlot(timerCounter##ID, TIMER_TYPE_END);
 #endif
+

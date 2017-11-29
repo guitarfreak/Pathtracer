@@ -903,7 +903,7 @@ uint getTicks() {
     return result;
 }
 
-__int64 getCycleStamp() {
+inline __int64 getCycleStamp() {
 	return __rdtsc();
 }
 

@@ -7,18 +7,19 @@
 	* Better angle calculation.
 	* Fov.
 	* Random placement.
+	* Better pre vis.
+	* Split hit tests and reflection calculations.
 	- Blue noise.
+	- More Shapes and rotations.
 	- Simd.
 	- Ui.
 	- Entity editor.
-	- More Shapes and rotations.
-	- Split hit tests and reflection calculations.
-	- Better pre vis.
 
 	Done Today: 
 
 	Bugs:
 	- Black pixels.
+	- One Thread job gets stuck till the end? (Noticible by unprocessed black pixel bar.)
 
 =================================================================================
 */
@@ -490,8 +491,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
-		ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
-		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
+		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
+		ad->settings.sampleMode = SAMPLE_MODE_GRID;
 		ad->settings.sampleCountGrid = 10;
 		ad->settings.rayBouncesMax = 6;
 
@@ -646,6 +647,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 				world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
 				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
 				world->globalLightColor = vec3(1,1,1);
+
+				// Calc bounding spheres.
+				for(int i = 0; i < world->shapeCount; i++) {
+					Shape* s = world->shapes + i;
+					shapeBoundingSphere(s);
+				}
 			}
 
 		}
@@ -735,6 +742,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 			doneProcessing = true;
 
 			ad->processTime = ad->time - ad->processStartTime;
+
+			for(int i = 0; i < arrayCount(processPixelsThreadedTimings); i++) {
+				TimeStamp* t = processPixelsThreadedTimings + i;
+
+				calcTimeStamp(t);
+
+				printf("%i: hits: %6i, cycles: %6i\n", i, t->hits, t->cyclesOverHits);
+
+				*t = {};
+			}
 		}
 
 		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing))
@@ -875,7 +892,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glEnable(GL_LIGHTING);
 		}
 
-		if(false)
+		// if(false)
 		{
 			Shape* shapes = world->shapes;
 
@@ -941,16 +958,28 @@ extern "C" APPMAINFUNCTION(appMain) {
 			drawLine(lp, lp + ld*100, vec4(1,0,0,1));
 		}
 
+		if(false)
 		{
-			Vec3 lp = vec3(1,-10,0);
+			glDisable(GL_LIGHTING);
+			Vec3 lp = vec3(sin(ad->time)*10,-10,0);
 			Vec3 ld = vec3(0,1,0);
-			Vec3 sp = vec3(2,1,0);
+			Vec3 sp = vec3(0,0,0);
 			float sr = 5;
 
 			drawLine(lp, lp+ld*10, vec4(1,1,1,1));
 			drawSphere(sp, sr, vec4(1,1,1,1));
 
-			lineSphereIntersection2(lp, ld, sp, sr);
+			Vec3 ip, in;
+			bool result = lineSphereIntersection(lp, ld, sp, sr, &ip, &in);
+
+			if(result) {
+				Vec4 c = vec4(1,0,0,1);
+				glMaterialfv(GL_FRONT, GL_DIFFUSE, c.e);
+				drawSphere(ip, 0.1f, vec4(1,0,0,1));
+				drawLine(ip, ip+in*10, vec4(0,1,1,1));
+			}
+
+			// drawSphere(vec3(0,-5,0), 0.2f, vec4(1,0,1,1));
 		}
 
 		glMatrixMode(GL_PROJECTION); glPopMatrix();

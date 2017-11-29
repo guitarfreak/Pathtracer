@@ -2039,11 +2039,12 @@ inline Vec3 normVec3(Vec3 a) {
 	return a/sqrlen;
 }
 
-Vec3 projectPointOnLine(Vec3 lPos, Vec3 lDir, Vec3 p) {
-	Vec3 result;
-	result = lPos + ((dot(p-lPos, lDir) / dot(lDir,lDir))) * lDir;
+inline Vec3 projectPointOnLine(Vec3 lPos, Vec3 lDir, Vec3 p) {
+	Vec3 result = lPos + ((dot(p-lPos, lDir) / dot(lDir,lDir))) * lDir;
 	return result;
 }
+
+Vec3 boxRaycastNormals[6] = {vec3(-1,0,0), vec3(1,0,0), vec3(0,-1,0), vec3(0,1,0), vec3(0,0,-1), vec3(0,0,1)};
 
 bool boxRaycast(Vec3 lp, Vec3 ld, Rect3 box, float* distance = 0, int* face = 0) {
 	// ld is unit
@@ -2132,29 +2133,7 @@ inline void linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn) {
 
 }
 
-// bool lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float r, Vec3* intersection = 0) {
-// 	// float a = 
-
-// 	// Vec3 asdf = lp - sp;
-// 	// float a = pow((ld * (lp - sp)),2);
-// 	// float a = pow((ld * (lp - sp)),2);
-// 	float test = pow(lenVec3((lp - sp)),2);
-// 	float test2 = pow(dot(ld, (lp - sp)),2);
-// 	float a = test2 - test + r*r;
-
-// 	if(a < 0) return false;
-
-// 	// a == 0 means only one intersection
-
-// 	float d = -dot(ld, (lp - sp)) - sqrt(a);
-
-// 	if(intersection) *intersection = lp + ld*d;
-
-// 	return true;
-// }
-
-
-bool lineSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter, double circleRadius, Vec3* intersection = 0)
+bool linesegmentSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter, double circleRadius, Vec3* intersection = 0)
 {
 
     double cx = circleCenter.x;
@@ -2199,37 +2178,40 @@ bool lineSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter,
     return true;
 }
 
-bool lineSphereIntersection2(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+bool lineSphereCollision(Vec3 lp, Vec3 ld, Vec3 sp, float sr) {
+	lp -= sp;
+	float dotLdLp = dot(ld,lp);
+	float lenLp = lenVec3(lp);
+	float b = dotLdLp*dotLdLp - lenLp*lenLp + sr*sr;
 
-	// Pretend sphere is at origin.
+	return b >= 0;
+}
+
+float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+
+	// ld must be unit.
+
 	Vec3 oldP = lp;
 	lp -= sp;
 
-	// float distance = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z) / 
-	// 				 2 * (x * sqrt(-ld.y*ld.y - ld.z*ld.z) + ld.y*lp.y + ld.z*lp.z)
-	
-					 
-	// float distance = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z) / 
-					  // 2 * (ld.x*lp.x + ld.y*lp.y + ld.z*lp.z);
+	float dotLdLp = dot(ld,lp);
+	float lenLp = lenVec3(lp);
+	float b = dotLdLp*dotLdLp - lenLp*lenLp + sr*sr;
 
-	float a = dot(lp, ld);
-	if(a == 0) return false;
+	if(b < 0) return false;
 
-	// float top = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z);
-	// float bottom = 2 * (ld.x*lp.x + ld.y*lp.y + ld.z*lp.z);
-
-	float distance = (sr*sr - lp.x*lp.x - lp.y*lp.y - lp.z*lp.z) / 2*a;
+	// Always choose shorter distance to get intersection that's closest.
+	float distance = -(dot(ld, lp)) - sqrt(b);
 
 	if(intersection) {
 		*intersection = oldP + ld*distance;
 		if(intersectionNormal) *intersectionNormal = normVec3(*intersection - sp);
 	}
 
-    return true;
+    return distance;
 }
 
-Vec3 reflectVector(Vec3 dir, Vec3 normal) {
-	// normal = normVec3(normal);
+inline Vec3 reflectVector(Vec3 dir, Vec3 normal) {
 	Vec3 result = dir - 2*(dot(dir, normal))*normal;
 	return result;
 }
