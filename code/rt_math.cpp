@@ -28,6 +28,7 @@
 
 
 
+
 int mod(int a, int b) {
 	int result;
 	result = a % b;
@@ -2129,11 +2130,7 @@ inline Vec3 rgbToHslFloat(Vec3 rgb) {
 	return hslFloat;
 }
 
-inline void linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn) {
-
-}
-
-bool linesegmentSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter, double circleRadius, Vec3* intersection = 0)
+bool linesegmentSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circleCenter, double circleRadius)
 {
 
     double cx = circleCenter.x;
@@ -2171,11 +2168,36 @@ bool linesegmentSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circle
 
     // D == 0 one solution;
 
-	if(intersection) {
-		*intersection = solution1;
-	} 
-
     return true;
+}
+
+inline float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3 pu, Vec2 dim, Vec3* intersection, Vec3* intersectionNormal = 0) {
+	// Assuming pu is unit vector.
+
+	float a = dot(pn, ld);
+	if(a == 0) return -1;
+
+	float distance = -(dot(pn, lp) - dot(pn, pp)) / a;
+	if(distance >= 0) {
+		Vec3 ip = lp + ld*distance;
+		ip = ip - pp;
+		float ix = dot(ip, pu);   // ip*cos(angle)
+
+		float lenIp = lenVec3(ip);
+		float angle = acos(ix/lenIp);
+		float iy = lenIp*sin(angle); // sin(angle)
+
+		if(abs(ix) > dim.y/2.0f || abs(iy > dim.x/2.0f)) return -1;
+
+		if(intersection) {
+			*intersection = lp + ld*distance;
+			if(intersectionNormal) *intersectionNormal = pn;
+		}
+
+		return distance;
+	}
+
+	return -1;
 }
 
 bool lineSphereCollision(Vec3 lp, Vec3 ld, Vec3 sp, float sr) {
@@ -2188,7 +2210,6 @@ bool lineSphereCollision(Vec3 lp, Vec3 ld, Vec3 sp, float sr) {
 }
 
 float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
-
 	// ld must be unit.
 
 	Vec3 oldP = lp;

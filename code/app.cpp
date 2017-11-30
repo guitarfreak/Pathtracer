@@ -14,6 +14,7 @@
 	- Simd.
 	- Ui.
 	- Entity editor.
+	- Put input updating in own thread.
 
 	Done Today: 
 
@@ -645,6 +646,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				world->shapes[world->shapeCount++] = s;
 
 				world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
+				// world->defaultEmitColor = vec3(0.0f);
 				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
 				world->globalLightColor = vec3(1,1,1);
 
@@ -743,14 +745,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			ad->processTime = ad->time - ad->processStartTime;
 
-			for(int i = 0; i < arrayCount(processPixelsThreadedTimings); i++) {
-				TimeStamp* t = processPixelsThreadedTimings + i;
+			if(printRaytraceTimings) {
+				for(int i = 0; i < arrayCount(processPixelsThreadedTimings); i++) {
+					TimeStamp* t = processPixelsThreadedTimings + i;
 
-				calcTimeStamp(t);
-
-				printf("%i: hits: %6i, cycles: %6i\n", i, t->hits, t->cyclesOverHits);
-
-				*t = {};
+					calcTimeStamp(t);
+					printf("%i: hits: %6i, cycles: %6i\n", i, t->hits, t->cyclesOverHits);
+					*t = {};
+				}
 			}
 		}
 
@@ -831,7 +833,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec2 d = cam->dim;
 
 		Rect tr = ad->textureScreenRect;
+		
+		glDepthMask(false);
+		Vec3 cc = world->defaultEmitColor;
+		drawRect(tr, vec4(cc,1));
+		glDepthMask(true);
+
 		glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
+
+
+
+		// glClearColor(cc.r, cc.g, cc.g, 1);
+		// glClear(GL_COLOR_BUFFER_BIT);
+
 
 			// GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
 			// GLfloat mat_shininess[] = { 50.0 };
@@ -880,6 +894,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glEnable(GL_DEPTH_TEST);
 		glBindTexture(GL_TEXTURE_2D, 0);
 
+
+
 		{
 			glDisable(GL_LIGHTING);
 			float l = 500;
@@ -895,6 +911,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// if(false)
 		{
 			Shape* shapes = world->shapes;
+
 
 			// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 			// glDisable(GL_CULL_FACE);
@@ -949,7 +966,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// drawBox(p, vec3(5.0f), vec4(1,1,1,1));
 
 			Vec3 p = vec3(0,0,10);
-			drawPlane(p, vec2(10,20), vec4(0.2f,1));
+			// drawPlane(p, vec2(10,20), vec4(0.2f,1));
 
 			Vec3 lp = vec3(-10,0,20);
 			Vec3 ld = normVec3(vec3(1,0,-1));
@@ -961,23 +978,43 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(false)
 		{
 			glDisable(GL_LIGHTING);
-			Vec3 lp = vec3(sin(ad->time)*10,-10,0);
-			Vec3 ld = vec3(0,1,0);
-			Vec3 sp = vec3(0,0,0);
-			float sr = 5;
+			Vec3 lp = vec3(0,-10 + sin(ad->time)*13,20);
+			Vec3 ld = normVec3(vec3(0, 1, -1));
+			Vec3 pp = vec3(0,0,10);
+			Vec3 pn = normVec3(vec3(0,-2,1));
+			Vec3 pu = cross(pn, vec3(1,0,0));
+			Vec2 pdim = vec2(13,20);
 
-			drawLine(lp, lp+ld*10, vec4(1,1,1,1));
-			drawSphere(sp, sr, vec4(1,1,1,1));
+			drawLine(lp, lp+ld*100, vec4(0.8f,1));
+
+			drawPlane(pp, pn, pu, pdim, vec4(1,1,1,1));
+
+
+			Vec3 a = vec3(1,2,3);
+			Vec3 b = vec3(5,6,-23);
+			float c = 34;
+
+			float x = dot(a, b) * c;
+			float y = dot(a, b*c);
 
 			Vec3 ip, in;
-			bool result = lineSphereIntersection(lp, ld, sp, sr, &ip, &in);
-
-			if(result) {
+			float distance = linePlaneIntersection(lp, ld, pp, pn, pu, pdim, &ip, &in);
+			if(distance >= 0) {
 				Vec4 c = vec4(1,0,0,1);
 				glMaterialfv(GL_FRONT, GL_DIFFUSE, c.e);
 				drawSphere(ip, 0.1f, vec4(1,0,0,1));
 				drawLine(ip, ip+in*10, vec4(0,1,1,1));
 			}
+
+			// Vec3 ip, in;
+			// bool result = lineSphereIntersection(lp, ld, sp, sr, &ip, &in);
+
+			// if(result) {
+			// 	Vec4 c = vec4(1,0,0,1);
+			// 	glMaterialfv(GL_FRONT, GL_DIFFUSE, c.e);
+			// 	drawSphere(ip, 0.1f, vec4(1,0,0,1));
+			// 	drawLine(ip, ip+in*10, vec4(0,1,1,1));
+			// }
 
 			// drawSphere(vec3(0,-5,0), 0.2f, vec4(1,0,1,1));
 		}

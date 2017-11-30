@@ -1124,22 +1124,21 @@ inline void pushQuad(Vec3 v0, Vec3 v1, Vec3 v2, Vec3 v3) {
 	glVertex3f(v3.x, v3.y, v3.z);
 }
 
-void drawPlane(Vec3 pos, Vec2 dim, Vec4 color) {
+void drawPlane(Vec3 pos, Vec3 normal, Vec3 up, Vec2 dim, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	Vec4 c = COLOR_SRGB(color);
 	glColor4f(c.r, c.g, c.b, c.a);
-	glPushMatrix();
-	glTranslatef(pos.x, pos.y, pos.z);
-	glScalef(dim.x, dim.y, 1);
+	dim = dim/2.0f;
+	Vec3 right = cross(up, normal);
+
 	glBegin(GL_QUADS);
-		glNormal3f(0,0,1);
-		glVertex3f(-0.5f,-0.5f, 0);
-		glVertex3f(-0.5f, 0.5f, 0);
-		glVertex3f( 0.5f, 0.5f, 0);
-		glVertex3f( 0.5f,-0.5f, 0);
+		glNormal3f(normal.x, normal.y, normal.z);
+		pushVec(pos + right*dim.x + up*dim.y);
+		pushVec(pos + right*dim.x - up*dim.y);
+		pushVec(pos - right*dim.x - up*dim.y);
+		pushVec(pos - right*dim.x + up*dim.y);
 	glEnd();
-	glPopMatrix();
 }
 
 void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
@@ -1208,7 +1207,7 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 	glTranslatef(pos.x, pos.y, pos.z);
 	glScalef(r, r, r);
 
-	int div = 3;
+	int div = 4;
 	glBegin(GL_TRIANGLES);
 	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div);
 	drawTriangleSubDiv(vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div);

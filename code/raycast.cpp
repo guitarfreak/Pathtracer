@@ -214,6 +214,16 @@ void calcTimeStamp(TimeStamp* t) {
 
 TimeStamp processPixelsThreadedTimings[5] = {};
 
+#define printRaytraceTimings false
+
+#ifdef printRaytraceTimings
+#define startTimer(i) startTimeStamp(pixelTimings + i)
+#define endTimer(i) endTimeStamp(pixelTimings + i)
+#else
+#define startTimer(i)
+#define endTimer(i)
+#endif
+
 void processPixelsThreaded(void* data) {
 	TimeStamp pixelTimings[5] = {};
 
@@ -234,7 +244,7 @@ void processPixelsThreaded(void* data) {
 	int totalPixelCount = texDim.w * texDim.h;
 	int pixelRangeEnd = d->pixelIndex+d->pixelCount;
 	for(int i = d->pixelIndex; i < pixelRangeEnd; i++) {
-		startTimeStamp(pixelTimings + 0);
+		startTimer(0);
 
 		if(d->stopProcessing) {
 			d->stopProcessing = false;
@@ -251,7 +261,7 @@ void processPixelsThreaded(void* data) {
 			Vec3 finalColor = black;
 
 			for(int i = 0; i < sampleCount; i++) {
-				startTimeStamp(pixelTimings + 1);
+				startTimer(1);
 
 				Vec3 rayPos = settings.camTopLeft;
 				rayPos += camera.ovecs.right * (camera.dim.w*percent.w + settings.pixelPercent.w*samples[i].x);
@@ -264,14 +274,14 @@ void processPixelsThreaded(void* data) {
 				Vec3 attenuation = white;
 				int lastShapeIndex = -1;
 				for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
-					startTimeStamp(pixelTimings + 2);
+					startTimer(2);
 
 					// Find shape with closest intersection.
 
 					Vec3 shapeReflectionPos, shapeReflectionDir, shapeReflectionNormal;
 					int shapeIndex = -1;
 					{
-						startTimeStamp(pixelTimings + 3);
+						startTimer(3);
 
 						float minDistance = FLT_MAX;
 						for(int i = 0; i < world.shapeCount; i++) {
@@ -315,11 +325,11 @@ void processPixelsThreaded(void* data) {
 							}
 						}
 
-						endTimeStamp(pixelTimings + 3);
+						endTimer(3);
 					}
 
 					if(shapeIndex != -1) {
-						startTimeStamp(pixelTimings + 4);
+						startTimer(4);
 
 						Shape* s = world.shapes + shapeIndex;
 						lastShapeIndex = shapeIndex;
@@ -328,7 +338,7 @@ void processPixelsThreaded(void* data) {
 						attenuation = attenuation * s->color;
 			
 						if(attenuation == black) {
-							endTimeStamp(pixelTimings + 4);
+							endTimer(4);
 
 							break;
 						}
@@ -348,7 +358,7 @@ void processPixelsThreaded(void* data) {
 						rayPos = shapeReflectionPos;
 						rayDir = randomDir;
 
-						endTimeStamp(pixelTimings + 4);
+						endTimer(4);
 					} else {
 
 						if(rayIndex == 0) {
@@ -369,10 +379,10 @@ void processPixelsThreaded(void* data) {
 						break;
 					}
 
-					endTimeStamp(pixelTimings + 2);
+					endTimer(2);
 				}
 
-				endTimeStamp(pixelTimings + 1);
+				endTimer(1);
 			}
 
 			finalColor = finalColor/(float)sampleCount;
@@ -383,15 +393,13 @@ void processPixelsThreaded(void* data) {
 			// IACA_VC64_END;
 		}
 
-		endTimeStamp(pixelTimings + 0);
+		endTimer(0);
 	}
 
-	for(int i = 0; i < arrayCount(pixelTimings); i++) {
-		// calcTimeStamp(pixelTimings + i);
-
-		// printf("%i: hits: %6i, cycles: %6i\n", i, pixelTimings[i].hits, pixelTimings[i].cyclesOverHits);
-	
-		processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
-		processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
+	if(printRaytraceTimings) {
+		for(int i = 0; i < arrayCount(pixelTimings); i++) {
+			processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
+			processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
+		}
 	}
 }
