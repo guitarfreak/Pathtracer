@@ -1084,6 +1084,21 @@ void drawCross(Vec2 p, float size, float size2, Vec2 dir, Vec4 color) {
 	glEnd();
 }
 
+void drawCircle(Vec2 pos, float r, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	glBegin(GL_LINE_STRIP);
+
+	int segments = (M_2PI * r)*10;
+	for(int i = 0; i < segments+1; i++) {
+		Vec2 dv = pos + rotateVec2(vec2(0,1), (i * M_2PI/(float)segments)) * r;
+		glVertex3f(dv.x, dv.y, 0);
+	}
+
+	glEnd();
+}
 
 // 3D
 

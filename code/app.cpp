@@ -9,7 +9,8 @@
 	* Random placement.
 	* Better pre vis.
 	* Split hit tests and reflection calculations.
-	- Blue noise.
+	* Blue noise.
+	- Aliasing.
 	- More Shapes and rotations.
 	- Simd.
 	- Ui.
@@ -492,9 +493,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
-		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
-		ad->settings.sampleMode = SAMPLE_MODE_GRID;
-		ad->settings.sampleCountGrid = 10;
+		ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
+		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
+		// ad->settings.sampleMode = SAMPLE_MODE_BLUE;
+		ad->settings.sampleCountGrid = 32;
 		ad->settings.rayBouncesMax = 6;
 
 		ad->keepUpdating = false;
@@ -588,8 +590,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(!texture->isCreated || (texDim != texture->dim)) {
 				if(texDim != texture->dim) deleteTexture(texture);
 
-				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
-				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
 
 				Texture* t = &ad->raycastTexture;
 				Vec3 black = vec3(0.2f);
@@ -645,8 +647,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				// s.reflectionMod = 0.1f;
 				world->shapes[world->shapeCount++] = s;
 
-				world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-				// world->defaultEmitColor = vec3(0.0f);
+				// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
+				world->defaultEmitColor = vec3(0.0f);
 				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
 				world->globalLightColor = vec3(1,1,1);
 
@@ -680,8 +682,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 			{
 				int mode = settings->sampleMode;
 
+				Vec2* blueNoiseSamples;
+
 				int sampleCount;
 				if(mode == SAMPLE_MODE_GRID) sampleCount = settings->sampleCountGrid*settings->sampleCountGrid;
+				else if(mode == SAMPLE_MODE_BLUE) sampleCount = blueNoise(rect(0,0,1,1), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
 				else if(mode == SAMPLE_MODE_MSAA4X) sampleCount = 4;
 				else if(mode == SAMPLE_MODE_MSAA8X) sampleCount = 8;
 
@@ -696,6 +701,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 							settings->samples[i] = vec2(((i%sampleCount2)*sampleCount2 + 1) / (float)sampleCount, 
 							                  ((i/sampleCount2)*sampleCount2 + 1) / (float)sampleCount);
 						}
+					} break;
+
+					case SAMPLE_MODE_BLUE: {
+						for(int i = 0; i < sampleCount; i++) settings->samples[i] = blueNoiseSamples[i];
+						free(blueNoiseSamples);
 					} break;
 
 					case SAMPLE_MODE_MSAA4X: {
@@ -833,7 +843,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec2 d = cam->dim;
 
 		Rect tr = ad->textureScreenRect;
-		
+
 		glDepthMask(false);
 		Vec3 cc = world->defaultEmitColor;
 		drawRect(tr, vec4(cc,1));
@@ -1034,31 +1044,38 @@ extern "C" APPMAINFUNCTION(appMain) {
 		static Vec2* noiseSamples;
 		static int sampleCount;
 
-		if(init || reload) {
+		float radius = 100;
+
+		if(init || reload || input->keysPressed[KEYCODE_H]) {
+			if(noiseSamples) free(noiseSamples);
+
 			// sampleCount = blueNoise(r, 0, &noiseSamples, 8*8);
 			// sampleCount = blueNoise(r, (800/8)/M_SQRT2*0.4f, &noiseSamples);
-			sampleCount = blueNoise(r, 50, &noiseSamples);
+			sampleCount = blueNoise(r, radius, &noiseSamples);
 			// sampleCount = blueNoise(r, cellSize/cellCount/M_SQRT2, &noiseSamples);
 			// sampleCount = blueNoise(r, cellSize/cellCount/2, &noiseSamples);
+
+			float ce = radius / M_SQRT2;
+			float asdf = cellSize/ce;
+			printf("%f %i %f\n", asdf*asdf, sampleCount, (float)sampleCount/(asdf*asdf));
 		}
 
 		drawRect(r, vec4(0,1));
 
-		// for(int y = 0; y < cellCount; y++) {
-		// 	for(int x = 0; x < cellCount; x++) {
-		// 		drawPoint(vec2(
-		// 	}
-		// }
-
 		Vec2 tl = rectTL(r);
-		for(int i = 0; i < cellCount; i++) drawLine(tl + vec2(0,-cellSize) * i/(cellCount), tl + vec2(0,-cellSize) * i/(cellCount) + vec2(cellSize,0), vec4(0,1,0,1));
-		for(int i = 0; i < cellCount; i++) drawLine(tl + vec2(cellSize,0) * i/(cellCount), tl + vec2(cellSize,0) * i/(cellCount) + vec2(0,-cellSize), vec4(0,1,0,1));
+		Vec4 lc = vec4(0.5f, 1);
+		for(int i = 0; i < cellCount; i++) 
+			drawLine(tl + vec2(0,-cellSize) * i/(cellCount), tl + vec2(0,-cellSize) * i/(cellCount) + vec2(cellSize,0), lc);
+		for(int i = 0; i < cellCount; i++) 
+			drawLine(tl + vec2(cellSize,0) * i/(cellCount), tl + vec2(cellSize,0) * i/(cellCount) + vec2(0,-cellSize), lc);
 
 		glPointSize(10);
 		for(int i = 0; i < sampleCount; i++) {
 			Vec2 p = noiseSamples[i];
 			drawPoint(p, vec4(1,0,0,1));
+			drawCircle(p, radius/2.0f, vec4(1,1,0,1));
 		}
+
 		// drawRect(rectCenDim(100,-100,100,100), vec4(1,0,0,1));
 
 		// free(noiseSamples);
@@ -1081,6 +1098,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		float lh = font->height * 0.9f;
 		drawText(fillString("%i x %i", texDim.x, texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("%i. pixels", texDim.x * texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
+		drawText(fillString("%i. samples", ad->settings.sampleCount), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("%fms per pixel", (float)(ad->processTime/(texDim.x*texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 

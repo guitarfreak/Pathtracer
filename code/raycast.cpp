@@ -1,6 +1,4 @@
 
-#include "external\pcg_basic.c"
-
 enum {
 	SHAPE_BOX = 0,
 	SHAPE_SPHERE,
@@ -129,6 +127,7 @@ OrientationVectors getVectorsFromRotation(Vec3 rot) {
 
 enum SampleMode {
 	SAMPLE_MODE_GRID = 0,
+	SAMPLE_MODE_BLUE,
 	SAMPLE_MODE_MSAA4X,
 	SAMPLE_MODE_MSAA8X,
 
@@ -243,7 +242,7 @@ void processPixelsThreaded(void* data) {
 	Vec2i texDim = settings.texDim;
 	int totalPixelCount = texDim.w * texDim.h;
 	int pixelRangeEnd = d->pixelIndex+d->pixelCount;
-	for(int i = d->pixelIndex; i < pixelRangeEnd; i++) {
+	for(int pixelIndex = d->pixelIndex; pixelIndex < pixelRangeEnd; pixelIndex++) {
 		startTimer(0);
 
 		if(d->stopProcessing) {
@@ -251,8 +250,8 @@ void processPixelsThreaded(void* data) {
 			break;
 		}
 		
-		int x = i % texDim.w;
-		int y = i / texDim.w;
+		int x = pixelIndex % texDim.w;
+		int y = pixelIndex / texDim.w;
 
 		{
 			// IACA_VC64_START;
@@ -268,7 +267,10 @@ void processPixelsThreaded(void* data) {
 				rayPos += -camera.ovecs.up   * (camera.dim.h*percent.h + settings.pixelPercent.h*samples[i].y);
 
 				Vec3 rayDir = normVec3(rayPos - camera.pos);
-			
+
+				// if(pixelIndex < 10 && i < 10) {
+				// 	printf("%f, %f, %f\n", PVEC3(rayPos));
+				// }
 
 
 				Vec3 attenuation = white;
