@@ -10,12 +10,14 @@
 	* Better pre vis.
 	* Split hit tests and reflection calculations.
 	* Blue noise.
-	- Aliasing.
+	* Aliasing.
+	* Wrapping blue noise.
 	- More Shapes and rotations.
 	- Simd.
 	- Ui.
 	- Entity editor.
 	- Put input updating in own thread.
+	- Float not precise enough at hundreds of samples per pixel.
 
 	Done Today: 
 
@@ -493,16 +495,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
-		ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
+		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
 		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
-		// ad->settings.sampleMode = SAMPLE_MODE_BLUE;
-		ad->settings.sampleCountGrid = 32;
+		ad->settings.sampleMode = SAMPLE_MODE_BLUE;
+		ad->settings.sampleCountGrid = 10*1.3f;
+		// ad->settings.sampleCountGrid = 10;
 		ad->settings.rayBouncesMax = 6;
 
 		ad->keepUpdating = false;
 
 		ad->threadCount = THREAD_JOB_COUNT;
 		// ad->threadCount = 1;
+
+		// glClearColor(1,0,0,1);
+		// glClear(GL_COLOR_BUFFER_BIT);
 
 		if(init) {
 			ad->drawSceneWired = true;
@@ -590,8 +596,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(!texture->isCreated || (texDim != texture->dim)) {
 				if(texDim != texture->dim) deleteTexture(texture);
 
-				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
-				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
 
 				Texture* t = &ad->raycastTexture;
 				Vec3 black = vec3(0.2f);
@@ -636,6 +642,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					world->shapes[world->shapeCount++] = s;
 				}
 
+				// Plane
+
 				Shape s = {};
 				s.type = SHAPE_BOX;
 				s.pos = vec3(0,0,0);
@@ -644,13 +652,44 @@ extern "C" APPMAINFUNCTION(appMain) {
 				// s.color = vec3(0.99f);
 				// s.reflectionMod = 0.3f;
 				s.reflectionMod = 0.5f;
+				// s.reflectionMod = 0.9f;
 				// s.reflectionMod = 0.1f;
 				world->shapes[world->shapeCount++] = s;
 
-				// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-				world->defaultEmitColor = vec3(0.0f);
+
+
+
+				// Shape s = {};
+				// s.type = SHAPE_SPHERE;
+				// s.pos = vec3(0,0,10);
+				// s.r = 10;
+				// s.color = vec3(0.0f);
+				// // s.color = vec3(0.99f);
+				// // s.reflectionMod = 0.3f;
+				// s.reflectionMod = 0.0f;
+				// // s.reflectionMod = 0.9f;
+				// // s.reflectionMod = 0.1f;
+				// world->shapes[world-> shapeCount++] = s;
+
+				// Shape s = {};
+				// s.type = SHAPE_BOX;
+				// s.pos = vec3(0,0,10);
+				// s.dim = vec3(10.0f);
+				// s.color = vec3(0.0f);
+				// // s.color = vec3(0.99f);
+				// // s.reflectionMod = 0.3f;
+				// s.reflectionMod = 0.0f;
+				// // s.reflectionMod = 0.9f;
+				// // s.reflectionMod = 0.1f;
+				// world->shapes[world-> shapeCount++] = s;
+
+
+
+				world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
+				// world->defaultEmitColor = vec3(1.0f);
 				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
 				world->globalLightColor = vec3(1,1,1);
+				// world->globalLightColor = vec3(0.0f);
 
 				// Calc bounding spheres.
 				for(int i = 0; i < world->shapeCount; i++) {
@@ -696,6 +735,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				switch(mode) {
 					case SAMPLE_MODE_GRID: {
+						if(settings->sampleCount == 1) {
+							settings->samples[0] = vec2(0.5f, 0.5f);
+							break;
+						}
+
 						int sampleCount2 = sqrt(settings->sampleCount);
 						for(int i = 0; i < sampleCount; i++) {
 							settings->samples[i] = vec2(((i%sampleCount2)*sampleCount2 + 1) / (float)sampleCount, 
@@ -729,7 +773,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			int threadCount = ad->threadCount;
-			// int threadCount = 1;
 			int pixelCountPerThread = pixelCount/threadCount;
 			int pixelCountRest = pixelCount % threadCount;
 
@@ -1039,12 +1082,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#if 0
 	{
 		int cellCount = 8;
-		float cellSize = 800;
-		Rect r = rectTLDim(vec2(100,-100), vec2(cellSize,cellSize));
+		float radius = 40;
+		float cellSize = 200;
+		Rect r = rectTLDim(vec2(0,0), vec2(cellSize,cellSize));
 		static Vec2* noiseSamples;
 		static int sampleCount;
 
-		float radius = 100;
 
 		if(init || reload || input->keysPressed[KEYCODE_H]) {
 			if(noiseSamples) free(noiseSamples);
@@ -1055,32 +1098,76 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// sampleCount = blueNoise(r, cellSize/cellCount/M_SQRT2, &noiseSamples);
 			// sampleCount = blueNoise(r, cellSize/cellCount/2, &noiseSamples);
 
-			float ce = radius / M_SQRT2;
-			float asdf = cellSize/ce;
-			printf("%f %i %f\n", asdf*asdf, sampleCount, (float)sampleCount/(asdf*asdf));
+			// float ce = radius / M_SQRT2;
+			// float asdf = cellSize/ce;
+			// printf("%f %i %f\n", asdf*asdf, sampleCount, (float)sampleCount/(asdf*asdf));
 		}
 
-		drawRect(r, vec4(0,1));
 
-		Vec2 tl = rectTL(r);
-		Vec4 lc = vec4(0.5f, 1);
-		for(int i = 0; i < cellCount; i++) 
-			drawLine(tl + vec2(0,-cellSize) * i/(cellCount), tl + vec2(0,-cellSize) * i/(cellCount) + vec2(cellSize,0), lc);
-		for(int i = 0; i < cellCount; i++) 
-			drawLine(tl + vec2(cellSize,0) * i/(cellCount), tl + vec2(cellSize,0) * i/(cellCount) + vec2(0,-cellSize), lc);
+		// Vec2 tl = rectTL(r);
+		// Vec4 lc = vec4(0.5f, 1);
+		// for(int i = 0; i < cellCount; i++) 
+		// 	drawLine(tl + vec2(0,-cellSize) * i/(cellCount), tl + vec2(0,-cellSize) * i/(cellCount) + vec2(cellSize,0), lc);
+		// for(int i = 0; i < cellCount; i++) 
+		// 	drawLine(tl + vec2(cellSize,0) * i/(cellCount), tl + vec2(cellSize,0) * i/(cellCount) + vec2(0,-cellSize), lc);
 
+
+		drawRect(rectCenDim(0,0,10000,10000), vec4(0,1));
+
+
+		Vec2 p = vec2(300,-200);
 		glPointSize(10);
-		for(int i = 0; i < sampleCount; i++) {
-			Vec2 p = noiseSamples[i];
-			drawPoint(p, vec4(1,0,0,1));
-			drawCircle(p, radius/2.0f, vec4(1,1,0,1));
+
+		for(int y = 0; y < 3; y++) {
+			for(int x = 0; x < 3; x++) {
+				// if(x == 1 && y == 1) 
+				{
+					// y = 1; 
+					// x = 1;
+
+					Vec2 offset = p + vec2(x*cellSize, y*-cellSize);
+					// drawRect(rectTLDim(offset, vec2(cellSize)), vec4(0,1));
+			
+					for(int i = 0; i < sampleCount; i++) {
+						Vec2 p = noiseSamples[i] + offset;
+						drawPoint(p, vec4(1,0,0,1));
+						// drawCircle(p, radius/2.0f, vec4(1,1,0,1));
+					}
+				}
+			}
 		}
+
+		// glPointSize(10);
+		// for(int i = 0; i < sampleCount; i++) {
+		// 	Vec2 p = noiseSamples[i];
+		// 	drawPoint(p, vec4(1,0,0,1));
+		// 	drawCircle(p, radius/2.0f, vec4(1,1,0,1));
+		// }
 
 		// drawRect(rectCenDim(100,-100,100,100), vec4(1,0,0,1));
 
 		// free(noiseSamples);
 	}
 	#endif
+
+	if(false)
+	{
+
+		int w = 1920;
+		float cw = 10.0f;
+
+		float pixelPercent = 1/(float)w;
+
+		float res = 1/10.0f;
+
+		float a = pixelPercent * res;
+
+
+				// rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
+
+
+		exit(0);
+	}
 
 	// Draw Info.
 	{

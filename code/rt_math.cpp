@@ -282,7 +282,8 @@ inline float roundUpFloat(float i) {
 }
 
 inline float roundDownFloat(float i) {
-	return (float)((int)i);
+	float result = i < 0 ? ((int)i)-1 : (int)i;
+	return result;
 }
 inline float truncateFloat(float i) {
 	return (float)((int)i);
@@ -3144,64 +3145,67 @@ void whiteNoise(Rect region, int sampleCount, Vec2* samples) {
 	}
 }
 
-// int blueNoise(Rect region, float radius, Vec2** noiseSamples, int numOfSamples = 0) {
-// 	Vec2 regionDim = rectDim(region);
-// 	if(numOfSamples > 0) {
-// 		radius = (regionDim.w*regionDim.h*(float)M_SQRT2) / (2*numOfSamples);
-// 	}
-// 	float cs = (radius/(float)M_SQRT2)*2; // Square diagonal
-// 	int sampleMax = ((regionDim.w+1)*(regionDim.h+1)) / (cs*cs);
+// int blueNoise(Rect region, float radius, Vec2** noiseSamples) {
+// 	bool wrapAround = true;
 
+// 	Vec2 dim = rectDim(region);
+// 	float cs = radius/M_SQRT2;
+
+// 	*noiseSamples = mallocArray(Vec2, cs*cs);
 // 	Vec2* samples = *noiseSamples;
-// 	samples = (Vec2*)malloc(sizeof(Vec2) * sampleMax);
-// 	*noiseSamples = samples;
-// 	int testCount = 64;
-// 	int gridW = regionDim.w/cs + 1;
-// 	int gridH = regionDim.h/cs + 1;
-// 	int gridSize = (gridH+1)*(gridW+1);
-// 	int* grid = (int*)malloc(sizeof(int)*gridSize);
-// 	memset(grid, -1, gridSize*sizeof(int));
+// 	int sampleCount = 0;
 
-// 	// int* activeList = (int*)malloc(sizeof(int) * max(gridH, gridW));
-// 	int* activeList = (int*)malloc(sizeof(int) * gridH * gridW);
-// 	int sampleCount = 1;
-// 	samples[0] = vec2(randomInt(0, regionDim.w), randomInt(0, regionDim.h));
-// 	activeList[0] = 0;
-// 	int activeListSize = 1;
+// 	float randPrecision = 0.0001f;
+// 	int testCount = 60;
+
+// 	Vec2i gdim = vec2i(roundUpFloat(dim.w/cs), roundUpFloat(dim.h/cs));
+// 	int gridSize = gdim.w*gdim.h;
+// 	int* grid = mallocArray(int, gridSize);
+// 	for(int i = 0; i < gridSize; i++) grid[i] = -1;
+
+// 	int* activeList = mallocArray(int, gridSize);
+// 	int activeListCount = 0;
+
+// 	// Setup first sample randomly.
+// 	samples[sampleCount++] = vec2(randomFloatPCG(0, dim.w, randPrecision), randomFloatPCG(0, dim.h, randPrecision));
+// 	activeList[activeListCount++] = 0;
+
 // 	Vec2 pos = samples[0];
-// 	grid[(int)(pos.y/cs)*gridW+(int)(pos.x/cs)] = 0;
+// 	Vec2i gridPos = vec2i(pos/cs);
+// 	grid[gridPos.y*gdim.w + gridPos.x] = 0;
 
 // 	Rect regionOrigin = rectTrans(region, region.min*-1);
-// 	while(activeListSize > 0) {
+// 	while(activeListCount > 0) {
 
-// 		int activeIndex = randomInt(0,activeListSize-1);
+// 		int activeIndex = randomIntPCG(0, activeListCount-1);
 // 		int sampleIndex = activeList[activeIndex];
-// 		// assert(activeIndex <= max(gridH, gridW));
-// 		Vec2 sample = samples[sampleIndex];
+// 		Vec2 activeSample = samples[sampleIndex];
+
 // 		for(int i = 0; i < testCount; ++i) {
-// 			float angle = randomFloat(0, M_2PI, 0.01f);
-// 			float distance = randomFloat(radius*2, radius*3, 0.01f);
-// 			Vec2 newSample = sample+angleToDir(angle)*distance;
+// 			float angle = randomFloatPCG(0, M_2PI, randPrecision);
+// 			float distance = randomFloatPCG(radius, radius*2, randPrecision);
+// 			Vec2 newSample = activeSample + angleToDir(angle)*distance;
 
 // 			if(!pointInRect(newSample, regionOrigin)) continue;
 
-// 			// get samples around newSample with 6*r, 
-// 			// making room for 3 circles which should be enough?
-// 			Rect sampleRegion = rectCenDim(newSample,vec2(radius*6));
-// 			sampleRegion.min = sampleRegion.min/cs;
-// 			sampleRegion.max = sampleRegion.max/cs;
+// 			// Search around sample point.
+
+// 			Vec2i mmin = vec2i((newSample - radius*2.0f)/cs);
+// 			Vec2i mmax = vec2i((newSample + radius*2.0f)/cs);
+// 			// mmin = clampMin(mmin, vec2i(0,0));
+// 			// mmax = clampMax(mmax, gdim-1);
+
 // 			bool validPosition = true;
-// 			for(int y = sampleRegion.min.y; y < (int)sampleRegion.max.y+1; ++y) {
-// 				for(int x = sampleRegion.min.x; x < (int)sampleRegion.max.x+1; ++x) {
-// 					int index = grid[y*gridW+x];
-// 					// bug
-// 					if(x < 0 || y < 0) {
-// 						continue;
-// 					}
+// 			for(int y = mmin.y; y <= mmax.y; ++y) {
+// 				for(int x = mmin.x; x <= mmax.x; ++x) {
+// 					int mx = mod(x, gdim.w);
+// 					int my = mod(y, gdim.h);
+// 					int index = grid[my*gdim.w+mx];
+
 // 					if(index > -1) {
 // 						Vec2 s = samples[index];
 // 						float distance = lenVec2(s - newSample);
-// 						if(distance < radius*2) {
+// 						if(distance < radius) {
 // 							validPosition = false;
 // 							break;
 // 						}
@@ -3211,18 +3215,18 @@ void whiteNoise(Rect region, int sampleCount, Vec2* samples) {
 // 			}
 
 // 			if(validPosition) {
-// 				// assert(sampleCount < sampleMax);
 // 				samples[sampleCount] = newSample;
-// 				activeList[activeListSize] = sampleCount;
-// 				grid[(int)(newSample.y/cs)*gridW+(int)(newSample.x/cs)] = sampleCount;
+// 				activeList[activeListCount++] = sampleCount;
+
+// 				Vec2i gridPos = vec2i(newSample/cs);
+// 				grid[gridPos.y*gdim.w + gridPos.x] = sampleCount;
 // 				sampleCount++;
-// 				activeListSize++;
 // 			}
 // 		}
 
-// 		// delete active sample after testCoutn times
-// 		activeList[activeIndex] = activeList[activeListSize-1];
-// 		activeListSize--;
+// 		// delete active sample after testCount times
+// 		activeList[activeIndex] = activeList[activeListCount-1];
+// 		activeListCount--;
 // 	}
 
 // 	for(int i = 0; i < sampleCount; ++i) samples[i] += region.min;
@@ -3233,7 +3237,10 @@ void whiteNoise(Rect region, int sampleCount, Vec2* samples) {
 // 	return sampleCount;
 // }
 
+
 int blueNoise(Rect region, float radius, Vec2** noiseSamples) {
+	bool wrapAround = true;
+
 	Vec2 dim = rectDim(region);
 	float cs = radius/M_SQRT2;
 
@@ -3242,7 +3249,7 @@ int blueNoise(Rect region, float radius, Vec2** noiseSamples) {
 	int sampleCount = 0;
 
 	float randPrecision = 0.0001f;
-	int testCount = 50;
+	int testCount = 60;
 
 	Vec2i gdim = vec2i(roundUpFloat(dim.w/cs), roundUpFloat(dim.h/cs));
 	int gridSize = gdim.w*gdim.h;
@@ -3261,6 +3268,7 @@ int blueNoise(Rect region, float radius, Vec2** noiseSamples) {
 	grid[gridPos.y*gdim.w + gridPos.x] = 0;
 
 	Rect regionOrigin = rectTrans(region, region.min*-1);
+	Vec2 regionDim = rectDim(regionOrigin);
 	while(activeListCount > 0) {
 
 		int activeIndex = randomIntPCG(0, activeListCount-1);
@@ -3274,20 +3282,27 @@ int blueNoise(Rect region, float radius, Vec2** noiseSamples) {
 
 			if(!pointInRect(newSample, regionOrigin)) continue;
 
-			// Search one radius around sample point.
+			// Search around sample point.
 
-			Vec2i mmin = vec2i((newSample - radius*1.5f)/cs);
-			Vec2i mmax = vec2i((newSample + radius*1.5f)/cs);
-			mmin = clampMin(mmin, vec2i(0,0));
-			mmax = clampMax(mmax, gdim-1);
+			int minx = roundDownFloat((newSample.x - radius*2.0f)/cs);
+			int miny = roundDownFloat((newSample.y - radius*2.0f)/cs);
+			int maxx = roundDownFloat((newSample.x + radius*2.0f)/cs);
+			int maxy = roundDownFloat((newSample.y + radius*2.0f)/cs);
 
 			bool validPosition = true;
-			for(int y = mmin.y; y <= mmax.y; ++y) {
-				for(int x = mmin.x; x <= mmax.x; ++x) {
-					int index = grid[y*gdim.w+x];
+			for(int y = miny; y <= maxy; ++y) {
+				for(int x = minx; x <= maxx; ++x) {
+					int mx = mod(x, gdim.w);
+					int my = mod(y, gdim.h);
+					int index = grid[my*gdim.w+mx];
 
 					if(index > -1) {
 						Vec2 s = samples[index];
+
+						// Wrap sample position if we check outside boundaries.
+						if(mx != x) s.x += mx > x ? -regionDim.w : regionDim.w;
+						if(my != y) s.y += my > y ? -regionDim.h : regionDim.h;
+
 						float distance = lenVec2(s - newSample);
 						if(distance < radius) {
 							validPosition = false;

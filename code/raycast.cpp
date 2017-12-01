@@ -259,19 +259,17 @@ void processPixelsThreaded(void* data) {
 			Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
 			Vec3 finalColor = black;
 
-			for(int i = 0; i < sampleCount; i++) {
+			for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
 				startTimer(1);
 
 				Vec3 rayPos = settings.camTopLeft;
-				rayPos += camera.ovecs.right * (camera.dim.w*percent.w + settings.pixelPercent.w*samples[i].x);
-				rayPos += -camera.ovecs.up   * (camera.dim.h*percent.h + settings.pixelPercent.h*samples[i].y);
+				rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
+				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
+
+				// rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + (1/(float)texDim.w)*samples[sampleIndex].x));
+				// rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + (1/(float)texDim.w)*samples[sampleIndex].y));
 
 				Vec3 rayDir = normVec3(rayPos - camera.pos);
-
-				// if(pixelIndex < 10 && i < 10) {
-				// 	printf("%f, %f, %f\n", PVEC3(rayPos));
-				// }
-
 
 				Vec3 attenuation = white;
 				int lastShapeIndex = -1;
@@ -292,8 +290,8 @@ void processPixelsThreaded(void* data) {
 							Shape* s = world.shapes + i;
 
 							// Check collision with bounding sphere.
-							bool possibleIntersection = lineSphereCollision(rayPos, rayDir, s->pos, s->boundingSphereRadius);
-							if(possibleIntersection) {
+							// bool possibleIntersection = lineSphereCollision(rayPos, rayDir, s->pos, s->boundingSphereRadius);
+							if(true) {
 
 								Vec3 reflectionPos, reflectionNormal;
 								float distance = -1;
