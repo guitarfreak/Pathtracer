@@ -266,9 +266,6 @@ void processPixelsThreaded(void* data) {
 				rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
 				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
 
-				// rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + (1/(float)texDim.w)*samples[sampleIndex].x));
-				// rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + (1/(float)texDim.w)*samples[sampleIndex].y));
-
 				Vec3 rayDir = normVec3(rayPos - camera.pos);
 
 				Vec3 attenuation = white;
@@ -290,8 +287,8 @@ void processPixelsThreaded(void* data) {
 							Shape* s = world.shapes + i;
 
 							// Check collision with bounding sphere.
-							// bool possibleIntersection = lineSphereCollision(rayPos, rayDir, s->pos, s->boundingSphereRadius);
-							if(true) {
+							bool possibleIntersection = lineSphereCollision(rayPos, rayDir, s->pos, s->boundingSphereRadius);
+							if(possibleIntersection) {
 
 								Vec3 reflectionPos, reflectionNormal;
 								float distance = -1;
@@ -339,7 +336,6 @@ void processPixelsThreaded(void* data) {
 			
 						if(attenuation == black) {
 							endTimer(4);
-
 							break;
 						}
 

@@ -1150,6 +1150,43 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
+	#if 0
+	{
+		drawRect(rectCenDim(0,0,10000,10000), vec4(0,1));
+
+		Vec2 p = vec2(300,-200);
+		glPointSize(10);
+
+		float cellSize = 200;
+		int sampleCount = ad->settings.sampleCount;
+		Vec2* noiseSamples = ad->settings.samples;
+
+		for(int y = 0; y < 3; y++) {
+			for(int x = 0; x < 3; x++) {
+				Vec2 offset = p + vec2(x*cellSize, y*-cellSize);
+				// drawRect(rectTLDim(offset, vec2(cellSize)), vec4(0,1));
+		
+				for(int i = 0; i < sampleCount; i++) {
+					Vec2 p = noiseSamples[i]*cellSize + offset;
+					drawPoint(p, vec4(1,0,0,1));
+					// drawCircle(p, radius/2.0f, vec4(1,1,0,1));
+				}
+			}
+		}
+
+		// glPointSize(10);
+		// for(int i = 0; i < sampleCount; i++) {
+		// 	Vec2 p = noiseSamples[i];
+		// 	drawPoint(p, vec4(1,0,0,1));
+		// 	drawCircle(p, radius/2.0f, vec4(1,1,0,1));
+		// }
+
+		// drawRect(rectCenDim(100,-100,100,100), vec4(1,0,0,1));
+
+		// free(noiseSamples);
+	}
+	#endif
+
 	if(false)
 	{
 
