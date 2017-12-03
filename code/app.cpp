@@ -177,6 +177,7 @@ struct AppData {
 	bool activeProcessing;
 	bool keepUpdating;
 	bool drawSceneWired;
+	bool fitToScreen;
 
 	int threadCount;
 	ProcessPixelsData threadData[THREAD_JOB_COUNT];
@@ -505,6 +506,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		if(init) {
 			ad->drawSceneWired = true;
+			ad->fitToScreen = true;
 
 			{
 				int count = 20000;
@@ -636,9 +638,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 					world->shapes[world->shapeCount++] = s;
 				}
 
+				Shape s = {};
+
 				// Plane
 
-				Shape s = {};
+				s = {};
 				s.type = SHAPE_BOX;
 				s.pos = vec3(0,0,0);
 				s.dim = vec3(1000,1000,0.0001f);
@@ -650,6 +654,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 				// s.reflectionMod = 0.1f;
 				world->shapes[world->shapeCount++] = s;
 
+				// Mirror Sphere
+
+				s = {};
+				s.type = SHAPE_SPHERE;
+				s.pos = vec3(0,0,20);
+				s.r = 10;
+				s.color = vec3(0.5f);
+				// s.color = vec3(0.99f);
+				// s.reflectionMod = 0.3f;
+				s.reflectionMod = 1.0f;
+				// s.reflectionMod = 0.9f;
+				// s.reflectionMod = 0.1f;
+				world->shapes[world->shapeCount++] = s;
 
 
 				// Shape s = {};
@@ -887,10 +904,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Rect tr = sr;
 			Vec2 sd = rectDim(sr);
 			Vec2 texDim = vec2(ad->raycastTexture.dim);
-			if(((float)texDim.h / texDim.w) > (sd.h / sd.w)) {
-				tr = rectSetW(tr, ((float)texDim.w / texDim.h)*sd.h);
+
+			if(ad->fitToScreen) {
+				if(((float)texDim.h / texDim.w) > (sd.h / sd.w)) {
+					tr = rectSetW(tr, ((float)texDim.w / texDim.h)*sd.h);
+				} else {
+					tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
+				}
 			} else {
-				tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
+				tr = rectCenDim(rectCen(sr), texDim);
 			}
 
 			glDepthMask(false);
@@ -918,6 +940,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			ad->drawSceneWired = true;
 		}
+
+		if(input->keysPressed[KEYCODE_F]) ad->fitToScreen = !ad->fitToScreen;
 
 	}
 
