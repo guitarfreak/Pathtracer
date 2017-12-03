@@ -1176,6 +1176,13 @@ inline Vec2i vec2i(int a, int b) {
 	return vec;
 }
 
+inline Vec2i vec2i(int a) {
+	Vec2i vec;
+	vec.x = a;
+	vec.y = a;
+	return vec;
+}
+
 inline Vec2i vec2i(Vec2 a) {
 	Vec2i vec;
 	vec.x = a.x;
@@ -3152,15 +3159,16 @@ int blueNoise(Rect region, float radius, Vec2** noiseSamples) {
 	Vec2 dim = rectDim(region);
 	float cs = radius/M_SQRT2;
 
-	*noiseSamples = mallocArray(Vec2, cs*cs);
+	Vec2i gdim = vec2i(roundUpFloat(dim.w/cs), roundUpFloat(dim.h/cs));
+	int gridSize = gdim.w*gdim.h;
+
+	*noiseSamples = mallocArray(Vec2, gridSize);
 	Vec2* samples = *noiseSamples;
 	int sampleCount = 0;
 
 	float randPrecision = 0.0001f;
-	int testCount = 60;
+	int testCount = 30;
 
-	Vec2i gdim = vec2i(roundUpFloat(dim.w/cs), roundUpFloat(dim.h/cs));
-	int gridSize = gdim.w*gdim.h;
 	int* grid = mallocArray(int, gridSize);
 	for(int i = 0; i < gridSize; i++) grid[i] = -1;
 

@@ -126,8 +126,6 @@ OrientationVectors getVectorsFromRotation(Vec3 rot) {
 }
 
 
-#define BLUE_NOISE_SAMPLE_GRID_WIDTH 10
-
 enum SampleMode {
 	SAMPLE_MODE_GRID = 0,
 	SAMPLE_MODE_BLUE,
@@ -162,9 +160,9 @@ struct RaytraceSettings {
 	int sampleCount;
 	Vec2* samples;
 
-	// int sampleGridWidth;
-	// int* sampleCounts;
-	// Vec2* samples;
+	int sampleGridWidth;
+	int sampleGridCount; // width*width
+	int* sampleGridOffsets;
 
 	// Precalc.
 
@@ -260,6 +258,13 @@ void processPixelsThreaded(void* data) {
 		
 		int x = pixelIndex % texDim.w;
 		int y = pixelIndex / texDim.w;
+
+		if(settings.sampleMode == SAMPLE_MODE_BLUE_MULTI) {
+			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
+			int offset = settings.sampleGridOffsets[index];
+			samples = settings.samples + offset;
+			sampleCount = settings.sampleGridOffsets[index+1] - offset;
+		}
 
 		{
 			// IACA_VC64_START;

@@ -486,8 +486,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
 		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
-		ad->settings.sampleMode = SAMPLE_MODE_BLUE;
+		// ad->settings.sampleMode = SAMPLE_MODE_BLUE;
+		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
 		ad->settings.sampleCountGrid = 10;
+		ad->settings.sampleGridWidth = 10;
+
 		// ad->settings.sampleCountGrid = 10;
 		// ad->settings.sampleCountGrid = 10;
 		ad->settings.rayBouncesMax = 6;
@@ -531,7 +534,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Camera* cam = &ad->world.camera;
 			cam->pos = vec3(0, -50, 10);
 			cam->rot = vec3(0, 0, 0);
-			cam->fov = 100;
+			cam->fov = 90;
 
 			float aspectRatio = (float)ad->settings.texDim.w / ad->settings.texDim.h;
 			cam->dim.w = 10;
@@ -539,6 +542,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cam->nearDist = camDistanceFromFOVandWidth(cam->fov, cam->dim.w);
 			cam->farDist = 10000;
 		}
+		ad->world.camera.fov = 90;
 
 		if(input->keysPressed[KEYCODE_F3]) {
 			ad->captureMouse = !ad->captureMouse;
@@ -718,8 +722,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					settings->sampleCountGrid *= 1.3f;  // Mod for blue noise.
 					sampleCount = blueNoise(rect(0,0,1,1), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
 				} else if(mode == SAMPLE_MODE_BLUE_MULTI) {
-					settings->sampleCountGrid *= 1.3f * BLUE_NOISE_SAMPLE_GRID_WIDTH * BLUE_NOISE_SAMPLE_GRID_WIDTH;
-					sampleCount = blueNoise(rect(vec2(0.0f),vec2(BLUE_NOISE_SAMPLE_GRID_WIDTH)), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
+					settings->sampleCountGrid *= 1.3f;
+					sampleCount = blueNoise(rect(vec2(0.0f),vec2(settings->sampleGridWidth)), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
 				}
 				else if(mode == SAMPLE_MODE_MSAA4X) sampleCount = 4;
 				else if(mode == SAMPLE_MODE_MSAA8X) sampleCount = 8;
@@ -750,14 +754,45 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					case SAMPLE_MODE_BLUE_MULTI: {
 
-						// for(int i = 0; i < sampleCount; i++) settings->samples[i] = blueNoiseSamples[i];
-						// free(blueNoiseSamples);
+						settings->sampleGridCount = settings->sampleGridWidth * settings->sampleGridWidth + 1;
+						if(settings->sampleGridOffsets) free(settings->sampleGridOffsets);
+						settings->sampleGridOffsets = mallocArray(int, settings->sampleGridCount);
 
-						// for(int i = 0; i < sampleCount; i++) {
-							// settings->samples[i] = blueNoiseSamples[i];
-							// blueNoiseSamples[i];
-						// }
+						for(int i = 0; i < settings->sampleGridCount; i++) settings->sampleGridOffsets[i] = 0;
 
+						// Go through samples, calculate sample grid position and count how many samples per grid tile.
+						int width = settings->sampleGridWidth;
+						for(int i = 0; i < sampleCount; i++) {
+							Vec2i gridTilePos = vec2i(blueNoiseSamples[i]); // Casting to int rounds down and gives grid pos.
+							gridTilePos = clampMax(gridTilePos, vec2i(settings->sampleGridWidth-1)); // In case sample spawned at exact right border.
+
+							// First element is zero so we can calculate offset and count like this:
+							// index = array[i]; count = array[i+1] - array[i];
+							settings->sampleGridOffsets[1 + gridTilePos.y*width + gridTilePos.x] += 1;
+						}
+
+						// Turn counts into offsets.
+						for(int i = 0; i < settings->sampleGridCount-1; i++) {
+							settings->sampleGridOffsets[i+1] += settings->sampleGridOffsets[i];
+						}
+
+						int* counter = mallocArray(int, settings->sampleGridCount);
+						for(int i = 0; i < settings->sampleGridCount; i++) counter[i] = 0;
+
+						for(int i = 0; i < sampleCount; i++) {
+							Vec2i gridTilePos = vec2i(blueNoiseSamples[i]);
+							gridTilePos = clampMax(gridTilePos, vec2i(settings->sampleGridWidth-1)); // In case sample spawned at exact right border.
+
+							int gridIndex = gridTilePos.y*width + gridTilePos.x;
+
+							int index = settings->sampleGridOffsets[gridIndex] + counter[gridIndex];
+							counter[gridIndex]++;
+
+							settings->samples[index] = blueNoiseSamples[i] - vec2(gridTilePos);
+						}
+
+						free(counter);
+						free(blueNoiseSamples);
 					} break;
 
 					case SAMPLE_MODE_MSAA4X: {
@@ -1089,72 +1124,69 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	#if 0
 	{
-		int cellCount = 8;
-		float radius = 40;
-		float cellSize = 200;
-		Rect r = rectTLDim(vec2(0,0), vec2(cellSize,cellSize));
-		static Vec2* noiseSamples;
-		static int sampleCount;
+		// int cellCount = 8;
+		// float radius = 40;
+		// float cellSize = 200;
+		// Rect r = rectTLDim(vec2(0,0), vec2(cellSize,cellSize));
+		// static Vec2* noiseSamples;
+		// static int sampleCount;
 
 
-		if(init || reload || input->keysPressed[KEYCODE_H]) {
-			if(noiseSamples) free(noiseSamples);
+		// if(init || reload || input->keysPressed[KEYCODE_H]) {
+		// 	if(noiseSamples) free(noiseSamples);
 
-			// sampleCount = blueNoise(r, 0, &noiseSamples, 8*8);
-			// sampleCount = blueNoise(r, (800/8)/M_SQRT2*0.4f, &noiseSamples);
-			sampleCount = blueNoise(r, radius, &noiseSamples);
-			// sampleCount = blueNoise(r, cellSize/cellCount/M_SQRT2, &noiseSamples);
-			// sampleCount = blueNoise(r, cellSize/cellCount/2, &noiseSamples);
+		// 	sampleCount = blueNoise(r, radius, &noiseSamples);
+		// }
 
-			// float ce = radius / M_SQRT2;
-			// float asdf = cellSize/ce;
-			// printf("%f %i %f\n", asdf*asdf, sampleCount, (float)sampleCount/(asdf*asdf));
-		}
+		// drawRect(rectCenDim(0,0,10000,10000), vec4(0,1));
 
+		// Vec2 p = vec2(300,-200);
+		// glPointSize(10);
 
-		// Vec2 tl = rectTL(r);
-		// Vec4 lc = vec4(0.5f, 1);
-		// for(int i = 0; i < cellCount; i++) 
-		// 	drawLine(tl + vec2(0,-cellSize) * i/(cellCount), tl + vec2(0,-cellSize) * i/(cellCount) + vec2(cellSize,0), lc);
-		// for(int i = 0; i < cellCount; i++) 
-		// 	drawLine(tl + vec2(cellSize,0) * i/(cellCount), tl + vec2(cellSize,0) * i/(cellCount) + vec2(0,-cellSize), lc);
+		// for(int y = 0; y < 3; y++) {
+		// 	for(int x = 0; x < 3; x++) {
+		// 		// if(x == 1 && y == 1) 
+		// 		{
+		// 			// y = 1; 
+		// 			// x = 1;
 
+		// 			Vec2 offset = p + vec2(x*cellSize, y*-cellSize);
+		// 			// drawRect(rectTLDim(offset, vec2(cellSize)), vec4(0,1));
+			
+		// 			for(int i = 0; i < sampleCount; i++) {
+		// 				Vec2 p = noiseSamples[i] + offset;
+		// 				drawPoint(p, vec4(1,0,0,1));
+		// 				// drawCircle(p, radius/2.0f, vec4(1,1,0,1));
+		// 			}
+		// 		}
+		// 	}
+		// }
 
 		drawRect(rectCenDim(0,0,10000,10000), vec4(0,1));
 
+		{
+			RaytraceSettings* settings = &ad->settings;
 
-		Vec2 p = vec2(300,-200);
-		glPointSize(10);
+			for(int y = 0; y < settings->sampleGridWidth; y++) {
+				for(int x = 0; x < settings->sampleGridWidth* 2; x++) {
 
-		for(int y = 0; y < 3; y++) {
-			for(int x = 0; x < 3; x++) {
-				// if(x == 1 && y == 1) 
-				{
-					// y = 1; 
-					// x = 1;
+					int index = (y%settings->sampleGridWidth)*settings->sampleGridWidth + (x%settings->sampleGridWidth);
+					int offset = settings->sampleGridOffsets[index];
+					Vec2* samples = settings->samples + offset;
+					int sampleCount = settings->sampleGridOffsets[index+1] - offset;
 
-					Vec2 offset = p + vec2(x*cellSize, y*-cellSize);
-					// drawRect(rectTLDim(offset, vec2(cellSize)), vec4(0,1));
-			
+					glPointSize(2);
 					for(int i = 0; i < sampleCount; i++) {
-						Vec2 p = noiseSamples[i] + offset;
+						Vec2 p = vec2(300,-900) + vec2(x,y)*100 + samples[i] * 100;
 						drawPoint(p, vec4(1,0,0,1));
-						// drawCircle(p, radius/2.0f, vec4(1,1,0,1));
 					}
+
 				}
 			}
 		}
 
-		// glPointSize(10);
-		// for(int i = 0; i < sampleCount; i++) {
-		// 	Vec2 p = noiseSamples[i];
-		// 	drawPoint(p, vec4(1,0,0,1));
-		// 	drawCircle(p, radius/2.0f, vec4(1,1,0,1));
-		// }
 
-		// drawRect(rectCenDim(100,-100,100,100), vec4(1,0,0,1));
 
-		// free(noiseSamples);
 	}
 	#endif
 
