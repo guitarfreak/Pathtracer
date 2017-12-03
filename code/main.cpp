@@ -25,7 +25,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 	WindowsData wData = windowsData(instance, prevInstance, commandLine, showCode);
 
 	ThreadQueue threadQueue;
-	threadInit(&threadQueue, 8);
+	threadInit(&threadQueue, 7);
 
 	AppMemory appMemory = {};
 

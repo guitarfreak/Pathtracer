@@ -17,13 +17,11 @@
 	- Ui.
 	- Entity editor.
 	- Put input updating in own thread.
-	- Float not precise enough at hundreds of samples per pixel.
+	- Float not precise enough at hundreds of samples per pixel?!
 
 	Done Today: 
 
 	Bugs:
-	- Black pixels.
-	- One Thread job gets stuck till the end? (Noticible by unprocessed black pixel bar.)
 
 =================================================================================
 */
@@ -136,7 +134,7 @@ void appTempDefault(AppTempSettings* at, Rect monitor) {
 
 
 
-#define THREAD_JOB_COUNT 8*4
+#define THREAD_JOB_COUNT 7*4
 
 struct AppData {
 
@@ -719,6 +717,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				else if(mode == SAMPLE_MODE_BLUE) {
 					settings->sampleCountGrid *= 1.3f;  // Mod for blue noise.
 					sampleCount = blueNoise(rect(0,0,1,1), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
+				} else if(mode == SAMPLE_MODE_BLUE_MULTI) {
+					settings->sampleCountGrid *= 1.3f * BLUE_NOISE_SAMPLE_GRID_WIDTH * BLUE_NOISE_SAMPLE_GRID_WIDTH;
+					sampleCount = blueNoise(rect(vec2(0.0f),vec2(BLUE_NOISE_SAMPLE_GRID_WIDTH)), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
 				}
 				else if(mode == SAMPLE_MODE_MSAA4X) sampleCount = 4;
 				else if(mode == SAMPLE_MODE_MSAA8X) sampleCount = 8;
@@ -743,17 +744,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} break;
 
 					case SAMPLE_MODE_BLUE: {
-
 						for(int i = 0; i < sampleCount; i++) settings->samples[i] = blueNoiseSamples[i];
 						free(blueNoiseSamples);
+					} break;
+
+					case SAMPLE_MODE_BLUE_MULTI: {
 
 						// for(int i = 0; i < sampleCount; i++) settings->samples[i] = blueNoiseSamples[i];
 						// free(blueNoiseSamples);
 
 						// for(int i = 0; i < sampleCount; i++) {
 							// settings->samples[i] = blueNoiseSamples[i];
+							// blueNoiseSamples[i];
 						// }
-
 
 					} break;
 

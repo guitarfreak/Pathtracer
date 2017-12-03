@@ -125,9 +125,13 @@ OrientationVectors getVectorsFromRotation(Vec3 rot) {
 	return o;
 }
 
+
+#define BLUE_NOISE_SAMPLE_GRID_WIDTH 10
+
 enum SampleMode {
 	SAMPLE_MODE_GRID = 0,
 	SAMPLE_MODE_BLUE,
+	SAMPLE_MODE_BLUE_MULTI,
 	SAMPLE_MODE_MSAA4X,
 	SAMPLE_MODE_MSAA8X,
 
