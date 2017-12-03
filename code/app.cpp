@@ -912,7 +912,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 					tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
 				}
 			} else {
-				tr = rectCenDim(rectCen(sr), texDim);
+				Vec2 c = rectCen(sr);
+				Vec2i td = ad->raycastTexture.dim;
+				c.x -= td.w/2.0f;
+				c.y += td.h/2.0f;
+				c.x = roundFloat(c.x);
+				c.y = roundFloat(c.y);
+
+				tr = rectTLDim(c, texDim);
+
+				// tr = rectCenDim(c, texDim);
 			}
 
 			glDepthMask(false);
