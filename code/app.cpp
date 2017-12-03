@@ -183,7 +183,7 @@ struct AppData {
 	int threadCount;
 	ProcessPixelsData threadData[THREAD_JOB_COUNT];
 	bool waitingForThreadStop;
-
+  
 	f64 processStartTime;
 	f64 processTime;
 
@@ -484,26 +484,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	{
-		// ad->settings.texDim = vec2i(1920*2,1080*2);
-		// ad->settings.texDim = vec2i(1920,1080);
-		// ad->settings.texDim = vec2i(1280,720);
-		// ad->settings.texDim = vec2i(1280/2,720/2);
-		// ad->settings.texDim = vec2i(320,180);
-		// ad->settings.texDim = vec2i(160,90);
-		// ad->settings.texDim = vec2i(8,8);
-		// ad->settings.texDim = vec2i(2,2);
-
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
 		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
 		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
 		ad->settings.sampleMode = SAMPLE_MODE_BLUE;
-		ad->settings.sampleCountGrid = 10*1.3f;
+		ad->settings.sampleCountGrid = 10;
+		// ad->settings.sampleCountGrid = 10;
 		// ad->settings.sampleCountGrid = 10;
 		ad->settings.rayBouncesMax = 6;
 
 		ad->keepUpdating = false;
-
+    
 		ad->threadCount = THREAD_JOB_COUNT;
 		// ad->threadCount = 1;
 
@@ -658,7 +650,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
-
 				// Shape s = {};
 				// s.type = SHAPE_SPHERE;
 				// s.pos = vec3(0,0,10);
@@ -725,13 +716,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				int sampleCount;
 				if(mode == SAMPLE_MODE_GRID) sampleCount = settings->sampleCountGrid*settings->sampleCountGrid;
-				else if(mode == SAMPLE_MODE_BLUE) sampleCount = blueNoise(rect(0,0,1,1), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
+				else if(mode == SAMPLE_MODE_BLUE) {
+					settings->sampleCountGrid *= 1.3f;  // Mod for blue noise.
+					sampleCount = blueNoise(rect(0,0,1,1), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
+				}
 				else if(mode == SAMPLE_MODE_MSAA4X) sampleCount = 4;
 				else if(mode == SAMPLE_MODE_MSAA8X) sampleCount = 8;
 
 				settings->sampleCount = sampleCount;
 				if(settings->samples) free(settings->samples);
 				settings->samples = mallocArray(Vec2, sampleCount);
+
 
 				switch(mode) {
 					case SAMPLE_MODE_GRID: {
@@ -748,8 +743,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} break;
 
 					case SAMPLE_MODE_BLUE: {
+
 						for(int i = 0; i < sampleCount; i++) settings->samples[i] = blueNoiseSamples[i];
 						free(blueNoiseSamples);
+
+						// for(int i = 0; i < sampleCount; i++) settings->samples[i] = blueNoiseSamples[i];
+						// free(blueNoiseSamples);
+
+						// for(int i = 0; i < sampleCount; i++) {
+							// settings->samples[i] = blueNoiseSamples[i];
+						// }
+
+
 					} break;
 
 					case SAMPLE_MODE_MSAA4X: {

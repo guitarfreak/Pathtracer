@@ -158,6 +158,10 @@ struct RaytraceSettings {
 	int sampleCount;
 	Vec2* samples;
 
+	// int sampleGridWidth;
+	// int* sampleCounts;
+	// Vec2* samples;
+
 	// Precalc.
 
 	Vec3 camTopLeft;
