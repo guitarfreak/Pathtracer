@@ -412,3 +412,48 @@ void processPixelsThreaded(void* data) {
 		}
 	}
 }
+
+// @Duplication with processPixels.
+int castRay(Vec3 rayPos, Vec3 rayDir, Shape* shapes, int shapeCount) {
+
+	int shapeIndex = -1;
+
+	float minDistance = FLT_MAX;
+	for(int i = 0; i < shapeCount; i++) {
+		Shape* s = shapes + i;
+
+		// Check collision with bounding sphere.
+		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, s->pos, s->boundingSphereRadius);
+		if(possibleIntersection) {
+
+			Vec3 reflectionPos, reflectionNormal;
+			float distance = -1;
+			{
+				switch(s->type) {
+					case SHAPE_BOX: {
+						int face;
+						bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(s->pos, s->dim), &distance, &face);
+						if(hit) {
+							reflectionPos = rayPos + rayDir*distance;
+							reflectionNormal = boxRaycastNormals[face];
+						}
+					} break;
+
+					case SHAPE_SPHERE: {
+						distance = lineSphereIntersection(rayPos, rayDir, s->pos, s->r, &reflectionPos);
+						if(distance > 0) {
+							reflectionNormal = normVec3(reflectionPos - s->pos);
+						}
+					} break;
+				}
+			}
+
+			if(distance > 0 && distance < minDistance) {
+				minDistance = distance;
+				shapeIndex = i;
+			}
+		}
+	}
+
+	return shapeIndex;
+}

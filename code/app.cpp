@@ -16,6 +16,7 @@
 	- Simd.
 	- Ui.
 	- Entity editor.
+	- More advanced rendering techniques.
 	- Put input updating in own thread.
 	- Float not precise enough at hundreds of samples per pixel?!
 
@@ -187,6 +188,10 @@ struct AppData {
 	f64 processTime;
 
 	int texFastMode;
+
+	// Editing
+	
+	int selectedEntity;
 };
 
 
@@ -483,6 +488,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	{
+		if(init) {
+			ad->texFastMode = 2;
+		}
+
+		// @Settings.
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
 		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
@@ -491,8 +501,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
 		ad->settings.sampleCountGrid = 10;
 		ad->settings.sampleGridWidth = 10;
-
-		// ad->settings.sampleCountGrid = 10;
 		// ad->settings.sampleCountGrid = 10;
 		ad->settings.rayBouncesMax = 6;
 
@@ -954,6 +962,32 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	}
 
+	if(input->mouseButtonPressed[1]) {
+		Camera* cam = &ad->world.camera;
+		Rect tr = ad->textureScreenRect;
+		Vec2 mp = input->mousePosNegative;
+
+		Vec2 mousePercent = {};
+		mousePercent.x = mapRange01(mp.x, tr.left, tr.right);
+		mousePercent.y = mapRange01(mp.y, tr.bottom, tr.top);
+
+		OrientationVectors ovecs = ad->world.camera.ovecs;
+		Vec3 camBottomLeft = cam->pos + ovecs.dir*cam->nearDist + (-ovecs.right)*(cam->dim.w/2.0f) + (-ovecs.up)*(cam->dim.h/2.0f);
+
+		Vec3 p = camBottomLeft;
+		p += (cam->ovecs.right*cam->dim.w) * mousePercent.x;
+		p += (cam->ovecs.up*cam->dim.h) * mousePercent.y;
+
+		Vec3 rayPos = cam->pos;
+		Vec3 rayDir = normVec3(p - cam->pos);
+
+		int shapeIndex = castRay(rayPos, rayDir, ad->world.shapes, ad->world.shapeCount);
+		if(shapeIndex != -1) {
+			ad->selectedEntity = shapeIndex+1;
+		} else {
+			ad->selectedEntity = -1;
+		}
+	}
 
 	if(ad->drawSceneWired)
 	{
@@ -963,17 +997,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Rect tr = ad->textureScreenRect;
 
-		glDepthMask(false);
-		Vec3 cc = world->defaultEmitColor;
-		drawRect(tr, vec4(cc,1));
-		glDepthMask(true);
+		glClearColor(0,0,0, 1);
+		glClear(GL_COLOR_BUFFER_BIT);
 
 		glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
 
-
-
-		// glClearColor(cc.r, cc.g, cc.g, 1);
-		// glClear(GL_COLOR_BUFFER_BIT);
+		glDepthMask(false);
+		Vec3 cc = world->defaultEmitColor;
+		drawRect(rectCenDim(0,0,10000,10000), vec4(cc,1));
+		glDepthMask(true);
 
 
 			// GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
@@ -1024,7 +1056,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 
-
 		{
 			glDisable(GL_LIGHTING);
 			float l = 500;
@@ -1037,10 +1068,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glEnable(GL_LIGHTING);
 		}
 
-		// if(false)
 		{
 			Shape* shapes = world->shapes;
-
 
 			// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 			// glDisable(GL_CULL_FACE);
@@ -1071,6 +1100,41 @@ extern "C" APPMAINFUNCTION(appMain) {
 						drawSphere(s->pos, s->r, vec4(s->color, 1));
 					} break;
 				}
+			}
+
+			if(ad->selectedEntity) {
+				Shape* s = shapes + ad->selectedEntity-1;
+
+				Vec4 color = vec4(1,1,1,1);
+
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+				glDisable(GL_LIGHTING);
+
+				switch(s->type) {
+					case SHAPE_BOX: {
+						drawBox(s->pos, s->dim, color);
+					} break;
+
+					case SHAPE_SPHERE: {
+						drawSphere(s->pos, s->r, color);
+					} break;
+				}				
+
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+				glDisable(GL_CULL_FACE);
+
+
+
+				Camera* cam = &ad->world.camera;
+				Vec2 d = vec2(2,1) * lenVec3(cam->pos - s->pos)*0.05f;
+				float r = s->boundingSphereRadius;
+
+				drawPlane(s->pos + vec3(1,0,0) * (d.w/2.0f + r), vec3(0,1,0), vec3(0,0,1), d, vec4(1,0,0,1));
+				drawPlane(s->pos + vec3(0,1,0) * (d.w/2.0f + r), vec3(1,0,0), vec3(0,0,1), d, vec4(0,1,0,1));
+				drawPlane(s->pos + vec3(0,0,1) * (d.w/2.0f + r), vec3(0,1,0), vec3(1,0,0), d, vec4(0,0,1,1));
+
+				glEnable(GL_CULL_FACE);
+				glEnable(GL_LIGHTING);
 			}
 
 			// glEnable(GL_CULL_FACE);
@@ -1155,135 +1219,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glDisable(GL_NORMALIZE);
 	}
 
-	#if 0
-	{
-		// int cellCount = 8;
-		// float radius = 40;
-		// float cellSize = 200;
-		// Rect r = rectTLDim(vec2(0,0), vec2(cellSize,cellSize));
-		// static Vec2* noiseSamples;
-		// static int sampleCount;
-
-
-		// if(init || reload || input->keysPressed[KEYCODE_H]) {
-		// 	if(noiseSamples) free(noiseSamples);
-
-		// 	sampleCount = blueNoise(r, radius, &noiseSamples);
-		// }
-
-		// drawRect(rectCenDim(0,0,10000,10000), vec4(0,1));
-
-		// Vec2 p = vec2(300,-200);
-		// glPointSize(10);
-
-		// for(int y = 0; y < 3; y++) {
-		// 	for(int x = 0; x < 3; x++) {
-		// 		// if(x == 1 && y == 1) 
-		// 		{
-		// 			// y = 1; 
-		// 			// x = 1;
-
-		// 			Vec2 offset = p + vec2(x*cellSize, y*-cellSize);
-		// 			// drawRect(rectTLDim(offset, vec2(cellSize)), vec4(0,1));
-			
-		// 			for(int i = 0; i < sampleCount; i++) {
-		// 				Vec2 p = noiseSamples[i] + offset;
-		// 				drawPoint(p, vec4(1,0,0,1));
-		// 				// drawCircle(p, radius/2.0f, vec4(1,1,0,1));
-		// 			}
-		// 		}
-		// 	}
-		// }
-
-		drawRect(rectCenDim(0,0,10000,10000), vec4(0,1));
-
-		{
-			RaytraceSettings* settings = &ad->settings;
-
-			for(int y = 0; y < settings->sampleGridWidth; y++) {
-				for(int x = 0; x < settings->sampleGridWidth* 2; x++) {
-
-					int index = (y%settings->sampleGridWidth)*settings->sampleGridWidth + (x%settings->sampleGridWidth);
-					int offset = settings->sampleGridOffsets[index];
-					Vec2* samples = settings->samples + offset;
-					int sampleCount = settings->sampleGridOffsets[index+1] - offset;
-
-					glPointSize(2);
-					for(int i = 0; i < sampleCount; i++) {
-						Vec2 p = vec2(300,-900) + vec2(x,y)*100 + samples[i] * 100;
-						drawPoint(p, vec4(1,0,0,1));
-					}
-
-				}
-			}
-		}
-
-
-
-	}
-	#endif
-
-	#if 0
-	{
-		drawRect(rectCenDim(0,0,10000,10000), vec4(0,1));
-
-		Vec2 p = vec2(300,-200);
-		glPointSize(10);
-
-		float cellSize = 200;
-		int sampleCount = ad->settings.sampleCount;
-		Vec2* noiseSamples = ad->settings.samples;
-
-		for(int y = 0; y < 3; y++) {
-			for(int x = 0; x < 3; x++) {
-				Vec2 offset = p + vec2(x*cellSize, y*-cellSize);
-				// drawRect(rectTLDim(offset, vec2(cellSize)), vec4(0,1));
-		
-				for(int i = 0; i < sampleCount; i++) {
-					Vec2 p = noiseSamples[i]*cellSize + offset;
-					drawPoint(p, vec4(1,0,0,1));
-					// drawCircle(p, radius/2.0f, vec4(1,1,0,1));
-				}
-			}
-		}
-
-		// glPointSize(10);
-		// for(int i = 0; i < sampleCount; i++) {
-		// 	Vec2 p = noiseSamples[i];
-		// 	drawPoint(p, vec4(1,0,0,1));
-		// 	drawCircle(p, radius/2.0f, vec4(1,1,0,1));
-		// }
-
-		// drawRect(rectCenDim(100,-100,100,100), vec4(1,0,0,1));
-
-		// free(noiseSamples);
-	}
-	#endif
-
-	if(false)
-	{
-
-		int w = 1920;
-		float cw = 10.0f;
-
-		float pixelPercent = 1/(float)w;
-
-		float res = 1/10.0f;
-
-		float a = pixelPercent * res;
-
-
-				// rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
-
-
-		exit(0);
-	}
-
-	// Draw Info.
+	//@Draw Info.
 	{
 		Rect sr = getScreenRect(ws);
 		glViewport(0,0, rectW(sr), rectH(sr));
 		// glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
+
+		// Rect tr = ad->textureScreenRect;		
+		// glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
+
+
 
 		Rect tr = ad->textureScreenRect;
 		Font* font = getFont("OpenSans-Bold.ttf", 20);
