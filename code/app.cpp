@@ -20,6 +20,10 @@
 	- Put input updating in own thread.
 	- Float not precise enough at hundreds of samples per pixel?!
 
+	- Depth of field.
+	- Reflection.
+	- Refraction.
+	
 	Done Today: 
 
 	Bugs:
@@ -495,13 +499,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// @Settings.
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
-		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
+		// ad->settings.sampleMode = SAMPLE_MODE_MSAA4X;
 		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
+		// ad->settings.sampleCountGrid = 1;
+
 		// ad->settings.sampleMode = SAMPLE_MODE_BLUE;
 		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
-		ad->settings.sampleCountGrid = 10;
+		ad->settings.sampleCountGrid = 4;
 		ad->settings.sampleGridWidth = 10;
-		// ad->settings.sampleCountGrid = 10;
 		ad->settings.rayBouncesMax = 6;
 
 		ad->keepUpdating = false;
@@ -605,7 +610,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				Texture* t = &ad->raycastTexture;
 				Vec3 black = vec3(0.2f);
-				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
+				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 			}
 		}
 
@@ -622,7 +627,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float r = 30;
 				Vec3 offset = vec3(0,0,r/2.0f);
 				for(int i = 0; i < count; i++) {
-					int type = randomIntPCG(0, SHAPE_COUNT-1);
+					// int type = randomIntPCG(0, SHAPE_COUNT-1);
+					int type = SHAPE_SPHERE;
+
 					Vec3 pos = vec3(randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r/2.0f,r/2.0f,0.01f));
 					pos += offset;
 					float size = randomFloatPCG(15,30,0.01f);
@@ -726,10 +733,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			RaytraceSettings* settings = &ad->settings;
 
+			settings->mode = RENDERING_MODE_RAY_TRACER; // MODE_PATH_TRACER
+
 			Texture* t = &ad->raycastTexture;
-			Vec3 black = vec3(0.2f);
-			if(!ad->keepUpdating)
-				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
+			// Vec3 black = vec3(0.2f);
+			if(!ad->keepUpdating) glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 
 			int pixelCount = settings->texDim.w*settings->texDim.h;
 			if(ad->buffer != 0) free(ad->buffer);
@@ -778,6 +786,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} break;
 
 					case SAMPLE_MODE_BLUE_MULTI: {
+
+						assert(settings->sampleGridWidth > 0);
 
 						settings->sampleGridCount = settings->sampleGridWidth * settings->sampleGridWidth + 1;
 						if(settings->sampleGridOffsets) free(settings->sampleGridOffsets);
@@ -950,7 +960,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Texture* t = &ad->raycastTexture;
 			Vec3 black = vec3(0.2f);
 			if(t->isCreated) {
-				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &black);
+				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 			}
 			if(ad->buffer) zeroMemory(ad->buffer, ad->raycastTexture.dim.w*ad->raycastTexture.dim.h*sizeof(Vec3));
 
@@ -962,6 +972,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	}
 
+	#if 0
 	if(input->mouseButtonPressed[1]) {
 		Camera* cam = &ad->world.camera;
 		Rect tr = ad->textureScreenRect;
@@ -988,6 +999,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->selectedEntity = -1;
 		}
 	}
+	#endif
 
 	if(ad->drawSceneWired)
 	{
@@ -1102,7 +1114,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			if(ad->selectedEntity) {
+			if(ad->selectedEntity > 0) {
 				Shape* s = shapes + ad->selectedEntity-1;
 
 				Vec4 color = vec4(1,1,1,1);

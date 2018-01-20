@@ -146,7 +146,14 @@ struct World {
 	Vec3 globalLightDir;
 };
 
+enum {
+	RENDERING_MODE_RAY_TRACER = 0, 
+	RENDERING_MODE_PATH_TRACER, 
+};
+
 struct RaytraceSettings {
+	int mode;
+
 	Vec2i texDim;
 
 	int sampleMode;
@@ -344,6 +351,9 @@ void processPixelsThreaded(void* data) {
 						Shape* s = world.shapes + shapeIndex;
 						lastShapeIndex = shapeIndex;
 
+
+						// Color calculation.
+
 						finalColor += attenuation * s->emitColor;
 						attenuation = attenuation * s->color;
 			
@@ -351,6 +361,9 @@ void processPixelsThreaded(void* data) {
 							endTimer(4);
 							break;
 						}
+
+
+						// Calculate new direction.
 
 						int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
 						Vec3 randomDir = settings.randomDirections[dirIndex];
@@ -361,11 +374,11 @@ void processPixelsThreaded(void* data) {
 
 						Vec3 shapeReflectionDir = reflectVector(rayDir, shapeReflectionNormal);
 
-						// randomDir = normVec3(lerp(s->reflectionMod, randomDir, shapeReflectionDir));
 						randomDir = lerp(s->reflectionMod, randomDir, shapeReflectionDir);
 
 						rayPos = shapeReflectionPos;
 						rayDir = randomDir;
+
 
 						endTimer(4);
 					} else {
@@ -373,16 +386,12 @@ void processPixelsThreaded(void* data) {
 						if(rayIndex == 0) {
 							finalColor += world.defaultEmitColor; // Sky hit.
 						} else {
-							// finalColor += attenuation * defaultEmitColor;
-
 							float lightDot = dot(rayDir, -world.globalLightDir);
 							lightDot = clampMin(lightDot, 0);
-							lightDot = dotUnitToPercent(lightDot);
+							// lightDot = dotUnitToPercent(lightDot);
 							Vec3 light = world.globalLightColor * lightDot;
 
 							finalColor += attenuation * (world.defaultEmitColor + light);
-							// finalColor += attenuation * light;
-							// finalColor += attenuation * world->defaultEmitColor;
 						}
 
 						break;
