@@ -639,8 +639,8 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 }
 
 void freeFont(Font* font) {
-	freeZero(font->cData);
-	freeZero(font->info.data);
+	freeAndSetNullSave(font->cData);
+	freeAndSetNullSave(font->info.data);
 	glDeleteTextures(1, &font->tex.id);
 	font->height = 0;
 }
@@ -1153,6 +1153,23 @@ void drawPlane(Vec3 pos, Vec3 normal, Vec3 up, Vec2 dim, Vec4 color) {
 		pushVec(pos + right*dim.x - up*dim.y);
 		pushVec(pos - right*dim.x - up*dim.y);
 		pushVec(pos - right*dim.x + up*dim.y);
+	glEnd();
+}
+
+void drawPlane(Vec3 pos, Vec3 normal, Vec3 up, Vec2 dim, Vec4 color, Rect uv, int texture) {
+	glBindTexture(GL_TEXTURE_2D, texture);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	dim = dim/2.0f;
+	Vec3 right = cross(up, normal);
+
+	glBegin(GL_QUADS);
+		glNormal3f(normal.x, normal.y, normal.z);
+		glTexCoord2f(uv.left,  uv.top); pushVec(pos + right*dim.x + up*dim.y);
+		glTexCoord2f(uv.left,  uv.bottom); pushVec(pos + right*dim.x - up*dim.y);
+		glTexCoord2f(uv.right, uv.bottom); pushVec(pos - right*dim.x - up*dim.y);
+		glTexCoord2f(uv.right, uv.top); pushVec(pos - right*dim.x + up*dim.y);
 	glEnd();
 }
 
@@ -1855,6 +1872,7 @@ void openglDefaultSetup() {
 
 
 void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapTime, bool init) {
+	
 	//
 	// Render.
 	//

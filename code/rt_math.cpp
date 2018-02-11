@@ -2197,7 +2197,7 @@ bool linesegmentSphereIntersection(Vec3 linePoint0, Vec3 linePoint1, Vec3 circle
     return true;
 }
 
-inline float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3 pu, Vec2 dim, Vec3* intersection, Vec3* intersectionNormal = 0) {
+float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3 pu, Vec2 dim, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
 	// Assuming pu is unit vector.
 
 	float a = dot(pn, ld);
@@ -3723,4 +3723,6 @@ float logBase(float v, float base) {
 	float result = log(v) / log(base);
 	return result;
 }
+
+// 
 

@@ -10,6 +10,10 @@
 #define mallocStruct(type) (type*)malloc(sizeof(type))
 #define mallocString(count) (char*)malloc(sizeof(char)*(count))
 
+#define allocaArray(type, count) (type*)alloca(sizeof(type)*(count))
+#define allocaStruct(type) (type*)alloca(sizeof(type))
+#define allocaString(count) (char*)alloca(sizeof(char)*(count))
+
 #define zeroStruct(s, structType) zeroMemory(s, sizeof(structType));
 
 #define PVEC2(v) v.x, v.y
@@ -21,6 +25,8 @@
 
 #define For_Array(array, count, type) \
 	for(type* it = array; (it-array) < count; it++)
+
+#define arrayIndex(w, h, x, y) (y*w + x)
 
 #define MetaParse() 
 
@@ -81,12 +87,25 @@ void memCpy(void* dest, void* source, int numOfBytes) {
 	}
 }
 
-void freeZero(void* data) {
+void freeAndSetNullSave(void* data) {
 	if(data) {
 		free(data);
 		data = 0;
 	}
 }
+
+#define reallocArraySave(type, ptr, count) \
+	freeAndSetNullSave(ptr);               \
+	ptr = mallocArray(type, count);
+
+#define reallocStructSave(type, ptr) \
+	freeAndSetNullSave(ptr);         \
+	ptr = mallocStruct(type);
+
+#define reallocStringSave(ptr, count) \
+	freeAndSetNullSave(ptr);          \
+	ptr = mallocString(count);
+
 
 //
 // Strings

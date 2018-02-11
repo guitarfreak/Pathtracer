@@ -743,6 +743,14 @@ void setClipboard(char* text) {
     CloseClipboard();
 }
 
+Rect getWindowWindowRect(HWND windowHandle) {
+	RECT r; 
+	GetWindowRect(windowHandle, &r);
+	Rect windowRect = rect(r.left, r.bottom, r.right, r.top);
+	
+	return windowRect;
+}
+
 void getWindowProperties(HWND windowHandle, int* viewWidth, int* viewHeight, int* width, int* height, int* x, int* y) {
     RECT cr; 
     GetClientRect(windowHandle, &cr);
@@ -974,3 +982,48 @@ void folderExistsCreate(char* path) {
 	}
 }
 
+int getFolderFileCount(char* path) {
+	int fileCount = 0;
+
+	WIN32_FIND_DATA findData; 
+	HANDLE folderHandle = FindFirstFile(path, &findData);
+	if(INVALID_HANDLE_VALUE != folderHandle) {
+		while(FindNextFile(folderHandle, &findData)) {
+			char* fileName = findData.cFileName;
+			if(strLen(fileName) <= 2) continue; // Skip "..".
+
+			fileCount++;
+		}
+	}
+
+	return fileCount;
+}
+
+
+
+struct FolderSearchData {
+	WIN32_FIND_DATA findData;
+	HANDLE folderHandle;
+
+	char* fileName;
+};
+
+bool folderSearchStart(FolderSearchData* fd, char* folder) {	
+	char* folderPath = allocaString(strLen(folder) + 1);
+	strClear(folderPath);
+	strAppend(folderPath, folder);
+	strAppend(folderPath, "*");
+
+	fd->folderHandle = FindFirstFile(folderPath, &fd->findData);
+
+	if(fd->folderHandle != INVALID_HANDLE_VALUE) return true;
+	else return false;
+}
+
+bool folderSearchNextFile(FolderSearchData* fd) {
+	if(FindNextFile(fd->folderHandle, &fd->findData) == 0) return false;
+
+	fd->fileName = fd->findData.cFileName;
+	
+	return true;
+}

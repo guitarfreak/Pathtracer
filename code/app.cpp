@@ -45,6 +45,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
 #include "external\stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -99,47 +100,99 @@ Timer* globalTimer;
 #include "Raycast.cpp"
 
 
-#define Window_Min_Size_X 300
-#define Window_Min_Size_Y 400
-
-#define App_Font_Folder "Fonts\\"
-#define Windows_Font_Folder "\\Fonts\\"
-#define Windows_Font_Path_Variable "windir"
-
-#define App_Save_File ".\\temp"
-
-#define Fallback_Font "arial.ttf"
-#define Fallback_Font_Italic "ariali.ttf"
-#define Fallback_Font_Bold "arialbd.ttf"
 
 
 
 
+template <class t>
+bool greaterThen(t a, t b) {
+	return a > b;
+}
 
 
+template <class Type>
+struct DArray {
+	Type* data;
+	int count = 0;
+	int size;
 
-struct AppTempSettings {
-	Rect windowRect;
+	bool memoryAllocated = false;
+	bool usesPoolMemory;
+
+	void init(int size) {
+		data = mallocArray(Type, size);
+		count = 0;
+		size = size;
+		usesPoolMemory = false;
+		memoryAllocated = true;
+	}
+
+	void init(Type* dataBlock, int size) {
+		data = dataBlock;
+		count = 0;
+		size = size;
+		usesPoolMemory = true;
+		memoryAllocated = true;
+	}
+
+	void push(Type s) {
+		data[count++] = s;
+	}
+
+	void release() {
+		if(memoryAllocated) {
+			if(!usesPoolMemory) free(data);
+			memoryAllocated = false;
+		}
+	}
 };
 
-void appWriteTempSettings(char* filePath, AppTempSettings* at) {
-	writeDataToFile((char*)at, sizeof(AppTempSettings), filePath);
+template <class Type>
+struct LinkedList {
+	struct Node {
+		Type data;
+		Node* next;
+	};
+
+	Node* first;
+	Node* last;
+
+	void init(int size) {
+		list = mallocArray(Node<Type>, size);
+		last = first;
+	}
+
+	// void append(Type s) {
+	// 	last->next = 
+	// }
+
+	void release() {
+		free(list);
+	}
+};
+
+
+
+Vec3 mouseRayCast(Rect tr, Vec2 mp, Camera* cam) {
+
+	Vec2 mousePercent = {};
+	mousePercent.x = mapRange01(mp.x, tr.left, tr.right);
+	mousePercent.y = mapRange01(mp.y, tr.bottom, tr.top);
+
+	OrientationVectors ovecs = cam->ovecs;
+	Vec3 camBottomLeft = cam->pos + ovecs.dir*cam->nearDist + (-ovecs.right)*(cam->dim.w/2.0f) + (-ovecs.up)*(cam->dim.h/2.0f);
+
+	Vec3 p = camBottomLeft;
+	p += (cam->ovecs.right*cam->dim.w) * mousePercent.x;
+	p += (cam->ovecs.up*cam->dim.h) * mousePercent.y;
+
+	Vec3 rayDir = normVec3(p - cam->pos);
+
+	return rayDir;
 }
 
-void appReadTempSettings(char* filePath, AppTempSettings* at) {
-	readDataFile((char*)at, filePath);
-}
-
-void appTempDefault(AppTempSettings* at, Rect monitor) {
-	Rect r = monitor;
-	Vec2 center = vec2(rectCenX(r), (r.top - r.bottom)/2);
-	Vec2 dim = vec2(rectW(r), -rectH(r));
-	at->windowRect = rectCenDim(center, dim*0.85f);
-}
 
 
-
-#define THREAD_JOB_COUNT 7*4
 
 struct AppData {
 
@@ -185,7 +238,7 @@ struct AppData {
 	bool fitToScreen;
 
 	int threadCount;
-	ProcessPixelsData threadData[THREAD_JOB_COUNT];
+	ProcessPixelsData threadData[RAYTRACE_THREAD_JOB_COUNT];
 	bool waitingForThreadStop;
   
 	f64 processStartTime;
@@ -194,8 +247,17 @@ struct AppData {
 	int texFastMode;
 
 	// Editing
-	
-	int selectedEntity;
+
+	float selectionAnimState;	
+	int selectedObject;
+
+	int axisMoveModeHot;
+	int axisMoveMode;
+
+	// Test
+
+	char* grid;
+	Vec2i gridSize;
 };
 
 
@@ -282,19 +344,28 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		TIMER_BLOCK_BEGIN_NAMED(initGraphics, "Init Graphics");
 
-		for(int i = 0; i < TEXTURE_SIZE; i++) {
-			Texture tex;
-			uchar buffer [] = {255,255,255,255 ,255,255,255,255 ,255,255,255,255, 255,255,255,255};
-			loadTexture(&tex, buffer, 2,2, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
-
-			addTexture(tex);
-		}
-
 		// for(int i = 0; i < TEXTURE_SIZE; i++) {
 		// 	Texture tex;
-		// 	loadTextureFromFile(&tex, texturePaths[i], -1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+		// 	uchar buffer [] = {255,255,255,255 ,255,255,255,255 ,255,255,255,255, 255,255,255,255};
+		// 	loadTexture(&tex, buffer, 2,2, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+
 		// 	addTexture(tex);
 		// }
+
+		FolderSearchData fd;
+		folderSearchStart(&fd, App_Image_Folder);
+		while(folderSearchNextFile(&fd)) {
+
+			if(strLen(fd.fileName) <= 2) continue; // Skip ..
+
+			printf("File: %s\n", fd.fileName);
+			if(strCompare(fd.fileName, "arrow.png")) {
+				Texture tex;
+				char* filePath = fillString("%s%s", App_Image_Folder, fd.fileName);
+				loadTextureFromFile(&tex, filePath, -1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+				addTexture(tex);
+			}
+		}
 
 		//
 		// Setup Meshs.
@@ -480,6 +551,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
+
+
+
+
+
 	// @AppLoop.
 
 	{
@@ -491,27 +567,100 @@ extern "C" APPMAINFUNCTION(appMain) {
 		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 	}
 
+
+	#if 0
+	{
+
+		// DArray<int> da;
+
+		// da.init(getPArray(int, 100), 100);
+		// da.push(2);
+		// da.push(453);
+		// da.push(1.2f);
+
+		// da.release();
+
+		// glDisable(GL_DEPTH_TEST);
+
+
+		// glClearColor(0.1f,0.1f,0.1f,1);
+		// glClear(GL_COLOR_BUFFER_BIT);
+
+		Rect sr = getScreenRect(ws);
+		drawRect(sr, vec4(0.1f,1));
+
+		if(init || reload) {
+			Vec2i size = vec2i(10,10);
+			int totalSize = size.w * size.h;
+			ad->gridSize = size;
+			reallocArraySave(char, ad->grid, totalSize);
+
+
+		}
+
+		zeroMemory(ad->grid, ad->gridSize.w*ad->gridSize.h*sizeof(char));
+		Vec2i size = ad->gridSize;
+		ad->grid[arrayIndex(size.w, size.h, 3,4)] = 1;
+		ad->grid[arrayIndex(size.w, size.h, 4,4)] = 1;
+		ad->grid[arrayIndex(size.w, size.h, 5,4)] = 1;
+		ad->grid[arrayIndex(size.w, size.h, 6,4)] = 1;
+
+
+		// Draw. 
+		{
+			Vec2 startPoint = vec2(300,-100);
+			float tileSize = 50;
+			Vec2i size = ad->gridSize;
+
+			for(int y = 0; y < size.h; y++) {
+				for(int x = 0; x < size.w; x++) {
+					Vec4 color = vec4(0.3f,1);
+
+					char value = ad->grid[arrayIndex(size.w, size.h, x,y)];
+
+					if(value != 0) color = vec4(0.2f,0.6f,0.8f,1);
+
+					drawRect(rectTLDim(startPoint + vec2(x*tileSize, -y*tileSize), vec2(tileSize-1)), color);
+				}
+			}
+		}
+
+
+
+
+
+		// *isRunning = false;
+		// return;	
+	}
+	#endif
+
+
+	#if 1
+
 	{
 		if(init) {
 			ad->texFastMode = 2;
+
+			ad->axisMoveModeHot = -1;
 		}
 
 		// @Settings.
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
-		// ad->settings.sampleMode = SAMPLE_MODE_MSAA4X;
-		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
-		// ad->settings.sampleCountGrid = 1;
+		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
+		ad->settings.sampleMode = SAMPLE_MODE_GRID;
+		ad->settings.sampleCountGrid = 1;
+		ad->settings.sampleGridWidth = 1;
 
-		// ad->settings.sampleMode = SAMPLE_MODE_BLUE;
-		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
-		ad->settings.sampleCountGrid = 4;
-		ad->settings.sampleGridWidth = 10;
+		// ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
+		// ad->settings.sampleCountGrid = 4;
+		// ad->settings.sampleGridWidth = 10;
+
 		ad->settings.rayBouncesMax = 6;
 
 		ad->keepUpdating = false;
     
-		ad->threadCount = THREAD_JOB_COUNT;
+		ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
 		// ad->threadCount = 1;
 
 		// glClearColor(1,0,0,1);
@@ -569,7 +718,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			Camera* cam = &ad->world.camera;
 
-			if((!ad->fpsMode && input->mouseButtonDown[0]) || ad->fpsMode) {
+			if((!ad->fpsMode && input->mouseButtonDown[1]) || ad->fpsMode) {
 				float speed = 0.1f;
 				
 				cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
@@ -617,6 +766,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		{
 			World* world = &ad->world;
 
+			#if 0
+
 			if(init || input->keysPressed[KEYCODE_T]) {
 
 				world->shapeCount = 0;
@@ -634,7 +785,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					pos += offset;
 					float size = randomFloatPCG(15,30,0.01f);
 
-					bool emitter = randomIntPCG(0,1);
+					// bool emitter = randomIntPCG(0,1);
+					bool emitter = 0;
 					Vec3 c = hslToRgbFloat(vec3(randomFloatPCG(0,1,0.01f), randomFloatPCG(0.5f,1,0.01f), randomFloatPCG(0.25f,0.75f,0.01f)));
 
 					float rm = randomFloatPCG(0,1,0.01f);
@@ -660,7 +812,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				s = {};
 				s.type = SHAPE_BOX;
 				s.pos = vec3(0,0,0);
-				s.dim = vec3(1000,1000,0.0001f);
+				s.dim = vec3(1000000,1000000,0.0001f);
 				s.color = vec3(0.5f);
 				// s.color = vec3(0.99f);
 				// s.reflectionMod = 0.3f;
@@ -684,34 +836,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 				world->shapes[world->shapeCount++] = s;
 
 
-				// Shape s = {};
-				// s.type = SHAPE_SPHERE;
-				// s.pos = vec3(0,0,10);
-				// s.r = 10;
-				// s.color = vec3(0.0f);
-				// // s.color = vec3(0.99f);
-				// // s.reflectionMod = 0.3f;
-				// s.reflectionMod = 0.0f;
-				// // s.reflectionMod = 0.9f;
-				// // s.reflectionMod = 0.1f;
-				// world->shapes[world-> shapeCount++] = s;
-
-				// Shape s = {};
-				// s.type = SHAPE_BOX;
-				// s.pos = vec3(0,0,10);
-				// s.dim = vec3(10.0f);
-				// s.color = vec3(0.0f);
-				// // s.color = vec3(0.99f);
-				// // s.reflectionMod = 0.3f;
-				// s.reflectionMod = 0.0f;
-				// // s.reflectionMod = 0.9f;
-				// // s.reflectionMod = 0.1f;
-				// world->shapes[world-> shapeCount++] = s;
 
 
 
-				world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-				// world->defaultEmitColor = vec3(1.0f);
+				// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
+				world->defaultEmitColor = vec3(1.0f);
 				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
 				world->globalLightColor = vec3(1,1,1);
 				// world->globalLightColor = vec3(0.0f);
@@ -723,9 +852,93 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
+			#endif
+
+			if(init || reload) {
+				world->defaultEmitColor = vec3(1,1,1);
+
+				world->ambientRatio = 0.2f;
+				world->ambientColor = vec3(1.0f);
+
+				// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
+				// world->defaultEmitColor = vec3(1.0f);
+				// world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
+				// world->globalLightColor = vec3(1,1,1);
+				// world->globalLightColor = vec3(0.0f);
+
+
+
+				world->lightCount = 0;
+				reallocArraySave(Light, world->lights, 10);
+
+				Light l;
+
+				l = {};
+				l.type = LIGHT_TYPE_DIRECTION;
+				l.pos = normVec3(vec3(-1.5f,-1,-2.0f));
+				// l.diffuseColor = vec3(0.9,0,0);
+				l.diffuseColor = vec3(0.9f);
+				l.specularColor = vec3(1.0f);
+				l.brightness = 1.0f;
+				world->lights[world->lightCount++] = l;
+
+				world->objectCount = 0;
+				reallocArraySave(Object, world->objects, 100);
+
+				Material materials[10] = {};
+				materials[0].diffuseRatio = 0.5f;
+				materials[0].specularRatio = 0.5f;
+				materials[0].shininess = 15;
+
+				Object obj;
+
+				// Ground plane.
+
+				obj = {};
+				obj.pos = vec3(0,0,0);
+				obj.color = vec3(0.5f);
+				obj.material = materials[0];
+				obj.geometry.type = GEOM_TYPE_BOX;
+				// obj.geometry.dim = vec3(100000, 100000, 0.01f);
+				obj.geometry.dim = vec3(5, 5, 0.01f);
+				world->objects[world->objectCount++] = obj;
+
+				// Sphere.
+
+				obj = {};
+				obj.pos = vec3(0,0,20);
+				obj.color = vec3(0.3f,0.5f,0.8f);
+				obj.material = materials[0];
+				obj.geometry.type = GEOM_TYPE_SPHERE;
+				obj.geometry.r = 5;
+				world->objects[world->objectCount++] = obj;
+
+				obj = {};
+				obj.pos = vec3(10,0,15);
+				obj.color = vec3(0.6f,0.5f,0.8f);
+				obj.material = materials[0];
+				obj.geometry.type = GEOM_TYPE_SPHERE;
+				obj.geometry.r = 5;
+				world->objects[world->objectCount++] = obj;
+
+				obj = {};
+				obj.pos = vec3(0,5,5);
+				obj.color = vec3(0.3f,0.5f,0.2f);
+				obj.material = materials[0];
+				obj.geometry.type = GEOM_TYPE_SPHERE;
+				obj.geometry.r = 5;
+				world->objects[world->objectCount++] = obj;
+
+				// Calc bounding spheres.
+				for(int i = 0; i < world->objectCount; i++) {
+					geometryBoundingSphere(&world->objects[i].geometry);
+				}
+			}
+
 		}
 
 		// if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
+		// if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating || reload) && (ad->activeProcessing == false)) {
 		if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating) && (ad->activeProcessing == false)) {
 		// if(false) {
 			ad->activeProcessing = true;
@@ -972,32 +1185,24 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	}
 
-	#if 0
-	if(input->mouseButtonPressed[1]) {
-		Camera* cam = &ad->world.camera;
-		Rect tr = ad->textureScreenRect;
-		Vec2 mp = input->mousePosNegative;
+	#if 1
+	if(input->mouseButtonPressed[0] && ad->axisMoveModeHot == -1) {
+		Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
 
-		Vec2 mousePercent = {};
-		mousePercent.x = mapRange01(mp.x, tr.left, tr.right);
-		mousePercent.y = mapRange01(mp.y, tr.bottom, tr.top);
+		int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
+		if(objectIndex != -1) {
+			ad->selectedObject = objectIndex+1;
+			ad->selectionAnimState = 0;
+		} else ad->selectedObject = 0;
+	}
 
-		OrientationVectors ovecs = ad->world.camera.ovecs;
-		Vec3 camBottomLeft = cam->pos + ovecs.dir*cam->nearDist + (-ovecs.right)*(cam->dim.w/2.0f) + (-ovecs.up)*(cam->dim.h/2.0f);
+	if(input->mouseButtonPressed[0] && ad->axisMoveModeHot != -1) {
+		Vec3 axis[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
+		Vec3 dir = axis[ad->axisMoveModeHot];
 
-		Vec3 p = camBottomLeft;
-		p += (cam->ovecs.right*cam->dim.w) * mousePercent.x;
-		p += (cam->ovecs.up*cam->dim.h) * mousePercent.y;
+		float amount = 1;
 
-		Vec3 rayPos = cam->pos;
-		Vec3 rayDir = normVec3(p - cam->pos);
-
-		int shapeIndex = castRay(rayPos, rayDir, ad->world.shapes, ad->world.shapeCount);
-		if(shapeIndex != -1) {
-			ad->selectedEntity = shapeIndex+1;
-		} else {
-			ad->selectedEntity = -1;
-		}
+		ad->world.objects[ad->selectedObject-1].pos += dir*amount;
 	}
 	#endif
 
@@ -1051,12 +1256,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 		rowToColumn(&vm);
 		glLoadMatrixf(vm.e);
 
-		Vec4 lp = vec4(-world->globalLightDir, 0);
+		Vec4 lp = vec4(-world->lights[0].dir, 0);
 		glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
 
 		// Vec4 lightAmbientColor = vec4(world->defaultEmitColor,1);
 		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbientColor.e);
-		Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
+
+		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
+		Vec4 lightDiffuseColor = vec4(world->lights[0].diffuseColor,1);
 		glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
 
 		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
@@ -1071,18 +1278,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 		{
 			glDisable(GL_LIGHTING);
 			float l = 500;
-			drawLine(vec3(-l,0,0), vec3(0,0,0), vec4(1,0,0,1));
-			drawLine(vec3(0,0,0), vec3(l,0,0), vec4(1,0.5f,0.5f,1));
-			drawLine(vec3(0,-l,0), vec3(0,0,0), vec4(0,1,0,1));
-			drawLine(vec3(0,0,0), vec3(0,l,0), vec4(0.5f,1,0.5f,1));
-			drawLine(vec3(0,0,-1), vec3(0,0,0), vec4(0,0,1,1));
-			drawLine(vec3(0,0,0), vec3(0,0,1), vec4(0.5f,0.5f,1,1));
+			Vec3 u = vec3(0,0,0.5f); // Remove z flicker.
+			drawLine(u + vec3(-l,0,0), u + vec3(0,0,0), vec4(1,0,0,1));
+			drawLine(u + vec3(0,0,0), u + vec3(l,0,0), vec4(1,0.5f,0.5f,1));
+			drawLine(u + vec3(0,-l,0), u + vec3(0,0,0), vec4(0,1,0,1));
+			drawLine(u + vec3(0,0,0), u + vec3(0,l,0), vec4(0.5f,1,0.5f,1));
+			drawLine(u + vec3(0,0,-1), u + vec3(0,0,0), vec4(0,0,1,1));
+			drawLine(u + vec3(0,0,0), u + vec3(0,0,1), vec4(0.5f,0.5f,1,1));
 			glEnable(GL_LIGHTING);
 		}
 
 		{
-			Shape* shapes = world->shapes;
-
 			// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 			// glDisable(GL_CULL_FACE);
 
@@ -1090,138 +1296,97 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// Vec4 ambientColor = COLOR_SRGB(vec4(vec3(1,0,0), 1));
 			// glMaterialfv(GL_FRONT, GL_AMBIENT, ambientColor.e);
 
-			for(int i = 0; i < world->shapeCount; i++) {
-				Shape* s = shapes + i;
+			for(int i = 0; i < world->objectCount; i++) {
+				Object* obj = world->objects + i;
+				Geometry* g = &obj->geometry;
+				Material* m = &obj->material;
 
-				Vec4 diffuseColor = COLOR_SRGB(vec4(s->color, 1));
+				Vec4 diffuseColor = COLOR_SRGB(vec4(obj->color, 1));
 				// glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseColor.e);
 				glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, diffuseColor.e);
 
-				Vec4 emissionColor = COLOR_SRGB(vec4(s->emitColor, 1));
+				Vec4 emissionColor = COLOR_SRGB(vec4(m->emitColor, 1));
 				glMaterialfv(GL_FRONT, GL_EMISSION, emissionColor.e);
 
-				float shininess = lerp(s->reflectionMod, 0,128);
+				float shininess = lerp(m->reflectionMod, 0,128);
 				glMaterialf(GL_FRONT, GL_SHININESS, shininess);
 
-				switch(s->type) {
-					case SHAPE_BOX: {
-						drawBox(s->pos, s->dim, vec4(s->color, 1));
+				switch(g->type) {
+					case GEOM_TYPE_BOX: {
+						drawBox(obj->pos, g->dim, vec4(obj->color, 1));
 					} break;
 
-					case SHAPE_SPHERE: {
-						drawSphere(s->pos, s->r, vec4(s->color, 1));
+					case GEOM_TYPE_SPHERE: {
+						drawSphere(obj->pos, g->r, vec4(obj->color, 1));
 					} break;
 				}
 			}
 
-			if(ad->selectedEntity > 0) {
-				Shape* s = shapes + ad->selectedEntity-1;
+			#if 1
+			if(ad->selectedObject > 0) {
+				Object* obj = world->objects + ad->selectedObject-1;
+				Geometry* geom = &obj->geometry;
 
 				Vec4 color = vec4(1,1,1,1);
+				float animSpeed = 3;
+				ad->selectionAnimState += ad->dt * animSpeed;
+				color.a = (cos(ad->selectionAnimState)+1)/2.0f;
 
 				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				glDisable(GL_LIGHTING);
 
-				switch(s->type) {
-					case SHAPE_BOX: {
-						drawBox(s->pos, s->dim, color);
+				switch(geom->type) {
+					case GEOM_TYPE_BOX: {
+						drawBox(obj->pos, geom->dim, color);
 					} break;
 
-					case SHAPE_SPHERE: {
-						drawSphere(s->pos, s->r, color);
+					case GEOM_TYPE_SPHERE: {
+						drawSphere(obj->pos, geom->r, color);
 					} break;
-				}				
+				}
 
 				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 				glDisable(GL_CULL_FACE);
 
-
-
 				Camera* cam = &ad->world.camera;
-				Vec2 d = vec2(2,1) * lenVec3(cam->pos - s->pos)*0.05f;
-				float r = s->boundingSphereRadius;
+				float boundRadius = geom->boundingSphereRadius;
+				Vec2 d = vec2(1,boundRadius);
+				float alpha = 0.7f;
 
-				drawPlane(s->pos + vec3(1,0,0) * (d.w/2.0f + r), vec3(0,1,0), vec3(0,0,1), d, vec4(1,0,0,1));
-				drawPlane(s->pos + vec3(0,1,0) * (d.w/2.0f + r), vec3(1,0,0), vec3(0,0,1), d, vec4(0,1,0,1));
-				drawPlane(s->pos + vec3(0,0,1) * (d.w/2.0f + r), vec3(0,1,0), vec3(1,0,0), d, vec4(0,0,1,1));
+				glDisable(GL_DEPTH_TEST);
+				{
+					Texture* tex = getTexture(TEXTURE_ARROW);
+					Vec3 n = cam->pos - obj->pos;
+					Vec3 c[]   = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
+					Vec3 pp[]  = { obj->pos + vec3(1,0,0)*d.h*0.5f, obj->pos + vec3(0,1,0)*d.h*0.5f, obj->pos + vec3(0,0,1)*d.h*0.5f };
+					Vec3 pn[]  = { normVec3(vec3(0, n.y, n.z)), normVec3(vec3(n.x, 0, n.z)), normVec3(vec3(n.x, n.y, 0)) };
+					Vec3 pu[]  = { vec3(-1,0,0), vec3(0,-1,0), vec3(0,0,-1) };
+
+					Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
+
+					int selectionIndex = -1;
+					for(int i = 0; i < 3; i++) {
+						float a = alpha;
+						float dist = linePlaneIntersection(cam->pos, rayDir, pp[i], pn[i], pu[i], d);
+						if(dist != -1) {
+							a = 1;
+							selectionIndex = i;
+						}
+
+						drawPlane(pp[i], pn[i], pu[i], d, vec4(c[i],a), rect(0,0,1,1), tex->id);
+					}
+
+					ad->axisMoveModeHot = selectionIndex;
+				}
+				glEnable(GL_DEPTH_TEST);
 
 				glEnable(GL_CULL_FACE);
 				glEnable(GL_LIGHTING);
 			}
+			#endif
 
 			// glEnable(GL_CULL_FACE);
 			// glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		}
-
-		if(false)
-		{
-			// Vec4 ambientColor = vec4(world->defaultEmitColor, 1);
-			// Vec4 diffuseColor = vec4(1,0.5f,0.2f, 1);
-			// float shininess = 80;
-			// glMaterialfv(GL_FRONT, GL_AMBIENT,   ambientColor.e);
-			// glMaterialfv(GL_FRONT, GL_DIFFUSE,   diffuseColor.e);
-			// // glMaterialfv(GL_FRONT, GL_SPECULAR,  diffuseColor.e);
-			// // glMaterialfv(GL_FRONT, GL_EMISSION,  diffuseColor.e);
-			// glMaterialfv(GL_FRONT, GL_SHININESS, &shininess);
-
-
-			// Vec3 p = vec3(0,0,10);
-
-			// // drawPlane(p, vec2(5,5), vec3(0,0,1), vec4(1,1,1,1));
-			// drawBox(p, vec3(5.0f), vec4(1,1,1,1));
-
-			Vec3 p = vec3(0,0,10);
-			// drawPlane(p, vec2(10,20), vec4(0.2f,1));
-
-			Vec3 lp = vec3(-10,0,20);
-			Vec3 ld = normVec3(vec3(1,0,-1));
-
-			glDisable(GL_LIGHTING);
-			drawLine(lp, lp + ld*100, vec4(1,0,0,1));
-		}
-
-		if(false)
-		{
-			glDisable(GL_LIGHTING);
-			Vec3 lp = vec3(0,-10 + sin(ad->time)*13,20);
-			Vec3 ld = normVec3(vec3(0, 1, -1));
-			Vec3 pp = vec3(0,0,10);
-			Vec3 pn = normVec3(vec3(0,-2,1));
-			Vec3 pu = cross(pn, vec3(1,0,0));
-			Vec2 pdim = vec2(13,20);
-
-			drawLine(lp, lp+ld*100, vec4(0.8f,1));
-
-			drawPlane(pp, pn, pu, pdim, vec4(1,1,1,1));
-
-
-			Vec3 a = vec3(1,2,3);
-			Vec3 b = vec3(5,6,-23);
-			float c = 34;
-
-			float x = dot(a, b) * c;
-			float y = dot(a, b*c);
-
-			Vec3 ip, in;
-			float distance = linePlaneIntersection(lp, ld, pp, pn, pu, pdim, &ip, &in);
-			if(distance >= 0) {
-				Vec4 c = vec4(1,0,0,1);
-				glMaterialfv(GL_FRONT, GL_DIFFUSE, c.e);
-				drawSphere(ip, 0.1f, vec4(1,0,0,1));
-				drawLine(ip, ip+in*10, vec4(0,1,1,1));
-			}
-
-			// Vec3 ip, in;
-			// bool result = lineSphereIntersection(lp, ld, sp, sr, &ip, &in);
-
-			// if(result) {
-			// 	Vec4 c = vec4(1,0,0,1);
-			// 	glMaterialfv(GL_FRONT, GL_DIFFUSE, c.e);
-			// 	drawSphere(ip, 0.1f, vec4(1,0,0,1));
-			// 	drawLine(ip, ip+in*10, vec4(0,1,1,1));
-			// }
-
-			// drawSphere(vec3(0,-5,0), 0.2f, vec4(1,0,1,1));
 		}
 
 		glMatrixMode(GL_PROJECTION); glPopMatrix();
@@ -1230,6 +1395,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glDisable(GL_LIGHTING);
 		glDisable(GL_NORMALIZE);
 	}
+
+
+
 
 	//@Draw Info.
 	{
@@ -1260,23 +1428,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 		drawText(fillString("crot: %f,%f,%f", PVEC3(ad->world.camera.rot)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 	}
 
+	#endif
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
 
-	// Save app state.
-	#if 1
-	if(*isRunning == false && fileExists(App_Save_File)) {
-		AppTempSettings at = {};
 
-		RECT r; 
-		GetWindowRect(windowHandle, &r);
 
-		at.windowRect = rect(r.left, r.bottom, r.right, r.top);
+	if(*isRunning == false) saveAppSettings(systemData);
 
-		appWriteTempSettings(App_Save_File, &at);
-	}
-	#endif
-	
 	// if(init) printf("Startup Time: %fs\n", timerUpdate(startupTimer));
 
 	// @App End.
