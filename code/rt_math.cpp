@@ -1469,7 +1469,7 @@ inline Vec2 midOfTwoVectors(Vec2 p0, Vec2 p1, Vec2 p2) {
 	return mid;
 }
 
-inline bool getLineIntersection(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, Vec2 * i) {
+inline bool getLineIntersection(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, Vec2 * i = 0) {
     Vec2 s1 = p1 - p0;
     Vec2 s2 = p3 - p2;
 
@@ -1480,7 +1480,7 @@ inline bool getLineIntersection(Vec2 p0, Vec2 p1, Vec2 p2, Vec2 p3, Vec2 * i) {
 
     if (s >= 0 && s <= 1 && t >= 0 && t <= 1)
     {
-        *i = p0 + t*s1;
+    	if(i) *i = p0 + t*s1;
         return true;
     }
 
@@ -2011,6 +2011,13 @@ inline Vec3 operator/(Vec3 a, float b) {
 	return a;
 }
 
+inline Vec3 operator/(Vec3 a, Vec3 b) {
+	a.x /= b.x;
+	a.y /= b.y;
+	a.z /= b.z;
+	return a;
+}
+
 inline Vec3 operator-(Vec3 a) {
 	a.x = -a.x;
 	a.y = -a.y;
@@ -2226,6 +2233,24 @@ float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3 pu, Vec2 di
 	return -1;
 }
 
+float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+
+	float a = dot(pn, ld);
+	if(a == 0) return -1;
+
+	float distance = -(dot(pn, lp) - dot(pn, pp)) / a;
+	if(distance >= 0) {
+		Vec3 ip = lp + ld*distance;
+
+		if(intersection) *intersection = ip;
+		if(intersectionNormal) *intersectionNormal = pn;
+
+		return distance;
+	}
+
+	return -1;
+}
+
 bool lineSphereCollision(Vec3 lp, Vec3 ld, Vec3 sp, float sr) {
 	lp -= sp;
 	float dotLdLp = dot(ld,lp);
@@ -2261,6 +2286,29 @@ float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersec
 inline Vec3 reflectVector(Vec3 dir, Vec3 normal) {
 	Vec3 result = dir - 2*(dot(dir, normal))*normal;
 	return result;
+}
+
+// Not tested.
+Vec3 linesClosestPoint(Vec3 lp0, Vec3 ld0, Vec3 lp1, Vec3 ld1) {
+	Vec3 p = vec3(10,0,0);
+
+	Vec3 a = ld0 * 10000000;
+	Vec3 b = ld1 * 10000000;
+	Vec3 c = lp1 - lp0; // Normalized???
+
+	float upper, lower;
+
+	upper = -dot(a,b) * dot(b,c) + dot(a,c) * dot(b,b);
+	lower =  dot(a,a) * dot(b,b) - dot(a,b) * dot(a,b);
+	Vec3 d = lp0 + a*(upper / lower);
+
+	upper = dot(a,b) * dot(a,c) - dot(b,c) * dot(a,a);
+	Vec3 e = lp1 + b*(upper / lower);
+
+	// p = (d + e) / 2;
+	p = e;
+
+	return p;
 }
 
 //

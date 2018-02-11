@@ -191,8 +191,26 @@ Vec3 mouseRayCast(Rect tr, Vec2 mp, Camera* cam) {
 	return rayDir;
 }
 
+enum EntityUIState {
+	ENTITYUI_INACTIVE = 0,
+	ENTITYUI_HOT,
+	ENTITYUI_ACTIVE,
+};
 
+enum EntityTranslateMode {
+	TRANSLATE_MODE_AXIS = 0,
+	TRANSLATE_MODE_PLANE,
+};
 
+struct EntityUI {
+	float selectionAnimState;
+	int selectedObject;
+
+	Vec3 axis;
+	int translateState;
+	int translateMode;
+	Vec3 objectDistanceVector;
+};
 
 struct AppData {
 
@@ -218,6 +236,7 @@ struct AppData {
 	Vec2i frameBufferSize;
 
 	bool captureMouse;
+	bool captureMouseKeepCenter;
 	bool fpsMode;
 
 	// App.
@@ -248,16 +267,12 @@ struct AppData {
 
 	// Editing
 
-	float selectionAnimState;	
-	int selectedObject;
+	EntityUI entityUI;
 
-	int axisMoveModeHot;
-	int axisMoveMode;
+	// // Test
 
-	// Test
-
-	char* grid;
-	Vec2i gridSize;
+	// char* grid;
+	// Vec2i gridSize;
 };
 
 
@@ -358,13 +373,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(strLen(fd.fileName) <= 2) continue; // Skip ..
 
-			printf("File: %s\n", fd.fileName);
-			if(strCompare(fd.fileName, "arrow.png")) {
+			// if(strCompare(fd.fileName, "arrow.png")) {
 				Texture tex;
 				char* filePath = fillString("%s%s", App_Image_Folder, fd.fileName);
 				loadTextureFromFile(&tex, filePath, -1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
 				addTexture(tex);
-			}
+			// }
 		}
 
 		//
@@ -640,8 +654,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		if(init) {
 			ad->texFastMode = 2;
-
-			ad->axisMoveModeHot = -1;
 		}
 
 		// @Settings.
@@ -708,17 +720,50 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 		ad->world.camera.fov = 90;
 
-		if(input->keysPressed[KEYCODE_F3]) {
-			ad->captureMouse = !ad->captureMouse;
+		// Mouse capture.
+		{
+			if(!ad->captureMouse) {
+				if(input->keysPressed[KEYCODE_F3] || input->mouseButtonPressed[1]) {
+					ad->captureMouse = true;
+
+					if(input->keysPressed[KEYCODE_F3]) ad->captureMouseKeepCenter = true;
+					else ad->captureMouseKeepCenter = false;
+
+					POINT point;
+					GetCursorPos(&ws->lastMousePosition);
+				}
+			} else {
+				if(input->keysPressed[KEYCODE_F3] || input->mouseButtonReleased[1]) {
+					ad->captureMouse = false;
+
+					SetCursorPos(ws->lastMousePosition.x, ws->lastMousePosition.y);
+				}
+			}
 		}
 
 		{
-			ad->fpsMode = ad->captureMouse && windowHasFocus(windowHandle);
-			if(ad->fpsMode) captureMouse(windowHandle, ad->captureMouse, input);
+			ad->fpsMode = (ad->captureMouse || input->mouseButtonDown[1]) && windowHasFocus(windowHandle);
+			if(ad->fpsMode) {
+				if(ad->captureMouseKeepCenter) {
+					int w,h;
+					Vec2i wPos;
+					getWindowProperties(windowHandle, &w, &h, 0, 0, &wPos.x, &wPos.y);
+
+					SetCursorPos(wPos.x + w/2, wPos.y + h/2);
+					input->lastMousePos = getMousePos(windowHandle,false);
+				} else {
+					SetCursorPos(ws->lastMousePosition.x, ws->lastMousePosition.y);
+					input->lastMousePos = getMousePos(windowHandle,false);
+				}
+
+				while(ShowCursor(false) >= 0) {};
+			} else {
+				while(ShowCursor(true) < 0) {};
+			}
 
 			Camera* cam = &ad->world.camera;
 
-			if((!ad->fpsMode && input->mouseButtonDown[1]) || ad->fpsMode) {
+			if(ad->fpsMode) {
 				float speed = 0.1f;
 				
 				cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
@@ -1185,26 +1230,70 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	}
 
-	#if 1
-	if(input->mouseButtonPressed[0] && ad->axisMoveModeHot == -1) {
-		Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
 
-		int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
-		if(objectIndex != -1) {
-			ad->selectedObject = objectIndex+1;
-			ad->selectionAnimState = 0;
-		} else ad->selectedObject = 0;
+	{
+		// @EntityUI code
+
+		EntityUI* eui = &ad->entityUI;
+
+		// Selection.
+		if(input->mouseButtonPressed[0] && eui->translateState == ENTITYUI_INACTIVE) {
+			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+
+			int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
+			if(objectIndex != -1) {
+				eui->selectedObject = objectIndex+1;
+				eui->selectionAnimState = 0;
+			} else eui->selectedObject = 0;
+		}
+
+		if(input->mouseButtonReleased[0] && eui->translateState == ENTITYUI_ACTIVE) {
+			eui->translateState = ENTITYUI_INACTIVE;
+		}
+
+		// To avoid code duplication we handle init and active cases at the same time.
+		if((input->mouseButtonPressed[0] && eui->translateState == ENTITYUI_HOT) || 
+		   (input->mouseButtonDown[0] && eui->translateState == ENTITYUI_ACTIVE)) {
+
+			// Init.
+			if(eui->translateState == ENTITYUI_HOT) eui->translateState = ENTITYUI_ACTIVE;
+
+			Object* obj = ad->world.objects + (eui->selectedObject-1);
+			Vec3 rayPos = ad->world.camera.pos;
+			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+			Camera* cam = &ad->world.camera;
+
+			if(eui->translateMode == TRANSLATE_MODE_AXIS) {
+				Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
+				Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
+
+				Vec3 planeIntersection;
+				float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+				if(distance != -1) {
+					Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
+
+					// Init.
+					if(input->mouseButtonPressed[0]) eui->objectDistanceVector = obj->pos - linePointOnAxis;
+
+					obj->pos = linePointOnAxis + eui->objectDistanceVector;
+				}
+
+			} else if(eui->translateMode == TRANSLATE_MODE_PLANE) {
+				Vec3 planeNormal = eui->axis;
+
+				Vec3 planeIntersection;
+				float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+				if(distance != -1) {
+
+					// Init.
+					if(input->mouseButtonPressed[0]) eui->objectDistanceVector = obj->pos - planeIntersection;
+
+					obj->pos = planeIntersection + eui->objectDistanceVector;
+				}
+			}
+
+		}
 	}
-
-	if(input->mouseButtonPressed[0] && ad->axisMoveModeHot != -1) {
-		Vec3 axis[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
-		Vec3 dir = axis[ad->axisMoveModeHot];
-
-		float amount = 1;
-
-		ad->world.objects[ad->selectedObject-1].pos += dir*amount;
-	}
-	#endif
 
 	if(ad->drawSceneWired)
 	{
@@ -1223,7 +1312,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec3 cc = world->defaultEmitColor;
 		drawRect(rectCenDim(0,0,10000,10000), vec4(cc,1));
 		glDepthMask(true);
-
 
 			// GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
 			// GLfloat mat_shininess[] = { 50.0 };
@@ -1254,6 +1342,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Mat4 vm = viewMatrix(cam->pos, cam->ovecs.dir, cam->ovecs.up, cam->ovecs.right);
 		rowToColumn(&vm);
+
 		glLoadMatrixf(vm.e);
 
 		Vec4 lp = vec4(-world->lights[0].dir, 0);
@@ -1322,68 +1411,134 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			#if 1
-			if(ad->selectedObject > 0) {
-				Object* obj = world->objects + ad->selectedObject-1;
-				Geometry* geom = &obj->geometry;
+			// @EntityUI draw.
+			{
+				EntityUI* eui = &ad->entityUI;
 
-				Vec4 color = vec4(1,1,1,1);
-				float animSpeed = 3;
-				ad->selectionAnimState += ad->dt * animSpeed;
-				color.a = (cos(ad->selectionAnimState)+1)/2.0f;
+				if(eui->selectedObject) {
+					Object* obj = world->objects + eui->selectedObject-1;
+					Geometry* geom = &obj->geometry;
 
-				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-				glDisable(GL_LIGHTING);
+					// Draw grid.
 
-				switch(geom->type) {
-					case GEOM_TYPE_BOX: {
-						drawBox(obj->pos, geom->dim, color);
-					} break;
+					Vec4 color = vec4(1,1,1,1);
+					float animSpeed = 3;
+					eui->selectionAnimState += ad->dt * animSpeed;
+					color.a = (cos(eui->selectionAnimState)+1)/2.0f;
 
-					case GEOM_TYPE_SPHERE: {
-						drawSphere(obj->pos, geom->r, color);
-					} break;
-				}
+					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+					glDisable(GL_LIGHTING);
 
-				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-				glDisable(GL_CULL_FACE);
+					switch(geom->type) {
+						case GEOM_TYPE_BOX: {
+							drawBox(obj->pos, geom->dim, color);
+						} break;
 
-				Camera* cam = &ad->world.camera;
-				float boundRadius = geom->boundingSphereRadius;
-				Vec2 d = vec2(1,boundRadius);
-				float alpha = 0.7f;
-
-				glDisable(GL_DEPTH_TEST);
-				{
-					Texture* tex = getTexture(TEXTURE_ARROW);
-					Vec3 n = cam->pos - obj->pos;
-					Vec3 c[]   = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
-					Vec3 pp[]  = { obj->pos + vec3(1,0,0)*d.h*0.5f, obj->pos + vec3(0,1,0)*d.h*0.5f, obj->pos + vec3(0,0,1)*d.h*0.5f };
-					Vec3 pn[]  = { normVec3(vec3(0, n.y, n.z)), normVec3(vec3(n.x, 0, n.z)), normVec3(vec3(n.x, n.y, 0)) };
-					Vec3 pu[]  = { vec3(-1,0,0), vec3(0,-1,0), vec3(0,0,-1) };
-
-					Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
-
-					int selectionIndex = -1;
-					for(int i = 0; i < 3; i++) {
-						float a = alpha;
-						float dist = linePlaneIntersection(cam->pos, rayDir, pp[i], pn[i], pu[i], d);
-						if(dist != -1) {
-							a = 1;
-							selectionIndex = i;
-						}
-
-						drawPlane(pp[i], pn[i], pu[i], d, vec4(c[i],a), rect(0,0,1,1), tex->id);
+						case GEOM_TYPE_SPHERE: {
+							drawSphere(obj->pos, geom->r, color);
+						} break;
 					}
 
-					ad->axisMoveModeHot = selectionIndex;
-				}
-				glEnable(GL_DEPTH_TEST);
+					glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+					glDisable(GL_CULL_FACE);
 
-				glEnable(GL_CULL_FACE);
-				glEnable(GL_LIGHTING);
+					// Draw Gizmo.
+
+					Camera* cam = &world->camera;
+					float boundRadius = geom->boundingSphereRadius;
+					Vec2 d = vec2(1,boundRadius);
+					float uiAlpha = 0.7f;
+
+					glDisable(GL_DEPTH_TEST);
+					{
+						Vec3 n = cam->pos - obj->pos;
+						Vec3 c[]   = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
+						Vec3 colorSquares = vec3(0.7f);
+						Vec3 axis[]= { normVec3(vec3(n.e[0],0,0)), normVec3(vec3(0,n.e[1],0)), normVec3(vec3(0,0,n.e[2])), };
+						Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
+
+						// Move axis.
+
+						int axisIndex = 0;
+						for(int i = 0; i < 3; i++) {
+
+							Vec3 pp = obj->pos + axis[i]*d.h*0.5f;
+							Vec3 pn = n;
+							pn.e[i] = 0;
+							pn = normVec3(pn);
+							Vec3 pu = -axis[i];
+
+							float a = uiAlpha;
+							if(eui->translateState != ENTITYUI_ACTIVE) {
+	
+								Vec3 intersection;
+								float dist = linePlaneIntersection(cam->pos, rayDir, pp, pn, pu, d, &intersection);
+								if(dist != -1) {
+									a = 1;
+									axisIndex = i+1;
+								}
+							} else {
+								if(eui->translateMode == TRANSLATE_MODE_AXIS)
+									if(axis[i] == eui->axis) a = 1;
+							}
+
+							drawPlane(pp, pn, pu, d, vec4(c[i],a), rect(0,0,1,1), getTexture(TEXTURE_ARROW)->id);
+						}
+
+						// Move plane.
+
+						int planeIndex = 0;
+						for(int i = 0; i < 3; i++) {
+							// Whatever.
+							Vec3 diag = n / vec3(abs(n.x), abs(n.y), abs(n.z));
+							diag.e[i] = 0;
+
+							float dim = d.h/2;
+							Vec3 edgePoint = obj->pos + diag * d.h;
+							Vec3 p = edgePoint - diag*dim/2;
+
+							float a = uiAlpha;
+							if(eui->translateState != ENTITYUI_ACTIVE) {
+							
+								Vec3 intersection;
+								float dist = linePlaneIntersection(cam->pos, rayDir, p, axis[i], axis[(i+1)%3], vec2(dim), &intersection);
+								if(dist != -1) {
+									a = 1;
+									planeIndex = i+1;
+								}
+							} else {
+								if(eui->translateMode == TRANSLATE_MODE_PLANE)
+									if(axis[i] == eui->axis) a = 1;
+							}
+
+							drawPlane(p, axis[i], axis[(i+1)%3], vec2(dim), vec4(colorSquares,a), rect(0,0,1,1), getTexture(TEXTURE_ROUNDED_SQUARE)->id);
+						}
+
+						// Should not be in draw code, but it's easiest for now.
+
+						if(eui->translateState != ENTITYUI_ACTIVE) {
+							if(axisIndex || planeIndex) {
+								if(axisIndex) {
+									eui->axis = axis[axisIndex-1];
+									eui->translateState = ENTITYUI_HOT;
+									eui->translateMode = TRANSLATE_MODE_AXIS;
+								} else if(planeIndex) {
+									eui->axis = axis[planeIndex-1];
+									eui->translateState = ENTITYUI_HOT;
+									eui->translateMode = TRANSLATE_MODE_PLANE;
+								}
+							} else {
+								eui->translateState = ENTITYUI_INACTIVE;
+							}
+						}
+
+					}
+					glEnable(GL_DEPTH_TEST);
+
+					glEnable(GL_CULL_FACE);
+					glEnable(GL_LIGHTING);
+				}
 			}
-			#endif
 
 			// glEnable(GL_CULL_FACE);
 			// glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);

@@ -328,6 +328,7 @@ struct WindowSettings {
 	float aspectRatio;
 
 	bool customCursor;
+	POINT lastMousePosition;
 };
 
 void updateCursor(WindowSettings* ws) {
@@ -875,21 +876,16 @@ Rect getScreenRect(WindowSettings* ws) {
 	return rect(0, -ws->currentRes.h, ws->currentRes.w, 0);
 }
 
-void captureMouse(HWND windowHandle, bool t, Input* input) {
-	if(t) {
-		int w,h;
-		Vec2i wPos;
-		getWindowProperties(windowHandle, &w, &h, 0, 0, &wPos.x, &wPos.y);
+// void captureMouse(HWND windowHandle, bool t, Input* input) {
+// 	if(t) {
+// 		int w,h;
+// 		Vec2i wPos;
+// 		getWindowProperties(windowHandle, &w, &h, 0, 0, &wPos.x, &wPos.y);
 
-		SetCursorPos(wPos.x + w/2, wPos.y + h/2);
-
-		input->lastMousePos = getMousePos(windowHandle,false);
-
-		while(ShowCursor(false) >= 0);
-	} else {
-		while(ShowCursor(true) < 0);
-	}
-}
+// 		SetCursorPos(wPos.x + w/2, wPos.y + h/2);
+// 		input->lastMousePos = getMousePos(windowHandle,false);
+// 	}
+// }
 
 bool windowHasFocus(HWND windowHandle) {
 	bool result = GetFocus() == windowHandle;
