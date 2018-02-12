@@ -2078,6 +2078,16 @@ inline Vec3 projectPointOnLine(Vec3 lPos, Vec3 lDir, Vec3 p) {
 	return result;
 }
 
+inline float angleBetweenVectors(Vec3 a, Vec3 b) {
+	float angle = acos(dot(normVec3(a), normVec3(b)));
+	return angle;
+}
+
+// inline float angleBetweenVectors(Vec3 a, Vec3 b) {
+// 	float angle = acos(dot(normVec3(a), normVec3(b)));
+// 	return angle;
+// }
+
 Vec3 boxRaycastNormals[6] = {vec3(-1,0,0), vec3(1,0,0), vec3(0,-1,0), vec3(0,1,0), vec3(0,0,-1), vec3(0,0,1)};
 
 bool boxRaycast(Vec3 lp, Vec3 ld, Rect3 box, float* distance = 0, int* face = 0) {
@@ -2535,7 +2545,7 @@ inline void rowToColumn(Mat4* m) {
 	}
 }
 
-inline void scaleMatrix(Mat4* m, Vec3 a) {
+inline void  scaleMatrix(Mat4* m, Vec3 a) {
 	*m = {};
 	m->x1 = a.x;
 	m->y2 = a.y;
@@ -2691,6 +2701,8 @@ Quat normQuat(Quat q) {
 	return result;
 }
 
+// quat*axis -> local rotation.
+// axis*quat -> world rotation.
 Quat operator*(Quat a, Quat b) {
 	Quat r;
 	r.w = (a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z);
@@ -2765,6 +2777,10 @@ Mat4 modelMatrix(Vec3 trans, Vec3 scale, float degrees = 0, Vec3 rot = vec3(0,0,
 	Mat4 model = tm*rm*sm;
 
 	return model;
+}
+
+bool operator==(Quat q0, Quat q1) {
+	return q0.w==q1.w && q0.x==q1.x && q0.y==q1.y && q0.z==q1.z;
 }
 
 //

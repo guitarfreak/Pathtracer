@@ -106,7 +106,7 @@ void geometryBoundingSphere(Geometry* g) {
 	float r;
 	switch(g->type) {
 		case GEOM_TYPE_BOX: {
-			r = g->dim.x*0.5f + g->dim.y*0.5f + g->dim.z*0.5f;
+			r = lenVec3(g->dim)/2;
 		} break;
 
 		case GEOM_TYPE_SPHERE: {

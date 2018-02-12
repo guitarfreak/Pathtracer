@@ -12,6 +12,8 @@
 #include "rt_math.cpp"
 // #include "raycast.cpp"
 
+#define OPEN_CONSOLE 1
+
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
 
 	HotloadDll hotloadDll;
@@ -28,6 +30,13 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 	threadInit(&threadQueue, 7);
 
 	AppMemory appMemory = {};
+
+	if(OPEN_CONSOLE) {
+		AllocConsole();
+		freopen("conin$","r",stdin);
+		freopen("conout$","w",stdout);
+		freopen("conout$","w",stderr);
+	}
 
     bool firstFrame = true;
     bool secondFrame = false;
