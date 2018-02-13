@@ -757,6 +757,9 @@ inline void pushVec(Vec2 p0) {
 inline void pushVec(Vec2 p0, float z) {
 	glVertex3f(p0.x, p0.y, z);
 }
+inline void pushVec(Vec3 v) {
+	glVertex3f(v.x, v.y, v.z);
+}
 inline void pushColor(Vec4 c) {
 	glColor4f(c.r, c.g, c.b, c.a);
 }
@@ -1024,23 +1027,63 @@ void drawRectProgressHollow(Rect r, float p, Vec4 c0, Vec4 oc) {
 	drawRectOutline(r, oc);
 }
 
-void drawTriangle(Vec2 p, float size, Vec2 dir, Vec4 color) {
+void drawArrow(Vec3 start, Vec3 end, Vec3 up, float thickness, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
-
-	float z = globalGraphicsState->zOrder;
 
 	Vec4 c = COLOR_SRGB(color);
 	glColor4f(c.r, c.g, c.b, c.a);
-	dir = normVec2(dir) * size;
-	Vec2 tp;
-	glBegin(GL_TRIANGLES);
-		tp = p + dir;
-		glVertex3f(tp.x, tp.y, z);
-		tp = p + rotateVec2(dir, degreeToRadian(360/3));
-		glVertex3f(tp.x, tp.y, z);
-		tp = p + rotateVec2(dir, degreeToRadian(360/3*2));
-		glVertex3f(tp.x, tp.y, z);
+
+	float hw = thickness/2;
+	Vec3 down = normVec3(cross(normVec3(end-start), normVec3(up)));
+
+	float headWidth = thickness*2;
+	float headHeight = thickness*2;
+
+	float len = lenVec3(start - end);
+	bool tooSmall = false;
+	if(len < headHeight) tooSmall = true;
+
+	Vec3 dir = normVec3(end - start);
+	if(!tooSmall) end -= dir * headHeight;
+
+	glBegin(GL_QUADS);
+		pushVec(start - down*hw);
+		pushVec(start + down*hw);
+		pushVec(end + down*hw);
+		pushVec(end - down*hw);
 	glEnd();
+
+	if(!tooSmall) {
+		glBegin(GL_TRIANGLES);
+			pushVec(end - down*headWidth/2);
+			pushVec(end + dir*headHeight);
+			pushVec(end + down*headWidth/2);
+		glEnd();
+	}
+}
+
+void drawTriangleFan(Vec3 pos, Vec3 start, float angle, Vec3 up, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+
+	glDisable(GL_CULL_FACE);
+	glBegin(GL_TRIANGLE_FAN);
+
+	float r = lenVec3(start-pos);
+
+	// float angle = angleBetweenVectors(left-pos, right-pos);
+
+	pushVec(pos);
+
+	int segments = (abs(angle) * r)*10;
+	for(int i = 0; i < segments+1; i++) {
+		Vec3 v = rotateVec3Around(start, (i * angle/(float)segments), up, pos);
+		pushVec(v);
+	}
+
+	glEnd();
+	glEnable(GL_CULL_FACE);
 }
 
 void drawCross(Vec2 p, float size, float size2, Vec2 dir, Vec4 color) {
@@ -1120,10 +1163,6 @@ Vec3 boxVertices[] = {
 	vec3(-0.5f, 0.5f,-0.5f), vec3(-0.5f,-0.5f,-0.5f), vec3( 0.5f,-0.5f,-0.5f), vec3( 0.5f, 0.5f,-0.5f), 
 	vec3(-0.5f,-0.5f, 0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3( 0.5f,-0.5f, 0.5f), 
 };
-
-inline void pushVec(Vec3 v) {
-	glVertex3f(v.x, v.y, v.z);
-}
 
 inline void pushTriangle(Vec3 v0, Vec3 v1, Vec3 v2) {
 	glVertex3f(v0.x, v0.y, v0.z);

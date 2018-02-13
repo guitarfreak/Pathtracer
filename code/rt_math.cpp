@@ -2743,12 +2743,22 @@ Vec3 operator*(Quat q, Vec3 v) {
 
 Vec3 rotateVec3(Vec3 v, float a, Vec3 axis) {
 	Vec3 r = quat(a, axis)*v;
-	return normVec3(r);
+	return r;
 }
 
 void rotateVec3(Vec3* v, float a, Vec3 axis) {
-	*v = quat(a, axis)*(*v);
-	*v = normVec3(*v);
+	*v = rotateVec3(*v, a, axis);
+}
+
+Vec3 rotateVec3Around(Vec3 v, float a, Vec3 axis, Vec3 point) {
+	Vec3 aroundOrigin = rotateVec3(v - point, a, axis);
+	aroundOrigin += point;
+
+	return aroundOrigin;
+}
+
+void rotateVec3Around(Vec3* v, float a, Vec3 axis, Vec3 point) {
+	*v = rotateVec3Around(*v, a, axis, point);
 }
 
 // From Wikipedia.

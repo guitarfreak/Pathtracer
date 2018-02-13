@@ -24,6 +24,13 @@
 	- Reflection.
 	- Refraction.
 	
+	- Scaling.
+	- Multiple selection.
+	- Intersection rotated box.
+	- Local and global rotations, translations,
+
+	- Panel.
+
 	Done Today: 
 
 	Bugs:
@@ -208,6 +215,7 @@ enum EntityUIState {
 enum EntityTranslateMode {
 	TRANSLATE_MODE_AXIS = 0,
 	TRANSLATE_MODE_PLANE,
+	TRANSLATE_MODE_CENTER,
 };
 
 struct EntityUI {
@@ -219,16 +227,20 @@ struct EntityUI {
 
 	// Translation mode.
 
+	Vec3 startPos;
 	int translateMode;
+	Vec3 centerOffset;
+	float centerDistanceToCam;
 
 	// Rotation mode.
 
 	Quat startRot;
-	float rotationRingThicknessMod;
+	float currentRotationAngle;
 
-
+	int axisIndex;
 	Vec3 axis;
 	Vec3 objectDistanceVector;
+	Vec3 currentObjectDistanceVector;
 };
 
 struct AppData {
@@ -674,8 +686,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(init) {
 			ad->texFastMode = 2;
 			// ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
-			ad->entityUI.selectionMode = ENTITYUI_MODE_ROTATION;
-			ad->entityUI.rotationRingThicknessMod = 0.1f;
+			ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
 		}
 
 		// @Settings.
@@ -1274,7 +1285,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		EntityUI* eui = &ad->entityUI;
 
-		if(input->mouseWheel) {
+		if(input->mouseWheel && eui->selectionState != ENTITYUI_ACTIVE) {
 			ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+input->mouseWheel, ENTITYUI_MODE_SIZE);
 		}
 
@@ -1289,23 +1300,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 			} else eui->selectedObject = 0;
 		}
 
-		// Translation mode.
-		if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
-			if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
-				eui->selectionState = ENTITYUI_INACTIVE;
-			}
+		if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
+			eui->selectionState = ENTITYUI_INACTIVE;
+		}
 
-			// To avoid code duplication we handle init and active cases at the same time.
-			if((input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_HOT) || 
-			   (input->mouseButtonDown[0] && eui->selectionState == ENTITYUI_ACTIVE)) {
+		// To avoid code duplication we handle init and active cases at the same time.
+		if((input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_HOT) || 
+		   (input->mouseButtonDown[0] && eui->selectionState == ENTITYUI_ACTIVE)) {
 
-				// Init.
-				if(eui->selectionState == ENTITYUI_HOT) eui->selectionState = ENTITYUI_ACTIVE;
+			// Init.
+			if(eui->selectionState == ENTITYUI_HOT) eui->selectionState = ENTITYUI_ACTIVE;
 
-				Object* obj = ad->world.objects + (eui->selectedObject-1);
-				Vec3 rayPos = ad->world.camera.pos;
-				Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
-				Camera* cam = &ad->world.camera;
+			Object* obj = ad->world.objects + (eui->selectedObject-1);
+			Vec3 rayPos = ad->world.camera.pos;
+			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+			Camera* cam = &ad->world.camera;
+
+			if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 
 				if(eui->translateMode == TRANSLATE_MODE_AXIS) {
 					Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
@@ -1317,7 +1328,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
 
 						// Init.
-						if(input->mouseButtonPressed[0]) eui->objectDistanceVector = obj->pos - linePointOnAxis;
+						if(input->mouseButtonPressed[0]) {
+							eui->objectDistanceVector = obj->pos - linePointOnAxis;
+							eui->startPos = obj->pos;
+						}
 
 						obj->pos = linePointOnAxis + eui->objectDistanceVector;
 					}
@@ -1330,34 +1344,33 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(distance != -1) {
 
 						// Init.
-						if(input->mouseButtonPressed[0]) eui->objectDistanceVector = obj->pos - planeIntersection;
+						if(input->mouseButtonPressed[0]) {
+							eui->objectDistanceVector = obj->pos - planeIntersection;
+							eui->startPos = obj->pos;
+						}
 
 						obj->pos = planeIntersection + eui->objectDistanceVector;
 					}
+				} else if(eui->translateMode == TRANSLATE_MODE_CENTER) {
+					Vec3 pos = obj->pos + eui->centerOffset;
+					Vec3 pp = cam->pos + cam->ovecs.dir * eui->centerDistanceToCam + eui->centerOffset;
+
+					Vec3 planeIntersection;
+					float distance = linePlaneIntersection(rayPos, rayDir, pp, -cam->ovecs.dir, &planeIntersection);
+					if(distance != -1) {
+
+						// Init.
+						if(input->mouseButtonPressed[0]) {
+							eui->objectDistanceVector = eui->centerOffset;
+							eui->startPos = obj->pos;
+						}
+
+						obj->pos = planeIntersection - eui->objectDistanceVector;
+					}
 				}
 			}
-		}
 
-		// Rotation mode.
-		if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
-			if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
-				eui->selectionState = ENTITYUI_INACTIVE;
-			}
-
-			// To avoid code duplication we handle init and active cases at the same time.
-			if((input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_HOT) || 
-			   (input->mouseButtonDown[0] && eui->selectionState == ENTITYUI_ACTIVE)) {
-
-				// Init.
-				if(eui->selectionState == ENTITYUI_HOT) eui->selectionState = ENTITYUI_ACTIVE;
-
-				Object* obj = ad->world.objects + (eui->selectedObject-1);
-				Vec3 rayPos = ad->world.camera.pos;
-				Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
-				Camera* cam = &ad->world.camera;
-
-				float boundRadius = obj->geometry.boundingSphereRadius;
-				float thickness = boundRadius * eui->rotationRingThicknessMod;
+			if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
 
 				Vec3 intersection;
 				float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, eui->axis, &intersection);
@@ -1381,8 +1394,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 					}
 
 					obj->rot = quat(angle, eui->axis)*eui->startRot;
+
+					eui->currentObjectDistanceVector = end;
+					eui->currentRotationAngle = angle;
 				}
 			}
+
 		}
 	}
 
@@ -1563,22 +1580,40 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Geometry* geom = &obj->geometry;
 
 					// Ugh. Make sure to not draw anything after this.
-					glClear(GL_DEPTH_BUFFER_BIT);
+					// glClear(GL_DEPTH_BUFFER_BIT);
 					glDisable(GL_LIGHTING);
 
 					// Draw Gizmo.
 
 					Camera* cam = &world->camera;
-					float boundRadius = geom->boundingSphereRadius;
-					float uiAlpha = 0.7f;
+					float boundRadius = geom->boundingSphereRadius*1.5f;
+					float uiAlpha = 0.5f;
+
+					Vec4 rotationSegmentColor = vec4(hslToRgbFloat(vec3(0.5f,0.9f,0.5f)), 0.5f);
+					Vec4 translationVectorColor = rotationSegmentColor;
+					translationVectorColor.a = 1;
+
+					float translateLineWidth = 5;
+
+					float translationPlaneSize = boundRadius * 0.3f;
+					float rotationRingThickness = boundRadius * 0.05;
+					float translationArrowLength = boundRadius;
+					float translationArrowThickness = rotationRingThickness;
+					float translationVectorThickness = translationArrowThickness*0.5f;
+
+					float translationCenterBoxSize = boundRadius * 0.10f;
+					Vec4 translationCenterBoxColor = vec4(0.5f,1);
+					float translationCenterBoxColorMod = 0.1f;
 
 					if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
-						Vec2 d = vec2(1,boundRadius);
+						Vec2 d = vec2(translationArrowThickness,translationArrowLength);
 						Vec3 n = cam->pos - obj->pos;
-						Vec3 c[]   = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
+						Vec3 c[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
 						Vec3 colorSquares = vec3(0.7f);
-						Vec3 axis[]= { normVec3(vec3(n.e[0],0,0)), normVec3(vec3(0,n.e[1],0)), normVec3(vec3(0,0,n.e[2])), };
+						Vec3 axis[] = { normVec3(vec3(n.e[0],0,0)), normVec3(vec3(0,n.e[1],0)), normVec3(vec3(0,0,n.e[2])), };
 						Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
+
+						glDisable(GL_DEPTH_TEST);
 
 						// Move axis.
 
@@ -1592,20 +1627,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 pu = -axis[i];
 
 							float a = uiAlpha;
-							if(eui->selectionState != ENTITYUI_ACTIVE) {
-	
-								Vec3 intersection;
-								float dist = linePlaneIntersection(cam->pos, rayDir, pp, pn, pu, d, &intersection);
-								if(dist != -1) {
-									a = 1;
-									axisIndex = i+1;
+							if(!(eui->translateMode == TRANSLATE_MODE_CENTER && eui->selectionState == ENTITYUI_HOT)) {
+
+								if(eui->selectionState != ENTITYUI_ACTIVE) {
+		
+									Vec3 intersection;
+									float dist = linePlaneIntersection(cam->pos, rayDir, pp, pn, pu, d, &intersection);
+									if(dist != -1) {
+										a = 1;
+										axisIndex = i+1;
+									}
+								} else {
+									if(eui->translateMode == TRANSLATE_MODE_AXIS)
+										if(axis[i] == eui->axis) a = 1;
 								}
-							} else {
-								if(eui->translateMode == TRANSLATE_MODE_AXIS)
-									if(axis[i] == eui->axis) a = 1;
 							}
 
-							drawPlane(pp, pn, pu, d, vec4(c[i],a), rect(0,0,1,1), getTexture(TEXTURE_ARROW)->id);
+							drawArrow(obj->pos, obj->pos + axis[i]*d.h, n, d.w, vec4(c[i],a));
 						}
 
 						// Move plane.
@@ -1616,7 +1654,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 diag = n / vec3(abs(n.x), abs(n.y), abs(n.z));
 							diag.e[i] = 0;
 
-							float dim = d.h/2;
+							float dim = translationPlaneSize;
 							Vec3 edgePoint = obj->pos + diag * d.h;
 							Vec3 p = edgePoint - diag*dim/2;
 
@@ -1637,18 +1675,90 @@ extern "C" APPMAINFUNCTION(appMain) {
 							drawPlane(p, axis[i], axis[(i+1)%3], vec2(dim), vec4(colorSquares,a), rect(0,0,1,1), getTexture(TEXTURE_ROUNDED_SQUARE)->id);
 						}
 
+						// Move center.
+
+						int centerIndex = 0;
+						{
+							Vec4 color = translationCenterBoxColor;
+
+							if(eui->selectionState != ENTITYUI_ACTIVE) {
+							
+								float distance;
+								bool result = boxRaycast(cam->pos, rayDir, rect3CenDim(obj->pos, vec3(translationCenterBoxSize)), &distance);
+								if(result) {
+									Vec3 intersection = cam->pos + rayDir*distance;
+									eui->centerOffset = intersection - obj->pos;
+
+									color.rgb += vec3(translationCenterBoxColorMod);
+									centerIndex = 1;
+								}
+							}
+
+							drawBox(obj->pos, vec3(translationCenterBoxSize), color);
+						}
+
+						// Show current translation vector.
+
+						if(eui->selectionState == ENTITYUI_ACTIVE) {
+							// glEnable(GL_DEPTH_TEST);
+
+							glLineWidth(translateLineWidth);
+
+							drawArrow(eui->startPos, obj->pos, n, translationVectorThickness, translationVectorColor);
+
+							if(eui->translateMode == TRANSLATE_MODE_PLANE) {
+								int i = mod((eui->axisIndex-1)-1, 3);
+
+								Vec3 off = obj->pos - eui->startPos;
+								off.e[i] = 0;
+
+								drawArrow(eui->startPos, eui->startPos + off, n, translationVectorThickness, translationVectorColor);
+								drawArrow(eui->startPos + off, obj->pos, n, translationVectorThickness, translationVectorColor);
+							}
+
+							if(eui->translateMode == TRANSLATE_MODE_CENTER) {
+								Vec3 off = obj->pos - eui->startPos;
+
+								Vec3 a = vec3(off.x,0,0);
+								Vec3 b = vec3(off.x,off.y,0);
+
+								drawArrow(eui->startPos,     eui->startPos + a, n, translationVectorThickness, translationVectorColor);
+								drawArrow(eui->startPos + a, eui->startPos + b, n, translationVectorThickness, translationVectorColor);
+								drawArrow(eui->startPos + b, eui->startPos + off, n, translationVectorThickness, translationVectorColor);
+							}
+
+							glLineWidth(1);
+							// glDisable(GL_DEPTH_TEST);
+						}
+
+						glEnable(GL_DEPTH_TEST);
+
 						// Should not be in draw code, but it's easiest for now.
 
 						if(eui->selectionState != ENTITYUI_ACTIVE) {
-							if(axisIndex || planeIndex) {
-								if(axisIndex) {
-									eui->axis = axis[axisIndex-1];
+							if(axisIndex || planeIndex || centerIndex) {
+								if(centerIndex) {
+									eui->axis = cam->pos - obj->pos;
+
+									// Get distance to cam.
+									Vec3 intersection;
+									float distance = linePlaneIntersection(obj->pos, -cam->ovecs.dir, cam->pos, cam->ovecs.dir, &intersection);
+									if(distance != -1) {
+										eui->centerDistanceToCam = lenVec3(intersection - obj->pos);
+									}
+
 									eui->selectionState = ENTITYUI_HOT;
-									eui->translateMode = TRANSLATE_MODE_AXIS;
+									eui->translateMode = TRANSLATE_MODE_CENTER;
 								} else if(planeIndex) {
 									eui->axis = axis[planeIndex-1];
+									eui->axisIndex = planeIndex;
 									eui->selectionState = ENTITYUI_HOT;
 									eui->translateMode = TRANSLATE_MODE_PLANE;
+								} else if(axisIndex) {
+									eui->axis = axis[axisIndex-1];
+									eui->axisIndex = axisIndex;
+									eui->selectionState = ENTITYUI_HOT;
+									eui->translateMode = TRANSLATE_MODE_AXIS;
 								}
 							} else {
 								eui->selectionState = ENTITYUI_INACTIVE;
@@ -1658,37 +1768,59 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
 
-						float thickness = obj->geometry.boundingSphereRadius * eui->rotationRingThicknessMod;
+						float thickness = rotationRingThickness;
 						Vec3 axis[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
 						Vec3 c[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
 
 						Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
 
+						// Find closest ring to camera.
+
+						float closestDistance = FLT_MAX;
 						int axisIndex = 0;
-						for(int i = 0; i < 3; i++) {
-							float a = uiAlpha;
-							if(eui->selectionState != ENTITYUI_ACTIVE) {
+						if(eui->selectionState != ENTITYUI_ACTIVE) {
+							for(int i = 0; i < 3; i++) {
 								Vec3 intersection;
 								float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, axis[i], &intersection);
 								if(dist != -1) {
 									float distToObj = lenVec3(intersection - obj->pos);
 									if(valueBetween(distToObj, boundRadius-thickness, boundRadius)) {
-										a = 1;
-										axisIndex = i+1;
+
+										float distToCam = -(vm*intersection).z;
+										if(distToCam < closestDistance) {
+											closestDistance = distToCam;
+											axisIndex = i+1;
+										}
 									}
 								}
-							} else {
-								if(eui->translateMode == TRANSLATE_MODE_AXIS)
-									if(axis[i] == eui->axis) a = 1;
 							}
+						} else {
+							axisIndex = eui->axisIndex;
+						}
 
+						for(int i = 0; i < 3; i++) {
+							float a = uiAlpha;
 							drawRing(obj->pos, axis[i], boundRadius, thickness, vec4(c[i],a));
+						}
+
+						// Paintaa over hot/active ring.
+						if(axisIndex) {
+							int i = axisIndex-1;
+							drawRing(obj->pos, axis[i], boundRadius, thickness, vec4(c[i],1));
+
+							glDisable(GL_DEPTH_TEST);
+							if(eui->selectionState == ENTITYUI_ACTIVE) {
+								Vec3 left = obj->pos + normVec3(eui->objectDistanceVector)*boundRadius;
+								drawTriangleFan(obj->pos, left, eui->currentRotationAngle, axis[i], rotationSegmentColor);
+							}
+							glEnable(GL_DEPTH_TEST);
 						}
 
 						// Should not be in draw code, but it's easiest for now.
 
 						if(eui->selectionState != ENTITYUI_ACTIVE) {
 							if(axisIndex) {
+								eui->axisIndex = axisIndex;
 								eui->axis = axis[axisIndex-1];
 								eui->selectionState = ENTITYUI_HOT;
 							} else {
