@@ -36,6 +36,28 @@ struct Geometry {
 	};
 };
 
+Vec3 geometryGetDim(Geometry* geom) {
+	switch(geom->type) {
+		case GEOM_TYPE_SPHERE: return vec3(geom->r*2);
+		case GEOM_TYPE_BOX: return geom->dim;
+	}
+	return vec3(0,0,0);
+}
+
+void geometrySetDim(Geometry* geom, Vec3 dim) {
+	switch(geom->type) {
+		case GEOM_TYPE_SPHERE: geom->r = dim.x/2; return;
+		case GEOM_TYPE_BOX: geom->dim = dim; return;
+	}
+}
+
+void geometrySetDim(Geometry* geom, float length, int axisIndex) {
+	switch(geom->type) {
+		case GEOM_TYPE_SPHERE: geom->r = length/2; return;
+		case GEOM_TYPE_BOX: geom->dim.e[axisIndex] = length; return;
+	}
+}
+
 enum {
 	LIGHT_TYPE_DIRECTION = 0,
 	LIGHT_TYPE_POINT,
@@ -706,11 +728,20 @@ int castRay(Vec3 rayPos, Vec3 rayDir, Object* objects, int objectCount) {
 				switch(g->type) {
 					case GEOM_TYPE_BOX: {
 						int face;
-						bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
+						// bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
+						// if(hit) {
+						// 	reflectionPos = rayPos + rayDir*distance;
+						// 	reflectionNormal = boxRaycastNormals[face];
+						// }
+
+						Vec3 intersection;
+						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, g->dim, obj->rot, &intersection, &face);
 						if(hit) {
-							reflectionPos = rayPos + rayDir*distance;
+							reflectionPos = intersection;
 							reflectionNormal = boxRaycastNormals[face];
+							distance = lenVec3(intersection - rayPos);
 						}
+
 					} break;
 
 					case GEOM_TYPE_SPHERE: {

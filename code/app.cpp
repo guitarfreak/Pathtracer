@@ -24,10 +24,12 @@
 	- Reflection.
 	- Refraction.
 	
-	- Scaling.
 	- Multiple selection.
-	- Intersection rotated box.
 	- Local and global rotations, translations,
+	- Fade in to pink as well as white.
+	- Rotation angle snapping.
+	- Grid snapping.
+	- Shortest distance to camera for widgets.
 
 	- Panel.
 
@@ -202,6 +204,7 @@ enum EntitySelectionMode {
 	ENTITYUI_MODE_SELECTED = 0,
 	ENTITYUI_MODE_TRANSLATION,
 	ENTITYUI_MODE_ROTATION,
+	ENTITYUI_MODE_SCALE,
 
 	ENTITYUI_MODE_SIZE,
 };
@@ -225,6 +228,8 @@ struct EntityUI {
 	int selectionMode;
 	int selectionState;
 
+	bool localMode;
+
 	// Translation mode.
 
 	Vec3 startPos;
@@ -236,6 +241,11 @@ struct EntityUI {
 
 	Quat startRot;
 	float currentRotationAngle;
+
+	// Scale mode.
+
+	Vec3 handleOffset;
+	float startDim;
 
 	int axisIndex;
 	Vec3 axis;
@@ -686,7 +696,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(init) {
 			ad->texFastMode = 2;
 			// ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
-			ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
+			// ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
+			ad->entityUI.selectionMode = ENTITYUI_MODE_SCALE;
+			ad->entityUI.localMode = true;
 		}
 
 		// @Settings.
@@ -1289,6 +1301,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+input->mouseWheel, ENTITYUI_MODE_SIZE);
 		}
 
+		if(input->mouseButtonPressed[2] && eui->selectionState != ENTITYUI_ACTIVE) {
+			eui->localMode = !eui->localMode;
+		}
+
 		// Selection.
 		if(input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_INACTIVE) {
 			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
@@ -1397,6 +1413,38 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					eui->currentObjectDistanceVector = end;
 					eui->currentRotationAngle = angle;
+				}
+			}
+
+			if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
+
+				Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
+				Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
+
+				Vec3 planeIntersection;
+				float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+				if(distance != -1) {
+					Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
+
+					Geometry* geom = &obj->geometry;
+
+					// Init.
+					if(input->mouseButtonPressed[0]) {
+						eui->objectDistanceVector = obj->pos - linePointOnAxis;
+
+						eui->startDim = geometryGetDim(geom).e[eui->axisIndex-1];
+					}
+
+					float oldLength = lenVec3(eui->objectDistanceVector);
+					float newLength = lenVec3(obj->pos - linePointOnAxis);
+
+					float currentAxisLength = eui->startDim + (newLength - oldLength)*2;
+
+					currentAxisLength = clampMin(currentAxisLength, 0);
+					if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
+
+					geometrySetDim(geom, currentAxisLength, eui->axisIndex-1);
+					geometryBoundingSphere(&obj->geometry);
 				}
 			}
 
@@ -1605,6 +1653,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Vec4 translationCenterBoxColor = vec4(0.5f,1);
 					float translationCenterBoxColorMod = 0.1f;
 
+					// float scaleArrowBoxDim = boundRadius * 0.1;
+					float scaleArrowBoxDim = 1;
+
 					if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 						Vec2 d = vec2(translationArrowThickness,translationArrowLength);
 						Vec3 n = cam->pos - obj->pos;
@@ -1803,7 +1854,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							drawRing(obj->pos, axis[i], boundRadius, thickness, vec4(c[i],a));
 						}
 
-						// Paintaa over hot/active ring.
+						// Paint over hot/active ring.
 						if(axisIndex) {
 							int i = axisIndex-1;
 							drawRing(obj->pos, axis[i], boundRadius, thickness, vec4(c[i],1));
@@ -1828,6 +1879,70 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 						}
 					}
+
+					if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
+
+						Vec3 c[] = { vec3(0.9f,0,0), vec3(0,0.9f,0), vec3(0,0,0.9f) };
+
+						Vec3 axis = {};
+						int axisIndex = 0;
+						for(int i = 0; i < 3; i++) {
+							Vec3 color = c[i];
+
+							float arrowLength = geometryGetDim(geom).e[i]/2 + scaleArrowBoxDim;
+
+							Vec3 ax = vec3(0,0,0);
+							ax.e[i] = (cam->pos - obj->pos).e[i];
+							ax = normVec3(ax);
+							Vec3 p = obj->pos + obj->rot*ax * arrowLength;
+
+							if(eui->selectionState != ENTITYUI_ACTIVE) {
+								Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
+								Vec3 intersection;
+								bool result = boxRaycastRotated(cam->pos, rayDir, p, vec3(scaleArrowBoxDim), obj->rot, &intersection);
+								if(result) {
+									axisIndex = i+1;
+									axis = normVec3(p - obj->pos);
+									color += vec3(0.2f);
+									eui->centerOffset = intersection - p;
+								}
+							} else {
+								if(eui->axisIndex-1 == i) color += vec3(0.2f);
+							}
+
+							glDisable(GL_DEPTH_TEST);
+							glLineWidth(5);
+							drawLine(obj->pos, p, vec4(color,1));
+							glLineWidth(1);
+
+							Mat4 tm = translationMatrix(p);
+							Mat4 rm = quatRotationMatrix(obj->rot);
+							Mat4 sm = scaleMatrix(vec3(scaleArrowBoxDim));
+
+							Mat4 fm = vm * tm * rm * sm;
+							rowToColumn(&fm);
+							glPushMatrix();
+							glLoadMatrixf(fm.e);
+
+							drawBoxRaw(vec4(color, 1));
+
+							glPopMatrix();
+							glEnable(GL_DEPTH_TEST);
+						}
+
+						// Should not be in draw code, but it's easiest for now.
+
+						if(eui->selectionState != ENTITYUI_ACTIVE) {
+							if(axisIndex) {
+								eui->axisIndex = axisIndex;
+								eui->axis = axis;
+								eui->selectionState = ENTITYUI_HOT;
+							} else {
+								eui->selectionState = ENTITYUI_INACTIVE;
+							}
+						}
+					}
+
 
 					glEnable(GL_CULL_FACE);
 					glEnable(GL_LIGHTING);

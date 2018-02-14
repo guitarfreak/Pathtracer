@@ -2689,17 +2689,36 @@ Quat quat(float a, Vec3 axis) {
 	return r;
 }
 
-float quatMagnitude(Quat q) {
-	float result = sqrt(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z);
-	return result;
+// Not the right name for this.
+float quatDot(Quat q) {
+	return (q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z);
 }
 
-Quat normQuat(Quat q) {
+float quatMagnitude(Quat q) {
+	return sqrt(quatDot(q));
+}
+
+Quat quatNorm(Quat q) {
 	Quat result;
 	float m = quatMagnitude(q);
-	result = quat(q.w/m, q.x/m, q.y/m, q.z/m);
-	return result;
+	return quat(q.w/m, q.x/m, q.y/m, q.z/m);
 }
+
+Quat quatConjugate(Quat q) {
+	return quat(q.w, -q.x, -q.y, -q.z);
+}
+
+Quat quatScale(Quat q, float s) {
+	return quat(q.w*s, q.x*s, q.y*s, q.z*s);
+}
+
+Quat quatInverse(Quat q) {
+	return quatScale(quatConjugate(q), (1/quatDot(q)));
+}
+
+
+
+
 
 // quat*axis -> local rotation.
 // axis*quat -> world rotation.
@@ -2761,6 +2780,17 @@ void rotateVec3Around(Vec3* v, float a, Vec3 axis, Vec3 point) {
 	*v = rotateVec3Around(*v, a, axis, point);
 }
 
+Vec3 rotateVec3Around(Vec3 v, Quat q, Vec3 point) {
+	Vec3 aroundOrigin = q * (v - point);
+	aroundOrigin += point;
+
+	return aroundOrigin;
+}
+
+void rotateVec3Around(Vec3* v, Quat q, Vec3 point) {
+	*v = rotateVec3Around(*v, q, point);
+}
+
 // From Wikipedia.
 Quat eulerAnglesToQuat(float pitch, float roll, float yaw) {
 	Quat q;
@@ -2791,6 +2821,24 @@ Mat4 modelMatrix(Vec3 trans, Vec3 scale, float degrees = 0, Vec3 rot = vec3(0,0,
 
 bool operator==(Quat q0, Quat q1) {
 	return q0.w==q1.w && q0.x==q1.x && q0.y==q1.y && q0.z==q1.z;
+}
+
+// 
+
+Rect3 rect3CenDim(Vec3 cen, Vec3 dim);
+bool boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* intersection = 0, int* face = 0) {
+
+	Vec3 rotatedPos = rotateVec3Around(lp, quatInverse(rot), pos);
+	Vec3 rotatedDir = rotateVec3Around(lp + ld, quatInverse(rot), pos);
+	rotatedDir = normVec3(rotatedDir - rotatedPos);
+
+	float distance;
+	bool result = boxRaycast(rotatedPos, rotatedDir, rect3CenDim(pos, dim), &distance, face);
+	if(result) {
+		Vec3 intersection = lp + ld*distance;
+	}
+
+	return result;
 }
 
 //
@@ -3088,6 +3136,14 @@ Rect3 rect3Expand(Rect3 r, Vec3 dim) {
 	r.max += (dim/2);
 
 	return r;
+}
+
+Vec3 rect3Dim(Rect3 r) {
+	return r.max - r.min;
+}
+
+Vec3 rect3Cen(Rect3 r) {
+	return r.min + rect3Dim(r)/2;
 }
 
 //
