@@ -26,7 +26,6 @@
 	
 	- Multiple selection.
 	- Fade in to pink as well as white.
-	- Rotation angle snapping.
 	- Grid snapping.
 	- Shortest distance to camera for widgets.
 	- Selection doesnt select the closest to camera.
@@ -113,76 +112,6 @@ Timer* globalTimer;
 
 
 
-
-template <class t>
-bool greaterThen(t a, t b) {
-	return a > b;
-}
-
-
-template <class Type>
-struct DArray {
-	Type* data;
-	int count = 0;
-	int size;
-
-	bool memoryAllocated = false;
-	bool usesPoolMemory;
-
-	void init(int size) {
-		data = mallocArray(Type, size);
-		count = 0;
-		size = size;
-		usesPoolMemory = false;
-		memoryAllocated = true;
-	}
-
-	void init(Type* dataBlock, int size) {
-		data = dataBlock;
-		count = 0;
-		size = size;
-		usesPoolMemory = true;
-		memoryAllocated = true;
-	}
-
-	void push(Type s) {
-		data[count++] = s;
-	}
-
-	void release() {
-		if(memoryAllocated) {
-			if(!usesPoolMemory) free(data);
-			memoryAllocated = false;
-		}
-	}
-};
-
-template <class Type>
-struct LinkedList {
-	struct Node {
-		Type data;
-		Node* next;
-	};
-
-	Node* first;
-	Node* last;
-
-	void init(int size) {
-		list = mallocArray(Node<Type>, size);
-		last = first;
-	}
-
-	// void append(Type s) {
-	// 	last->next = 
-	// }
-
-	void release() {
-		free(list);
-	}
-};
-
-
-
 Vec3 mouseRayCast(Rect tr, Vec2 mp, Camera* cam) {
 
 	Vec2 mousePercent = {};
@@ -252,6 +181,9 @@ struct EntityUI {
 	Vec3 axis;
 	Vec3 objectDistanceVector;
 	Vec3 currentObjectDistanceVector;
+
+
+	float snapGridSize;
 };
 
 struct AppData {
@@ -623,72 +555,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 	}
 
-
-	#if 0
-	{
-
-		// DArray<int> da;
-
-		// da.init(getPArray(int, 100), 100);
-		// da.push(2);
-		// da.push(453);
-		// da.push(1.2f);
-
-		// da.release();
-
-		// glDisable(GL_DEPTH_TEST);
-
-
-		// glClearColor(0.1f,0.1f,0.1f,1);
-		// glClear(GL_COLOR_BUFFER_BIT);
-
-		Rect sr = getScreenRect(ws);
-		drawRect(sr, vec4(0.1f,1));
-
-		if(init || reload) {
-			Vec2i size = vec2i(10,10);
-			int totalSize = size.w * size.h;
-			ad->gridSize = size;
-			reallocArraySave(char, ad->grid, totalSize);
-
-
-		}
-
-		zeroMemory(ad->grid, ad->gridSize.w*ad->gridSize.h*sizeof(char));
-		Vec2i size = ad->gridSize;
-		ad->grid[arrayIndex(size.w, size.h, 3,4)] = 1;
-		ad->grid[arrayIndex(size.w, size.h, 4,4)] = 1;
-		ad->grid[arrayIndex(size.w, size.h, 5,4)] = 1;
-		ad->grid[arrayIndex(size.w, size.h, 6,4)] = 1;
-
-
-		// Draw. 
-		{
-			Vec2 startPoint = vec2(300,-100);
-			float tileSize = 50;
-			Vec2i size = ad->gridSize;
-
-			for(int y = 0; y < size.h; y++) {
-				for(int x = 0; x < size.w; x++) {
-					Vec4 color = vec4(0.3f,1);
-
-					char value = ad->grid[arrayIndex(size.w, size.h, x,y)];
-
-					if(value != 0) color = vec4(0.2f,0.6f,0.8f,1);
-
-					drawRect(rectTLDim(startPoint + vec2(x*tileSize, -y*tileSize), vec2(tileSize-1)), color);
-				}
-			}
-		}
-
-
-
-
-
-		// *isRunning = false;
-		// return;	
-	}
-	#endif
 
 
 	#if 1
@@ -1412,6 +1278,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 						else angle = -M_PI_2 - (M_PI_2-abs(angle));
 					}
 
+					if(input->keysDown[KEYCODE_SHIFT]) angle = roundMod(angle, M_PI_4);
+
 					obj->rot = quat(angle, eui->axis)*eui->startRot;
 
 					eui->currentObjectDistanceVector = end;
@@ -1526,7 +1394,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glDisable(GL_LIGHTING);
 			glLineWidth(2);
 			float l = 500;
-			Vec3 u = vec3(0,0,0.5f); // Remove z flicker.
+			Vec3 u = vec3(0,0,-0.1f); // Remove z flicker.
 			drawLine(u + vec3(-l,0,0), u + vec3(0,0,0), vec4(1,0,0,1));
 			drawLine(u + vec3(0,0,0), u + vec3(l,0,0), vec4(1,0.5f,0.5f,1));
 			drawLine(u + vec3(0,-l,0), u + vec3(0,0,0), vec4(0,1,0,1));
@@ -1534,6 +1402,27 @@ extern "C" APPMAINFUNCTION(appMain) {
 			drawLine(u + vec3(0,0,-1), u + vec3(0,0,0), vec4(0,0,1,1));
 			drawLine(u + vec3(0,0,0), u + vec3(0,0,1), vec4(0.5f,0.5f,1,1));
 			glLineWidth(1);
+			glEnable(GL_LIGHTING);
+
+			glDisable(GL_LIGHTING);
+
+			float count = 20;
+			float size = 5;
+			Vec3 start = vec3(-(size*count)/2, -(size*count)/2, 0);
+			for(int i = 0; i < count+1; i++) {
+				Vec3 p = start + vec3(1,0,0) * i*size;
+				drawLine(p, p + vec3(0,size*count,0), vec4(0,1));
+			}
+
+			for(int i = 0; i < count+1; i++) {
+				Vec3 p = start + vec3(0,1,0) * i*size;
+				drawLine(p, p + vec3(size*count,0,0), vec4(0,1));
+			}
+
+			// for(int x = 0; x < count; x++) {
+				// drawLine
+			// }
+
 			glEnable(GL_LIGHTING);
 		}
 
