@@ -25,11 +25,10 @@
 	- Refraction.
 	
 	- Multiple selection.
-	- Fade in to pink as well as white.
-	- Grid snapping.
 	- Shortest distance to camera for widgets.
 	- Selection doesnt select the closest to camera.
 	- Revert.
+	- Cleanup.
 
 	- Panel.
 
@@ -152,13 +151,20 @@ enum EntityTranslateMode {
 };
 
 struct EntityUI {
-	float selectionAnimState;
 	int selectedObject;
 
 	int selectionMode;
 	int selectionState;
 
+	float selectionAnimState;
 	bool localMode;
+	bool snappingEnabled;
+	float snapGridSize;
+	float snapGridDim;
+
+	int axisIndex;
+	Vec3 axis;
+	Vec3 objectDistanceVector;
 
 	// Translation mode.
 
@@ -166,6 +172,7 @@ struct EntityUI {
 	int translateMode;
 	Vec3 centerOffset;
 	float centerDistanceToCam;
+	Vec3 axes[3];
 
 	// Rotation mode.
 
@@ -174,16 +181,7 @@ struct EntityUI {
 
 	// Scale mode.
 
-	Vec3 handleOffset;
 	float startDim;
-
-	int axisIndex;
-	Vec3 axis;
-	Vec3 objectDistanceVector;
-	Vec3 currentObjectDistanceVector;
-
-
-	float snapGridSize;
 };
 
 struct AppData {
@@ -566,6 +564,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
 			ad->entityUI.selectionMode = ENTITYUI_MODE_SCALE;
 			ad->entityUI.localMode = true;
+			ad->entityUI.snapGridSize = 1;
+			ad->entityUI.snapGridDim = 100;
 		}
 
 		// @Settings.
@@ -852,15 +852,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				// Ground plane.
 
-				obj = {};
-				obj.pos = vec3(0,0,0);
-				obj.rot = quat();
-				obj.color = vec3(0.5f);
-				obj.material = materials[0];
-				obj.geometry.type = GEOM_TYPE_BOX;
-				// obj.geometry.dim = vec3(100000, 100000, 0.01f);
-				obj.geometry.dim = vec3(5, 5, 0.01f);
-				world->objects[world->objectCount++] = obj;
+				// obj = {};
+				// obj.pos = vec3(0,0,0);
+				// obj.rot = quat();
+				// obj.color = vec3(0.5f);
+				// obj.material = materials[0];
+				// obj.geometry.type = GEOM_TYPE_BOX;
+				// // obj.geometry.dim = vec3(100000, 100000, 0.01f);
+				// obj.geometry.dim = vec3(5, 5, 0.01f);
+				// world->objects[world->objectCount++] = obj;
 
 				// Sphere.
 
@@ -1101,8 +1101,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(input->keysPressed[KEYCODE_4]) ad->texFastMode = 3;
 		if(input->keysPressed[KEYCODE_5]) ad->texFastMode = 4;
 
-
-
 		{
 
 			Rect sr = getScreenRect(ws);
@@ -1173,6 +1171,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 			eui->localMode = !eui->localMode;
 		}
 
+		if(input->keysDown[KEYCODE_SHIFT]) {
+			eui->snappingEnabled = true;
+		} else {
+			eui->snappingEnabled = false;
+		}
+
 		// Selection.
 		if(input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_INACTIVE) {
 			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
@@ -1188,7 +1192,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			eui->selectionState = ENTITYUI_INACTIVE;
 		}
 
-		// To avoid code duplication we handle init and active cases at the same time.
 		if((input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_HOT) || 
 		   (input->mouseButtonDown[0] && eui->selectionState == ENTITYUI_ACTIVE)) {
 
@@ -1196,9 +1199,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(eui->selectionState == ENTITYUI_HOT) eui->selectionState = ENTITYUI_ACTIVE;
 
 			Object* obj = ad->world.objects + (eui->selectedObject-1);
-			Vec3 rayPos = ad->world.camera.pos;
-			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
 			Camera* cam = &ad->world.camera;
+			Vec3 rayPos = cam->pos;
+			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
 
 			if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 
@@ -1252,6 +1255,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 						obj->pos = planeIntersection - eui->objectDistanceVector;
 					}
 				}
+
+				if(eui->snappingEnabled) {
+
+					// We always snap every axis to keep it simple.
+					for(int i = 0; i < 3; i++) {
+						Vec3 p = projectPointOnLine(eui->startPos, eui->axes[i], obj->pos);
+						float length = lenVec3(p - eui->startPos);
+						float snappedLength = roundMod(length, eui->snapGridSize);
+						float lengthDiff = length - snappedLength;
+
+						if(dot(p - eui->startPos, eui->axes[i]) > 0) lengthDiff *= -1;
+
+						obj->pos += eui->axes[i]*lengthDiff;
+					}
+				}
 			}
 
 			if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
@@ -1278,11 +1296,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 						else angle = -M_PI_2 - (M_PI_2-abs(angle));
 					}
 
-					if(input->keysDown[KEYCODE_SHIFT]) angle = roundMod(angle, M_PI_4);
+					if(eui->snappingEnabled) angle = roundMod(angle, M_PI_4);
 
 					obj->rot = quat(angle, eui->axis)*eui->startRot;
 
-					eui->currentObjectDistanceVector = end;
 					eui->currentRotationAngle = angle;
 				}
 			}
@@ -1313,6 +1330,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					currentAxisLength = clampMin(currentAxisLength, 0);
 					if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
+
+					if(eui->snappingEnabled) {
+						currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
+					}
 
 					geometrySetDim(geom, currentAxisLength, eui->axisIndex-1);
 					geometryBoundingSphere(&obj->geometry);
@@ -1391,23 +1412,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 		{
+			// @Bottom grid
+			EntityUI* eui = &ad->entityUI;
+
 			glDisable(GL_LIGHTING);
-			glLineWidth(2);
-			float l = 500;
-			Vec3 u = vec3(0,0,-0.1f); // Remove z flicker.
-			drawLine(u + vec3(-l,0,0), u + vec3(0,0,0), vec4(1,0,0,1));
-			drawLine(u + vec3(0,0,0), u + vec3(l,0,0), vec4(1,0.5f,0.5f,1));
-			drawLine(u + vec3(0,-l,0), u + vec3(0,0,0), vec4(0,1,0,1));
-			drawLine(u + vec3(0,0,0), u + vec3(0,l,0), vec4(0.5f,1,0.5f,1));
-			drawLine(u + vec3(0,0,-1), u + vec3(0,0,0), vec4(0,0,1,1));
-			drawLine(u + vec3(0,0,0), u + vec3(0,0,1), vec4(0.5f,0.5f,1,1));
-			glLineWidth(1);
+			float l = eui->snapGridDim/2;
+			float arrowSize = 0.5f;
+			drawArrow(vec3(0,0,0) + vec3(-1, 0,0)*arrowSize/2, vec3(-1, 0,0) * l, vec3(0,0,1), arrowSize, vec4(1,0,0,1));
+			drawArrow(vec3(0,0,0) + vec3( 1, 0,0)*arrowSize/2, vec3( 1, 0,0) * l, vec3(0,0,1), arrowSize, vec4(1,0.5f,0.5f,1));
+			drawArrow(vec3(0,0,0) + vec3( 0,-1,0)*arrowSize/2, vec3( 0,-1,0) * l, vec3(0,0,1), arrowSize, vec4(0,1,0,1));
+			drawArrow(vec3(0,0,0) + vec3( 0, 1,0)*arrowSize/2, vec3( 0, 1,0) * l, vec3(0,0,1), arrowSize, vec4(0.5f,1,0.5f,1));
 			glEnable(GL_LIGHTING);
 
 			glDisable(GL_LIGHTING);
+			ad->entityUI.snapGridSize = 3;
 
-			float count = 20;
-			float size = 5;
+			float size = ad->entityUI.snapGridSize;
+			float count = roundFloat(eui->snapGridDim / size);
 			Vec3 start = vec3(-(size*count)/2, -(size*count)/2, 0);
 			for(int i = 0; i < count+1; i++) {
 				Vec3 p = start + vec3(1,0,0) * i*size;
@@ -1418,11 +1439,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Vec3 p = start + vec3(0,1,0) * i*size;
 				drawLine(p, p + vec3(size*count,0,0), vec4(0,1));
 			}
-
-			// for(int x = 0; x < count; x++) {
-				// drawLine
-			// }
-
 			glEnable(GL_LIGHTING);
 		}
 
@@ -1482,16 +1498,46 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				if(i == ad->entityUI.selectedObject-1) {
 
+					{
+						Mat4 tm = translationMatrix(obj->pos);
+						Mat4 rm = quatRotationMatrix(obj->rot);
+
+						// So mesh grid will show up correctly.
+						scale += vec3(0.01f);
+						Mat4 sm = scaleMatrix(scale);
+
+						Mat4 fm = vm * tm * rm * sm;
+						rowToColumn(&fm);
+						glLoadMatrixf(fm.e);
+					}
+
 					Vec4 color = vec4(1,1,1,1);
-					float animSpeed = 3;
-					ad->entityUI.selectionAnimState += ad->dt * animSpeed;
-					color.a = (cos(ad->entityUI.selectionAnimState)+1)/2.0f;
+
+					// Color fading animation on selection.
+					{
+						float animSpeed = 3;
+						ad->entityUI.selectionAnimState += ad->dt * animSpeed;
+						float percent = (cos(ad->entityUI.selectionAnimState)+1)/2.0f;
+
+						Vec4 faceColors[] = { vec4(0,0,0,1), vec4(1,0,1,1), vec4(1,1,1,1) };
+						float timings[] = { 0.0f, 0.4f, 1.0f };
+
+						int index = 0;
+						for(int i = 0; i < arrayCount(timings)-1; i++) {
+							if(valueBetween(percent, timings[i], timings[i+1])) index = i;
+						}
+
+						float l = mapRange(percent, timings[index], timings[index+1], 0, 1);
+						for(int i = 0; i < 3; i++) color.e[i] = lerp(l, faceColors[index].e[i], faceColors[index+1].e[i]);
+					}
 
 					c = COLOR_SRGB(color);
 					glColor4f(c.r, c.g, c.b, c.a);
 
 					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 					glDisable(GL_LIGHTING);
+
+					glLineWidth(1);
 
 					switch(g->type) {
 						case GEOM_TYPE_BOX: {
@@ -1506,6 +1552,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 					glEnable(GL_LIGHTING);
 					glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 					glDisable(GL_CULL_FACE);
+					glLineWidth(1);
+
+					// glEnable(GL_DEPTH_TEST);
+
 				}
 			}
 
@@ -1661,25 +1711,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							drawArrow(eui->startPos, obj->pos, n, translationVectorThickness, translationVectorColor);
 
-							if(eui->translateMode == TRANSLATE_MODE_PLANE) {
-								int i = mod((eui->axisIndex-1)-1, 3);
+							{
+								Vec3 globalAxis[] = {vec3(1,0,0), vec3(0,1,0), vec3(0,0,1)};
+								float l[3];
+								for(int i = 0; i < 3; i++) {
+									if(dot(globalAxis[i], eui->startPos-obj->pos) > 0) globalAxis[i] *= -1;
 
-								Vec3 off = obj->pos - eui->startPos;
-								off.e[i] = 0;
+									l[i] = lenVec3(projectPointOnLine(eui->startPos, globalAxis[i], obj->pos) - eui->startPos);		
+								}
 
-								drawArrow(eui->startPos, eui->startPos + off, n, translationVectorThickness, translationVectorColor);
-								drawArrow(eui->startPos + off, obj->pos, n, translationVectorThickness, translationVectorColor);
-							}
-
-							if(eui->translateMode == TRANSLATE_MODE_CENTER) {
-								Vec3 off = obj->pos - eui->startPos;
-
-								Vec3 a = vec3(off.x,0,0);
-								Vec3 b = vec3(off.x,off.y,0);
-
-								drawArrow(eui->startPos,     eui->startPos + a, n, translationVectorThickness, translationVectorColor);
-								drawArrow(eui->startPos + a, eui->startPos + b, n, translationVectorThickness, translationVectorColor);
-								drawArrow(eui->startPos + b, eui->startPos + off, n, translationVectorThickness, translationVectorColor);
+								Vec3 p = eui->startPos;
+								for(int i = 0; i < 3; i++) {
+									drawArrow(p, p + globalAxis[i]*l[i], n, translationVectorThickness, translationVectorColor);
+									p = p + globalAxis[i]*l[i];
+								}
 							}
 
 							glLineWidth(1);
@@ -1707,6 +1752,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 									eui->axisIndex = axisIndex;
 									eui->selectionState = ENTITYUI_HOT;
 									eui->translateMode = TRANSLATE_MODE_AXIS;
+								}
+								for(int i = 0; i < 3; i++) {
+									eui->axes[i] = axis[i];
 								}
 							} else {
 								eui->selectionState = ENTITYUI_INACTIVE;
