@@ -155,6 +155,17 @@ struct Camera {
 	OrientationVectors ovecs;
 };
 
+Vec3 vectorToCam(Vec3 pos, Camera* cam) {
+	Vec3 intersection;
+	float distance = linePlaneIntersection(pos, -cam->ovecs.dir, cam->pos, cam->ovecs.dir, &intersection);
+	if(distance != -1) {
+		return intersection - pos;
+	}
+
+	return vec3(0,0,0);
+}
+
+
 Vec3 getRotationFromVectors(OrientationVectors) {
 	return {};
 }

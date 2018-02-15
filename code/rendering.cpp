@@ -1315,7 +1315,7 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 
 
 
-void drawSphereRaw(Vec4 color) {
+void drawSphereRaw() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	int div = 4;
@@ -1331,7 +1331,7 @@ void drawSphereRaw(Vec4 color) {
 	glEnd();
 }
 
-void drawBoxRaw(Vec4 color) {
+void drawBoxRaw() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	glBegin(GL_QUADS);
@@ -1343,6 +1343,26 @@ void drawBoxRaw(Vec4 color) {
 		glNormal3f(0,0,-1); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
 		glNormal3f(0,0,1); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
 	glEnd();
+}
+
+// Bad beans.
+void drawBox(Vec3 pos, Vec3 dim, Mat4* vm, Quat rot, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+
+	Mat4 tm = translationMatrix(pos);
+	Mat4 rm = quatRotationMatrix(rot);
+	Mat4 sm = scaleMatrix(dim);
+	Mat4 fm = (*vm) * tm * rm * sm;
+	rowToColumn(&fm);
+	glPushMatrix();
+	glLoadMatrixf(fm.e);
+
+	drawBoxRaw();
+
+	glPopMatrix();
 }
 
 //

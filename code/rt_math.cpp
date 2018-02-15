@@ -2835,7 +2835,7 @@ bool boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* int
 	float distance;
 	bool result = boxRaycast(rotatedPos, rotatedDir, rect3CenDim(pos, dim), &distance, face);
 	if(result) {
-		Vec3 intersection = lp + ld*distance;
+		*intersection = lp + ld*distance;
 	}
 
 	return result;
