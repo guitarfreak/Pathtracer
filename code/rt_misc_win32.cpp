@@ -1,5 +1,4 @@
 #pragma once
-// #include <Shlwapi.h> // PathFileExists()
 
 void* mallocWithBaseAddress(void* baseAddress, int sizeInBytes) {
     void* mem = VirtualAlloc(baseAddress, (size_t)sizeInBytes, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
@@ -49,12 +48,10 @@ bool doNextThreadJob(ThreadQueue* queue) {
 
     if(currentReadIndex != queue->writeIndex) {
         LONG oldValue = InterlockedCompareExchange((LONG volatile*)&queue->readIndex, newReadIndex, currentReadIndex);
-        // if(newReadIndex == queue->readIndex) {
         if(oldValue == currentReadIndex) { // Holy Shit.
             ThreadJob job = queue->jobs[currentReadIndex];
             job.function(job.data);
             InterlockedIncrement((LONG volatile*)&queue->completionCount);
-            // printf("COUNT: %i \n", queue->completionCount);
         }
     } else {
         shouldSleep = true;
@@ -88,13 +85,11 @@ void threadInit(ThreadQueue* queue, int numOfThreads) {
     queue->threadIds[0] = id;
 
     HANDLE handle = GetCurrentThread();
-    // SetThreadPriority(handle, 2);
     SetThreadPriority(handle, 1);
 
     for(int i = 0; i < numOfThreads; i++) {
         HANDLE thread = CreateThread(0, 0, threadProcess, (void*)(queue), 0, 0);
 
-        // SetThreadPriority(thread, -2);
         SetThreadPriority(thread, -1);
 
         int id = GetThreadId(thread);
@@ -118,7 +113,6 @@ bool threadQueueAdd(ThreadQueue* queue, void (*function)(void*), void* data, boo
     job->data = data;
 
     InterlockedIncrement(&queue->completionGoal);
-    // printf("GOAL: %i \n", queue->completionCount);
 
     _ReadWriteBarrier(); // doesn't work on 32 bit?
     InterlockedExchange(&queue->writeIndex, newWriteIndex);
@@ -139,9 +133,7 @@ bool threadQueueFull(ThreadQueue* queue) {
 }
 
 bool threadQueueFinished(ThreadQueue* queue) {
-	// bool result = queue->readIndex == queue->writeIndex;
 	bool result = queue->completionCount == queue->completionGoal;
-	// bool result = queue->completionCount >= queue->completionGoal;
 	return result;
 }
 
@@ -150,14 +142,8 @@ void threadQueueComplete(ThreadQueue* queue) {
         doNextThreadJob(queue);
     }
 
-    // if(queue->readIndex != queue->writeIndex) 
-    // 	printf("Threadqueue copmletion error.\n");
-
     InterlockedExchange(&queue->completionGoal, 0);
     InterlockedExchange(&queue->completionCount, 0);
-
-    // queue->completionGoal = 0;
-    // queue->completionCount = 0;
 }
 
 int threadQueueOpenJobs(ThreadQueue* queue) {

@@ -359,8 +359,6 @@ BOOL CALLBACK monitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 }
 
 void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, Vec2i res, int style, int , int monitor = 0) {
-	TIMER_BLOCK();
-
 	systemData->windowsData = wData;
 
 	EnumDisplayMonitors(0, 0, monitorEnumProc, ((LPARAM)ws));
@@ -440,11 +438,7 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 
     systemData->windowClass = windowClass;
 
-	TIMER_BLOCK_BEGIN_NAMED(createWindow, "createWindow");
-
     systemData->windowHandle = CreateWindowEx(0, windowClass.lpszClassName, "", ws->style, wx,wy,ww,wh, 0, 0, systemData->instance, 0);
-
-	TIMER_BLOCK_END(createWindow);
 
     if(!systemData->windowHandle) {
         DWORD errorCode = GetLastError();
@@ -458,8 +452,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 	// bb.hRgnBlur = hRgn;
 	// bb.fEnable = TRUE;
 	// DwmEnableBlurBehindWindow(systemData->windowHandle, &bb);
-
-	TIMER_BLOCK_BEGIN_NAMED(setPixelFormat, "setPixelFormat");
 
     PIXELFORMATDESCRIPTOR pixelFormatDescriptor =
     {
@@ -490,17 +482,11 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     pixelFormat = ChoosePixelFormat(deviceContext, &pixelFormatDescriptor);
 	SetPixelFormat(deviceContext, pixelFormat, &pixelFormatDescriptor);
 	
-	TIMER_BLOCK_END(setPixelFormat);
-
-	TIMER_BLOCK_BEGIN_NAMED(createContext, "CreateContext");
-
     HGLRC openglContext = wglCreateContext(systemData->deviceContext);
     bool result = wglMakeCurrent(systemData->deviceContext, openglContext);
     if(!result) { printf("Could not set Opengl Context.\n"); }
 
     systemData->openglContext = openglContext;
-
-	TIMER_BLOCK_END(createContext);
 
 
     // #ifndef HID_USAGE_PAGE_GENERIC

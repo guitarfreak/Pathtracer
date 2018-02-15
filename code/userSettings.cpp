@@ -9,8 +9,6 @@
 #define COLOR_SRGB(color) color
 #endif
 
-#define editor_executable_path "C:\\Program Files\\Sublime Text 3\\sublime_text.exe"
-
 #define APP_FONT_COUNT 4
 
 

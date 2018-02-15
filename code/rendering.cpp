@@ -458,8 +458,6 @@ FrameBuffer* getFrameBuffer(int id) {
 #define Font_Error_Glyph (int)0x20-1
 
 Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = false) {
-	TIMER_BLOCK();
-
 	char* fontFolder = 0;
 	for(int i = 0; i < globalGraphicsState->fontFolderCount; i++) {
 		if(fileExists(fillString("%s%s", globalGraphicsState->fontFolders[i], file))) {
@@ -1999,14 +1997,11 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 	//
 
 	{
-		TIMER_BLOCK_NAMED("Render");
-
 		Vec2i frameBufferRes = getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->dim;
 		Vec2i res = ws->currentRes;
 		Rect frameBufferUV = rect(0,(float)res.h/frameBufferRes.h,(float)res.w/frameBufferRes.w,0);
 
 		{
-			TIMER_BLOCK_NAMED("BlitBuffers");
 			blitFrameBuffers(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_2dNoMsaa, res, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 		}
 
@@ -2015,8 +2010,6 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 		#endif 
 
 		{
-			TIMER_BLOCK_NAMED("RenderMainBuffer");
-
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glLoadIdentity();
 			glViewport(0,0, res.w, res.h);
@@ -2034,8 +2027,6 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 	//
 
 	{
-		TIMER_BLOCK_NAMED("Swap");
-
 		// Sleep until monitor refresh.
 		if(!init) {
 			double frameTime = timerUpdate(*swapTime);

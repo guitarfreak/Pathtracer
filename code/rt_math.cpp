@@ -1,25 +1,24 @@
 #pragma once
 #include <math.h>
 
-#define M_E         2.7182818284590452354               ///< e
-#define M_LOG2E     1.4426950408889634074               ///< log_2 e
-#define M_LOG10E    0.43429448190325182765              ///< log_10 e
-#define M_LN2       0.69314718055994530942              ///< log_e 2
-#define M_LN10      2.30258509299404568402              ///< log_e 10
-#define M_2PI       6.2831853071795864769252867665590   ///< 2*pi
-#define M_PI        3.1415926535897932384626433832795   ///< pi
-#define M_3PI_2		4.7123889803846898576939650749193	///< 3/2*pi
-#define M_PI_2      1.5707963267948966192313216916398   ///< pi/2
-#define M_PI_4      0.78539816339744830962              ///< pi/4
-#define M_1_PI      0.31830988618379067154              ///< 1/pi
-#define M_2_PI      0.63661977236758134308              ///< 2/pi
-#define M_2_SQRTPI  1.12837916709551257390              ///< 2/sqrt(pi)
-#define M_SQRT2     1.41421356237309504880              ///< sqrt(2)
-#define M_SQRT1_2   0.70710678118654752440              ///< 1/sqrt(2)
-#define M_PI_180    0.0174532925199432957692369076848   ///< pi/180
-#define M_180_PI    57.295779513082320876798154814105   ///< 180/pi
-//#define M_BOLTZ		1.3806503e-23						///< boltzmann constant
-#define M_BOLTZ		1.44269504							///< boltzmann constant
+#define M_E         2.7182818284590452354               // e
+#define M_LOG2E     1.4426950408889634074               // log_2 e
+#define M_LOG10E    0.43429448190325182765              // log_10 e
+#define M_LN2       0.69314718055994530942              // log_e 2
+#define M_LN10      2.30258509299404568402              // log_e 10
+#define M_2PI       6.2831853071795864769252867665590   // 2*pi
+#define M_PI        3.1415926535897932384626433832795   // pi
+#define M_3PI_2		4.7123889803846898576939650749193	// 3/2*pi
+#define M_PI_2      1.5707963267948966192313216916398   // pi/2
+#define M_PI_4      0.78539816339744830962              // pi/4
+#define M_1_PI      0.31830988618379067154              // 1/pi
+#define M_2_PI      0.63661977236758134308              // 2/pi
+#define M_2_SQRTPI  1.12837916709551257390              // 2/sqrt(pi)
+#define M_SQRT2     1.41421356237309504880              // sqrt(2)
+#define M_SQRT1_2   0.70710678118654752440              // 1/sqrt(2)
+#define M_PI_180    0.0174532925199432957692369076848   // pi/180
+#define M_180_PI    57.295779513082320876798154814105   // 180/pi
+#define M_BOLTZ		1.44269504							// boltzmann constant
 
 #define swapGeneric(type, a, b) 	\
 		type swap##type = a;		\
@@ -2715,10 +2714,6 @@ Quat quatScale(Quat q, float s) {
 Quat quatInverse(Quat q) {
 	return quatScale(quatConjugate(q), (1/quatDot(q)));
 }
-
-
-
-
 
 // quat*axis -> local rotation.
 // axis*quat -> world rotation.

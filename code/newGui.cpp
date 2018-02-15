@@ -1,10 +1,7 @@
 
-
-
 //
 // Layout.
 //
-
 
 #define For_Layout(layout) \
 for(Layout* l = layout->list; l != 0; l = l->next)
@@ -561,16 +558,26 @@ void newGuiBegin(NewGui* gui, Input* input = 0) {
 	gui->scissorStackIndex = 0;
 	gui->layoutStackIndex = 0;
 
+	scissorState();
+
 	// LayoutData ld = {rect(0,0,0,0), 0, 0, 0};
 	// newGuiLayoutPush(gui, ld);
 }
 
+void newGuiPopupSetup(NewGui* gui);
+void newGuiUpdateComboBoxPopups(NewGui* gui);
 void newGuiEnd(NewGui* gui) {
+
+	newGuiPopupSetup(gui);
+	newGuiUpdateComboBoxPopups(gui);
+
 	// newGuiLayoutPop(gui);
 
 	for(int i = 0; i < Gui_Focus_Size; i++) {
 		gui->hotId[i] = gui->contenderId[i];
 	}
+
+	scissorState(false);
 }
 
 int newGuiAdvanceId(NewGui* gui) {
@@ -1195,14 +1202,10 @@ Rect scissorTestIntersect(Rect scissor, Rect r) {
 
 
 void drawText(Rect r, char* text, Vec2i align, Rect scissor, TextSettings settings) {
-	float xPos = rectCen(r).x + (rectW(r)/2)*align.x;
-	float yPos = rectCen(r).y + (rectH(r)/2)*align.y;
-
-	if(align.x == -1) xPos += 2;
-	if(align.x == 1) xPos -= 2;
+	Vec2 pos = rectCen(r) + (rectDim(r)/2) * vec2(align);
 
 	scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(-3,-3)));
-	drawText(text, vec2(xPos, yPos), align, settings);
+	drawText(text, pos, align, settings);
 	scissorTestScreen(scissor);
 }
 
@@ -1221,7 +1224,6 @@ void drawBox(Rect r, Rect scissor, BoxSettings settings) {
 void drawTextBox(Rect r, char* text, Vec2i align, Rect scissor, TextBoxSettings settings) {
 	// scissorTestScreen(scissor);
 	drawBox(r, scissor, settings.boxSettings);
-	// drawText(r, text, align, scissor, settings.textSettings);
 
 	if(align.x == -1) r.left += settings.sideAlignPadding;
 	if(align.x == 1) r.right -= settings.sideAlignPadding;

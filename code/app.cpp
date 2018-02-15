@@ -2,17 +2,7 @@
 =================================================================================
 
 	ToDo:
-	* Better sampling pattern.
-	* Replace rand().
-	* Better angle calculation.
-	* Fov.
-	* Random placement.
-	* Better pre vis.
-	* Split hit tests and reflection calculations.
-	* Blue noise.
-	* Aliasing.
-	* Wrapping blue noise.
-	- More Shapes and rotations.
+	- More Shapes.
 	- Simd.
 	- Ui.
 	- Entity editor.
@@ -31,6 +21,7 @@
 	- Cleanup.
 
 	- Panel.
+	- Investigae slow compile times with -d2cgsummary flag.
 
 	Done Today: 
 
@@ -40,16 +31,12 @@
 */
 
 
-#pragma optimize( "", on )
-
-
 // External.
 
 #define WIN32_LEAN_AND_MEAN 
 #define NOMINMAX
 #include <windows.h>
 #include <gl\gl.h>
-// #include "external\glext.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
@@ -65,32 +52,19 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "external\stb_truetype.h"
 
-#include <iacaMarks.h>
+
 
 
 struct ThreadQueue;
 struct GraphicsState;
 struct MemoryBlock;
-struct DebugState;
-struct Timer;
 ThreadQueue* globalThreadQueue;
 GraphicsState* globalGraphicsState;
 MemoryBlock* globalMemory;
-Timer* globalTimer;
 
 // Internal.
 
-
-// #ifndef RELEASE_BUILD
-// 	#define TIMER_BLOCKS_ENABLED
-// #endif 
-
-#undef TIMER_BLOCKS_ENABLED
-
-
-
 #include "rt_types.cpp"
-#include "rt_timer.cpp"
 #include "rt_misc.cpp"
 #include "rt_math.cpp"
 #include "rt_hotload.cpp"
@@ -102,10 +76,7 @@ Timer* globalTimer;
 #include "userSettings.cpp"
 #include "rendering.cpp"
 
-
-#include "debug.cpp"
-
-#include "Raycast.cpp"
+#include "raycast.cpp"
 
 
 
@@ -299,8 +270,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// AppData.
 		//
 
-		TIMER_BLOCK_BEGIN_NAMED(initAppData, "Init AppData");
-
 		getPMemory(sizeof(AppData));
 		*ad = {};
 
@@ -322,14 +291,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		initInput(&ad->input);
 
-		TIMER_BLOCK_END(initAppData);
-
 
 		//
 		// Setup Textures.
 		//
-
-		TIMER_BLOCK_BEGIN_NAMED(initGraphics, "Init Graphics");
 
 		// for(int i = 0; i < TEXTURE_SIZE; i++) {
 		// 	Texture tex;
@@ -413,11 +378,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_ScreenShot, fRes.w, fRes.h);
 		}
 
-		TIMER_BLOCK_END(initGraphics);
-
 	//
-
-		TIMER_BLOCK_BEGIN_NAMED(initRest, "Init Rest");
 
 
 
@@ -449,13 +410,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		pcg32_srandom(0, __rdtsc());
-	}
+
+
+		// @AppInit.
+
+		ad->texFastMode = 2;
+		
+		ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
+		ad->entityUI.localMode = false;
+		ad->entityUI.snapGridSize = 1;
+		ad->entityUI.snapGridDim = 100;
+}
 
 
 
 	// @AppStart.
-
-	TIMER_BLOCK_BEGIN_NAMED(reload, "Reload");
 
 	if(reload) {
 		loadFunctions();
@@ -463,8 +432,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		gs->screenRes = ws->currentRes;
 	}
-
-	TIMER_BLOCK_END(reload);
 
 	// Update timer.
 	{
@@ -484,8 +451,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	//
 
 	{
-		TIMER_BLOCK_NAMED("Input");
-
 		updateInput(&ad->input, windowHandle);
 
 		if(ad->input.closeWindow) *isRunning = false;
@@ -514,16 +479,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	if(windowSizeChanged(windowHandle, ws)) {
 		if(!windowIsMinimized(windowHandle)) {
-			TIMER_BLOCK_NAMED("UpdateWindowRes");
-
 			updateResolution(windowHandle, ws);
 			ad->updateFrameBuffers = true;
 		}
 	}
 
 	if(ad->updateFrameBuffers) {
-		TIMER_BLOCK_NAMED("Upd FBOs");
-
 		ad->updateFrameBuffers = false;
 		gs->screenRes = ws->currentRes;
 	}
@@ -558,15 +519,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#if 1
 
 	{
-		if(init) {
-			ad->texFastMode = 2;
-			// ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
-			// ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
-			ad->entityUI.selectionMode = ENTITYUI_MODE_SCALE;
-			ad->entityUI.localMode = true;
-			ad->entityUI.snapGridSize = 1;
-			ad->entityUI.snapGridDim = 100;
-		}
+
 
 		// @Settings.
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
@@ -1909,6 +1862,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 	//@Draw Info.
+	#if 0
 	{
 		Rect sr = getScreenRect(ws);
 		glViewport(0,0, rectW(sr), rectH(sr));
@@ -1936,18 +1890,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 		drawText(fillString("cpos: %f,%f,%f", PVEC3(ad->world.camera.pos)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("crot: %f,%f,%f", PVEC3(ad->world.camera.rot)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 	}
+	#endif
 
 	#endif
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
 
-
-
 	if(*isRunning == false) saveAppSettings(systemData);
-
-	// if(init) printf("Startup Time: %fs\n", timerUpdate(startupTimer));
-
-	// @App End.
 }
-
-#pragma optimize( "", on ) 
