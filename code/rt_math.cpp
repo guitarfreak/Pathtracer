@@ -1299,9 +1299,10 @@ inline Vec2 operator*(float b, Vec2 a) {
 	return a;
 }
 
-inline float operator*(Vec2 a, Vec2 b) {
-	float dot = a.x*b.x + a.y*b.y;
-	return dot;
+inline Vec2 operator*(Vec2 a, Vec2 b) {
+	a.x *= b.x;
+	a.y *= b.y;
+	return a;
 }
 
 inline Vec2 & operator*=(Vec2 & a, float b) {
@@ -1374,13 +1375,10 @@ inline bool operator!=(Vec2 a, Vec2 b) {
 	return !(a==b);
 }
 
-inline Vec2 mulVec2(Vec2 a, Vec2 b) {
-	Vec2 result;
-	result.x = a.x * b.x;
-	result.y = a.y * b.y;
-
-	return result;
+inline float dot(Vec2 a, Vec2 b) {
+	return a.x*b.x + a.y*b.y;
 }
+
 
 inline float lenVec2(Vec2 a) {
 	float length = sqrt(a.x*a.x + a.y*a.y);
@@ -1408,9 +1406,9 @@ inline Vec2 normVec2Unsafe(Vec2 a) {
 }
 
 inline float angleVec2(Vec2 dir1, Vec2 dir2) {
-	float dot = normVec2(dir1) * normVec2(dir2);
-	dot = clamp(dot, -1, 1);
-	float angle = acos(dot);
+	float d = dot(normVec2(dir1), normVec2(dir2));
+	d = clamp(d, -1, 1);
+	float angle = acos(d);
 	return angle;
 }
 
@@ -1588,9 +1586,9 @@ inline bool lineCircleIntersection(Vec2 lp0, Vec2 lp1, Vec2 cp, float r, Vec2 * 
 	Vec2 d = lp1 - lp0;
 	Vec2 f = lp0 - cp;
 
-	float a = d*d;
-	float b = 2*f*d;
-	float c = f*f - r*r;
+	float a = dot(d,d);
+	float b = 2*dot(f,d);
+	float c = dot(f,f) - r*r;
 
 	float discriminant = b*b-4*a*c;
 	if( discriminant < 0 )

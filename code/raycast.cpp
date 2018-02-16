@@ -216,6 +216,9 @@ struct World {
 	Vec3 ambientColor;
 
 	Vec3 defaultEmitColor;
+
+	Vec3 globalLightDir;
+	Vec3 globalLightColor;
 };
 
 enum {
@@ -308,7 +311,6 @@ TimeStamp processPixelsThreadedTimings[5] = {};
 #define endTimer(i)
 #endif
 
-#if 0
 void processPixelsThreaded(void* data) {
 	TimeStamp pixelTimings[5] = {};
 
@@ -423,14 +425,16 @@ void processPixelsThreaded(void* data) {
 					if(objectIndex != -1) {
 						startTimer(4);
 
-						Shape* s = world.objects + objectIndex;
+						Object* obj = world.objects + objectIndex;
+						// Geometry* g = &world.objects[objectIndex].geometry;
+						Material* m = &obj->material;
 						lastObjectIndex = objectIndex;
 
 
 						// Color calculation.
 
-						finalColor += attenuation * g->emitColor;
-						attenuation = attenuation * g->color;
+						finalColor += attenuation * m->emitColor;
+						attenuation = attenuation * obj->color;
 			
 						if(attenuation == black) {
 							endTimer(4);
@@ -449,7 +453,7 @@ void processPixelsThreaded(void* data) {
 
 						Vec3 objectReflectionDir = reflectVector(rayDir, objectReflectionNormal);
 
-						randomDir = lerp(g->reflectionMod, randomDir, objectReflectionDir);
+						randomDir = lerp(m->reflectionMod, randomDir, objectReflectionDir);
 
 						rayPos = objectReflectionPos;
 						rayDir = randomDir;
@@ -498,7 +502,67 @@ void processPixelsThreaded(void* data) {
 		}
 	}
 }
-#endif
+
+// @Duplication with processPixels.
+int castRay(Vec3 rayPos, Vec3 rayDir, Object* objects, int objectCount) {
+
+	int objectIndex = -1;
+
+	float minDistance = FLT_MAX;
+	for(int i = 0; i < objectCount; i++) {
+		Object* obj = objects + i;
+		Geometry* g = &obj->geometry;
+
+		// Check collision with bounding sphere.
+		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
+		if(possibleIntersection) {
+
+			Vec3 reflectionPos, reflectionNormal;
+			float distance = -1;
+			{
+				switch(g->type) {
+					case GEOM_TYPE_BOX: {
+						int face;
+						// bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
+						// if(hit) {
+						// 	reflectionPos = rayPos + rayDir*distance;
+						// 	reflectionNormal = boxRaycastNormals[face];
+						// }
+
+						Vec3 intersection;
+						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, g->dim, obj->rot, &intersection, &face);
+						if(hit) {
+							reflectionPos = intersection;
+							reflectionNormal = boxRaycastNormals[face];
+							distance = lenVec3(intersection - rayPos);
+						}
+
+					} break;
+
+					case GEOM_TYPE_SPHERE: {
+						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, g->r, &reflectionPos);
+						if(distance > 0) {
+							reflectionNormal = normVec3(reflectionPos - obj->pos);
+						}
+					} break;
+				}
+			}
+
+			if(distance > 0 && distance < minDistance) {
+				minDistance = distance;
+				objectIndex = i;
+			}
+		}
+	}
+
+	return objectIndex;
+}
+
+
+
+
+
+#if 0
 
 void processPixelsThreaded(void* data) {
 	TimeStamp pixelTimings[5] = {};
@@ -721,57 +785,4 @@ void processPixelsThreaded(void* data) {
 	}
 }
 
-// @Duplication with processPixels.
-int castRay(Vec3 rayPos, Vec3 rayDir, Object* objects, int objectCount) {
-
-	int objectIndex = -1;
-
-	float minDistance = FLT_MAX;
-	for(int i = 0; i < objectCount; i++) {
-		Object* obj = objects + i;
-		Geometry* g = &obj->geometry;
-
-		// Check collision with bounding sphere.
-		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
-		if(possibleIntersection) {
-
-			Vec3 reflectionPos, reflectionNormal;
-			float distance = -1;
-			{
-				switch(g->type) {
-					case GEOM_TYPE_BOX: {
-						int face;
-						// bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
-						// if(hit) {
-						// 	reflectionPos = rayPos + rayDir*distance;
-						// 	reflectionNormal = boxRaycastNormals[face];
-						// }
-
-						Vec3 intersection;
-						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, g->dim, obj->rot, &intersection, &face);
-						if(hit) {
-							reflectionPos = intersection;
-							reflectionNormal = boxRaycastNormals[face];
-							distance = lenVec3(intersection - rayPos);
-						}
-
-					} break;
-
-					case GEOM_TYPE_SPHERE: {
-						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, g->r, &reflectionPos);
-						if(distance > 0) {
-							reflectionNormal = normVec3(reflectionPos - obj->pos);
-						}
-					} break;
-				}
-			}
-
-			if(distance > 0 && distance < minDistance) {
-				minDistance = distance;
-				objectIndex = i;
-			}
-		}
-	}
-
-	return objectIndex;
-}
+#endif

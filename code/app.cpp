@@ -534,13 +534,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
 		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
-		ad->settings.sampleMode = SAMPLE_MODE_GRID;
-		ad->settings.sampleCountGrid = 1;
-		ad->settings.sampleGridWidth = 1;
+		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
+		// ad->settings.sampleCountGrid = 1;
+		// ad->settings.sampleGridWidth = 1;
 
-		// ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
-		// ad->settings.sampleCountGrid = 4;
-		// ad->settings.sampleGridWidth = 10;
+		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
+		ad->settings.sampleCountGrid = 4;
+		ad->settings.sampleGridWidth = 10;
 
 		ad->settings.rayBouncesMax = 6;
 
@@ -592,7 +592,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cam->nearDist = camDistanceFromFOVandWidth(cam->fov, cam->dim.w);
 			cam->farDist = 10000;
 		}
-		ad->world.camera.fov = 90;
 
 		// Mouse capture.
 		{
@@ -615,6 +614,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 
+		if(!ad->activeProcessing && ad->drawSceneWired)
 		{
 			ad->fpsMode = (ad->captureMouse || input->mouseButtonDown[1]) && windowHasFocus(windowHandle);
 			if(ad->fpsMode) {
@@ -782,8 +782,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
 				// world->defaultEmitColor = vec3(1.0f);
-				// world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
-				// world->globalLightColor = vec3(1,1,1);
+				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
+				world->globalLightColor = vec3(1,1,1);
 				// world->globalLightColor = vec3(0.0f);
 
 
@@ -873,9 +873,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		}
 
+		if(input->keysPressed[KEYCODE_SPACE] && !ad->drawSceneWired) {
+			for(int i = 0; i < ad->threadCount; i++) ad->threadData[i].stopProcessing = true;
+			ad->waitingForThreadStop = true;
+		}
+
 		// if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
 		// if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating || reload) && (ad->activeProcessing == false)) {
-		if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating) && (ad->activeProcessing == false)) {
+		if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating) && (!ad->activeProcessing && ad->drawSceneWired)) {
 		// if(false) {
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
@@ -1036,8 +1041,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 
-		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing))
+		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing)) {
 			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
+		}
 
 		// Screenshot.
 		if(input->keysPressed[KEYCODE_RETURN] && !ad->activeProcessing) {
@@ -1089,16 +1095,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 				// tr = rectCenDim(c, texDim);
 			}
 
-			glDepthMask(false);
-			drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
-			glDepthMask(true);
+			if(!ad->drawSceneWired) {
+				glDepthMask(false);
+				drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
+				glDepthMask(true);
+			}
 
 			ad->textureScreenRect = tr;
-		}
-
-		if(input->keysPressed[KEYCODE_R]) {
-			for(int i = 0; i < ad->threadCount; i++) ad->threadData[i].stopProcessing = true;
-			ad->waitingForThreadStop = true;
 		}
 
 		if(ad->waitingForThreadStop && threadQueueFinished(threadQueue)) {
@@ -1911,7 +1914,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		// Left panel.
-		#if 1
+		#if 0
 		{
 			float panelOffset = 5;
 			float panelMargin = 10;
@@ -1921,14 +1924,28 @@ extern "C" APPMAINFUNCTION(appMain) {
 			newGuiQuickBox(gui, pr);
 
 			{
-				Rect r = rectExpand(pr, -vec2(panelMargin));
+				Rect pri = rectExpand(pr, -vec2(panelMargin));
 
 				Font* font = gui->textSettings.font;
-				Vec2 p = rectTL(r);
-				float eh = font->height * 1.1f;
-				float ew = rectW(r);
+				Vec2 p = rectTL(pri);
+				float eh = font->height * 1.2f;
+				float ew = rectW(pri);
+				float gap = panelMargin/2;
 
-				newGuiQuickButton(gui, rectTLDim(p, vec2(ew, eh)), "Button!");
+				Rect r;
+
+				r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+gap;
+				newGuiQuickText(gui, r, "Pathtracer Settings", vec2i(0,0));
+
+				RaytraceSettings* s = &ad->settings;
+
+				gap = 1;
+				r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+gap;
+				newGuiQuickText(gui, r, fillString("TextDim %i %i", s->texDim.w, s->texDim.h), vec2i(-1,0));
+
+				r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+gap;
+				newGuiQuickText(gui, r, fillString("SampleMode %i", s->sampleMode, s->texDim.h), vec2i(-1,0));
+
 			}
 		}
 		#endif

@@ -1204,9 +1204,9 @@ Rect scissorTestIntersect(Rect scissor, Rect r) {
 void drawText(Rect r, char* text, Vec2i align, Rect scissor, TextSettings settings) {
 	Vec2 pos = rectCen(r) + (rectDim(r)/2) * vec2(align);
 
-	scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(-3,-3)));
+	// scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(-3,-3)));
 	drawText(text, pos, align, settings);
-	scissorTestScreen(scissor);
+	// scissorTestScreen(scissor);
 }
 
 void drawBox(Rect r, Rect scissor, BoxSettings settings) {
