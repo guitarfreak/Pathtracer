@@ -6,11 +6,8 @@
 #include "rt_hotload.cpp"
 #include "rt_misc_win32.cpp"
 
-#define Libcurl_Dll_File "External\\libcurl.dll"
-
 #include <iacaMarks.h>
 #include "rt_math.cpp"
-// #include "raycast.cpp"
 
 #define OPEN_CONSOLE 1
 

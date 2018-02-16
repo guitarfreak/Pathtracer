@@ -21,6 +21,11 @@ set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Li
 
 set INC=%INC% -I"C:\Standalone\iaca"
 
+set INC=%INC% -I"C:\Projects\Libs\freetype2.9\include"
+set LINC=%LINC% -LIBPATH:"C:\Projects\Libs\freetype2.9\win64"
+set LINKER_LIBS=%LINKER_LIBS% -DEFAULTLIB:freetype29.lib
+
+
 
 set BUILD_MODE=-Od
 set MODE_DEFINE=

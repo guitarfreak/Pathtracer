@@ -224,6 +224,8 @@ void systemDataInit(SystemData* sd, HINSTANCE instance) {
 	sd->instance = instance;
 }
 
+// void drawLastFrameStretched(int w, int h);
+void drawLastFrameStretched(HWND windowHandle, int w, int h);
 LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     switch(message) {
         case WM_DESTROY: {
@@ -245,57 +247,24 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
             return DefWindowProc(window, message, wParam, lParam);
         } break;
 
-        // case WM_SETCURSOR: {
-        //     SetCursor(GetCursor());
-        //     return true;
-        // } break;
+        case WM_PAINT: {
+        	PAINTSTRUCT ps;
+        	HDC hdc = BeginPaint(window, &ps); 
+        	EndPaint(window, &ps);
 
-        // case WM_ERASEBKGND: {
-        // 	return 1;
-        // } break;
+        	RECT cr; 
+        	GetClientRect(window, &cr);
+        	int viewWidth = cr.right - cr.left;
+        	int viewHeight = cr.bottom - cr.top;
 
-        // case WM_PAINT: {
-	        // PAINTSTRUCT ps;
-	        // HDC hdc = BeginPaint(window, &ps);
+        	drawLastFrameStretched(window, viewWidth, viewHeight);
 
-	        // // FillRect(hdc, &ps.rcPaint, (HBRUSH) (COLOR_WINDOW+1));
-	        // // FillRect(hdc, &ps.rcPaint, (HBRUSH) CreateSolidBrush(RGB(250,30,30)));
-	        // FillRect(hdc, &ps.rcPaint, (HBRUSH) CreateSolidBrush(RGB(0,0,0)));
-	        
-	        // EndPaint(window, &ps);
+        	return 0;
+        } break;
 
-	        // return 0;
-        // } break;
-
-		// case WM_SIZING: {
-		// 	HDC dc = GetDC(window);
-
-
-		// 	// Vec2i frameBufferRes = getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->dim;
-
-		// 	// glClearColor(1,0,0,1);
-		// 	// glClear(GL_COLOR_BUFFER_BIT);
-
-
-
-		// 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		// 	glLoadIdentity();
-		// 	// glViewport(0,0, res.w, res.h);
-		// 	glViewport(0,0, 100,100);
-		// 	glOrtho(0,1,1,0, -1, 1);
-		// 	// drawRect(rect(0, 1, 1, 0), frameBufferUV, getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
-
-
-		// 	SwapBuffers(dc);
-
-		//     // return 0;
-
-  //           // PostMessage(window, message, wParam, lParam);
-
-  //           	// DWORD id = GetThreadId(GetCurrentThread());
-  //               // PostThreadMessage(id, message, wParam, lParam);
-
-		// } break;
+        case WM_MOVING: {
+        	InvalidateRect(window, NULL, FALSE); 
+        } break;
 
         default: {
             return DefWindowProc(window, message, wParam, lParam);
@@ -304,6 +273,7 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
 
     return 1;
 }
+
 
 struct MonitorData {
 	Rect fullRect;
@@ -316,7 +286,7 @@ struct WindowSettings {
 	// Vec2i fullRes;
 	bool fullscreen;
 	uint style;
-	// WINDOWPLACEMENT g_wpPrev;
+	WINDOWPLACEMENT g_wpPrev;
 
 	RECT windowedRect;
 
@@ -430,6 +400,8 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     // windowClass.hbrBackground = CreateSolidBrush(RGB(0,0,0));
     // windowClass.hbrBackground = (HBRUSH)CreateSolidBrush(0x00000000);
     // windowClass.hbrBackground = 0;
+    // windowClass.hbrBackground = CreateSolidBrush(RGB(255,0,0));
+
 
     if(!RegisterClass(&windowClass)) {
         DWORD errorCode = GetLastError();
@@ -627,9 +599,10 @@ void updateInput(Input* input, HWND windowHandle) {
 
                 if(keyDown) {
                 	input->anyKey = true;
-
-                    TranslateMessage(&message); 
                 }
+                
+                TranslateMessage(&message); 
+                DispatchMessage(&message); 
             } break;
 
             case WM_CHAR: {
@@ -665,10 +638,6 @@ void updateInput(Input* input, HWND windowHandle) {
             case WM_KILLFOCUS: {
             	killedFocus = true;
             } break;
-
-            // case WM_SIZING: {
-            // 	printf("asdf\n");
-            // } break;
 
             default: {
                 TranslateMessage(&message); 
@@ -806,51 +775,35 @@ void updateResolution(HWND windowHandle, WindowSettings* ws) {
 
 void setWindowMode(HWND hwnd, WindowSettings* wSettings, int mode) {
 	if(mode == WINDOW_MODE_FULLBORDERLESS && !wSettings->fullscreen) {
-		// wSettings->g_wpPrev = {};
+		wSettings->g_wpPrev = {};
 
-		// DWORD dwStyle = getWindowStyle(hwnd);
-		// if (dwStyle & WS_OVERLAPPEDWINDOW) {
-		//   MONITORINFO mi = { sizeof(mi) };
-		//   if (GetWindowPlacement(hwnd, &wSettings->g_wpPrev) &&
-		//       GetMonitorInfo(MonitorFromWindow(hwnd,
-		//                      MONITOR_DEFAULTTOPRIMARY), &mi)) {
-		//     SetWindowLong(hwnd, GWL_STYLE,
-		//                   dwStyle & ~WS_OVERLAPPEDWINDOW);
-		// 	setWindowStyle(hwnd, dwStyle & ~WS_OVERLAPPEDWINDOW);
+		DWORD dwStyle = getWindowStyle(hwnd);
+		if (dwStyle & WS_OVERLAPPEDWINDOW) {
+		  MONITORINFO mi = { sizeof(mi) };
+		  if (GetWindowPlacement(hwnd, &wSettings->g_wpPrev) &&
+		      GetMonitorInfo(MonitorFromWindow(hwnd,
+		                     MONITOR_DEFAULTTOPRIMARY), &mi)) {
+		    SetWindowLong(hwnd, GWL_STYLE,
+		                  dwStyle & ~WS_OVERLAPPEDWINDOW);
+			setWindowStyle(hwnd, dwStyle & ~WS_OVERLAPPEDWINDOW);
 
-		//     SetWindowPos(hwnd, HWND_TOP,
-		//                  mi.rcMonitor.left, mi.rcMonitor.top,
-		//                  mi.rcMonitor.right - mi.rcMonitor.left,
-		//                  mi.rcMonitor.bottom - mi.rcMonitor.top,
-		//                  SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-		//   }
-		// }
-
-		wSettings->res = wSettings->currentRes;
-    	GetWindowRect(hwnd, &wSettings->windowedRect);
-
-		MONITORINFO mi = { sizeof(mi) };
-		GetMonitorInfo(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
-		SetWindowPos(hwnd, HWND_TOP,
-		             mi.rcMonitor.left, mi.rcMonitor.top,
-		             mi.rcMonitor.right - mi.rcMonitor.left,
-		             mi.rcMonitor.bottom - mi.rcMonitor.top,
-		             SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-
+		    SetWindowPos(hwnd, HWND_TOP,
+		                 mi.rcMonitor.left, mi.rcMonitor.top,
+		                 mi.rcMonitor.right - mi.rcMonitor.left,
+		                 mi.rcMonitor.bottom - mi.rcMonitor.top,
+		                 SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+		  }
+		}
 
 		wSettings->fullscreen = true;
+
 	} else if(mode == WINDOW_MODE_WINDOWED && wSettings->fullscreen) {
-		// setWindowStyle(hwnd, wSettings->style);
-		// SetWindowPlacement(hwnd, &wSettings->g_wpPrev);
-		// SetWindowPos(hwnd, NULL, 0,0, wSettings->res.w, wSettings->res.h, SWP_NOZORDER | SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-
-		RECT r = wSettings->windowedRect;
-		// r.left;
-
-		// SetWindowPos(hwnd, NULL, r.left, r.top, r.right-r.left, r.bottom-r.top, SWP_NOZORDER | SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-		SetWindowPos(hwnd, NULL, r.left, r.top, r.right-r.left, r.bottom-r.top, SWP_NOZORDER | SWP_NOOWNERZORDER);
+		setWindowStyle(hwnd, wSettings->style);
+		SetWindowPlacement(hwnd, &wSettings->g_wpPrev);
 
 		wSettings->fullscreen = false;
+
+		InvalidateRect(NULL, NULL, FALSE);
 	}
 }
 

@@ -240,25 +240,27 @@ void initTexture(Texture* texture, int mipLevels, int internalFormat, Vec2i dim,
 // Fonts.
 //
 
+struct PackedChar;
 struct Font {
 	char* file;
 	int id;
+	float heightIndex;
 
-	stbtt_fontinfo info;
+	FT_Library library;
+	FT_Face face;
+
 	float pixelScale;
-	float emScale;
 
 	char* fileBuffer;
 	Texture tex;
-	Texture brightTex, darkTex;
 	Vec2i glyphRanges[5];
 	int glyphRangeCount;
-	stbtt_packedchar* cData;
-	float height;
-	float baseOffset;
+	int totalGlyphCount;
 
-	float pointHeight;
-	bool usePointHeight;
+	PackedChar* cData;
+	int height;
+	float baseOffset;
+	float lineSpacing;
 
 	Font* boldFont;
 	Font* italicFont;
@@ -266,6 +268,12 @@ struct Font {
 	bool pixelAlign;
 };
 
+struct PackedChar {
+   unsigned short x0,y0,x1,y1;
+   float xBearing, yBearing;
+   float width, height;
+   float xadvance; // yBearing + h-yBearing
+};
 //
 // Framebuffers.
 //
@@ -465,198 +473,158 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 			break;
 		}
 	}
-
 	if(!fontFolder) return 0;
 
 	char* path = fillString("%s%s", fontFolder, file);
 	char* fileBuffer = mallocString(fileSize(path) + 1);
 	readFileToBuffer(fileBuffer, path);
 
-	// Vec2i size = vec2i(256,256);
-	Vec2i size = vec2i(512,512);
-	// Vec2i size = vec2i(750,750);
-
-	pushTMemoryStack();
-
-	uchar* fontBitmapBuffer = (unsigned char*)getTMemory(size.x*size.y);
-	uchar* fontBitmap = (unsigned char*)getTMemory(size.x*size.y*4);
-
 
 	Font font;
-	stbtt_InitFont(&font.info, (const unsigned char*)fileBuffer, 0);
+
+	// Settings.
+	
+	bool stemDarkening = true;
+	bool pixelAlign = true;
+	
+	// FT_LOAD_DEFAULT | FT_LOAD_NO_HINTING | FT_LOAD_NO_AUTOHINT | FT_LOAD_FORCE_AUTOHINT
+	// FT_LOAD_TARGET_NORMAL | FT_LOAD_TARGET_LIGHT | FT_LOAD_TARGET_MONO
+	int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_MONO;
+
+	// FT_RENDER_MODE_NORMAL, FT_RENDER_MODE_LIGHT, FT_RENDER_MODE_MONO, FT_RENDER_MODE_LCD, FT_RENDER_MODE_LCD_V,
+	FT_Render_Mode renderFlags = FT_RENDER_MODE_NORMAL;
+
+
+	font.glyphRangeCount = 0;
+	#define setupRange(a,b) vec2i(a, b - a + 1)
+	font.glyphRanges[font.glyphRangeCount++] = setupRange(0x20, 0x7F);
+	font.glyphRanges[font.glyphRangeCount++] = setupRange(0xA1, 0xFF);
+	#undef setupRange
+
+	font.totalGlyphCount = 0;
+	for(int i = 0; i < font.glyphRangeCount; i++) font.totalGlyphCount += font.glyphRanges[i].y;
+
+
+
 	font.file = getPString(strLen(file)+1);
 	strCpy(font.file, file);
+	font.heightIndex = height;
 
-	// Use point size instead of pixel size.
-	if(height < 0) {
-		height *= -1;
-		float pointSize = height;
-		float pixelScale = stbtt_ScaleForPixelHeight(&font.info, height);
-		float emScale = stbtt_ScaleForMappingEmToPixels(&font.info, height);
-		height = (pointSize/pixelScale)*emScale;
-	} 
+	int error;
+	error = FT_Init_FreeType(&font.library); assert(error == 0);
+	error = FT_New_Face(font.library, path, 0, &font.face); assert(error == 0);
+	FT_Face face = font.face;
 
-	font.height = height;
-	font.pixelScale = stbtt_ScaleForPixelHeight(&font.info, font.height);
-	font.emScale = stbtt_ScaleForMappingEmToPixels(&font.info, font.height);
-	font.pointHeight = (font.height/font.emScale)*font.pixelScale;
+	FT_Parameter parameter;
+	FT_Bool darkenBool = stemDarkening;
+	parameter.tag = FT_PARAM_TAG_STEM_DARKENING;
+	parameter.data = &darkenBool;
+	error = FT_Face_Properties(face, 1, &parameter); assert(error == 0);
 
-	#define setupRange(a,b) vec2i(a, b - a + 1)
-	#define setupRangeCount(a,b) vec2i(a, b)
-	int rc = 0;
-	font.glyphRanges[rc++] = setupRange(0x20, 0x7F);
-	font.glyphRanges[rc++] = setupRange(0xA1, 0xFF);
+	int pointFraction = 64;
+	font.pixelScale = (float)1/pointFraction;
+	float fullHeightToAscend = (float)face->ascender / (float)(face->ascender + abs(face->descender));
 
-	// font.glyphRanges[rc++] = setupRangeCount(0x6B, 1);
-	
-	// font.glyphRanges[rc++] = setupRangeCount(0x48, 1);
-	// font.glyphRanges[rc++] = setupRangeCount(0xDC, 1);
-	// font.glyphRanges[rc++] = setupRangeCount(0xE4, 1);
+	// Height < 0 means use point size instead of pixel size
+	if(height > 0) {
+		error = FT_Set_Pixel_Sizes(font.face, 0, roundInt(height) * fullHeightToAscend); assert(error == 0);
+	} else {
+		error = FT_Set_Char_Size(font.face, 0, (roundInt(-height) * fullHeightToAscend) * pointFraction, 0, 0); assert(error == 0);
+	}
 
-	// font.glyphRanges[rc++] = setupRangeCount(0xF2, 1);
-	font.glyphRangeCount = rc;
+	// Get true height from freetype.
+	font.height = (face->size->metrics.ascender + abs(face->size->metrics.descender)) / pointFraction;
+	font.baseOffset = (face->size->metrics.ascender / pointFraction);
 
-	int totalGlyphCount = 0;
-	for(int i = 0; i < font.glyphRangeCount; i++) totalGlyphCount += font.glyphRanges[i].y;
-	font.cData = mallocArray(stbtt_packedchar, totalGlyphCount);
-
-
-	int ascent = 0;
-	stbtt_GetFontVMetrics(&font.info, &ascent,0,0);
-	font.baseOffset = (ascent*font.pixelScale);
-	font.pixelAlign = true;
+	// We calculate the scaling ourselves because Freetype doesn't offer it??
+	float scale = (float)face->size->metrics.ascender / (float)face->ascender;
+	font.lineSpacing = roundInt(((face->height * scale) / pointFraction));
+	font.pixelAlign = pixelAlign;
 
 
 
-	// float pixelSize = font.height;
-	// float scale1 = stbtt_ScaleForPixelHeight(&font.info, pixelSize);
-	// float scale2 = stbtt_ScaleForMappingEmToPixels(&font.info, pixelSize);
-
-	// int unitsPerEm = ttUSHORT(font.info.data + font.info.head + 18);
-
-	// float points = pixelSize * (float)72 / (float)96;
-	// printf("%f, %f\n", pixelSize, points);
-	// printf("%f, %f, %f\n", pixelSize, (pixelSize/scale1)*scale2, (pixelSize/scale2)*scale1);
-	// printf("%f, %f\n", scale1, scale2);
-	// printf("%i\n", unitsPerEm);
-	// exit(1);
+	int gridSize = (sqrt(font.totalGlyphCount) + 1);
+	Vec2i texSize = vec2i(gridSize * font.height);
+	uchar* fontBitmapBuffer = mallocArray(unsigned char, texSize.x*texSize.y);
+	memSet(fontBitmapBuffer, 0, texSize.x*texSize.y);
 
 	{
-		stbtt_pack_context context;
-		int result = stbtt_PackBegin(&context, fontBitmapBuffer, size.w, size.h, 0, 1, 0);
-		stbtt_PackSetOversampling(&context, 1, 1);
+		font.cData = mallocArray(PackedChar, font.totalGlyphCount);
+		int glyphIndex = 0;
+		for(int rangeIndex = 0; rangeIndex < font.glyphRangeCount; rangeIndex++) {
+			for(int i = 0; i < font.glyphRanges[rangeIndex].y; i++) {
+				int unicode = font.glyphRanges[rangeIndex].x + i;
 
-		stbtt_pack_range ranges[5];
-		int cDataOffset = 0;
-		for(int i = 0; i < font.glyphRangeCount; i++) {
-			ranges[i].first_unicode_codepoint_in_range = font.glyphRanges[i].x;
-			ranges[i].array_of_unicode_codepoints = NULL;
-			ranges[i].num_chars                   = font.glyphRanges[i].y;
-			ranges[i].chardata_for_range          = font.cData + cDataOffset;
-			ranges[i].font_size                   = font.height;
+				FT_Load_Char(face, unicode, loadFlags);
+				FT_Render_Glyph(face->glyph, renderFlags);
 
-			cDataOffset += font.glyphRanges[i].y;
+				FT_Bitmap* bitmap = &face->glyph->bitmap;
+				Vec2i coordinate = vec2i(glyphIndex%gridSize, glyphIndex/gridSize);
+				Vec2i startPixel = coordinate * font.height;
+
+				font.cData[glyphIndex].x0 = startPixel.x;
+				font.cData[glyphIndex].x1 = startPixel.x + bitmap->width;
+				font.cData[glyphIndex].y1 = startPixel.y + bitmap->rows;
+				font.cData[glyphIndex].y0 = startPixel.y;
+
+				font.cData[glyphIndex].xBearing = face->glyph->metrics.horiBearingX / pointFraction;
+				font.cData[glyphIndex].yBearing = face->glyph->metrics.horiBearingY / pointFraction;
+				font.cData[glyphIndex].width =    face->glyph->metrics.width        / pointFraction;
+				font.cData[glyphIndex].height =   face->glyph->metrics.height       / pointFraction;
+
+				font.cData[glyphIndex].xadvance = face->glyph->metrics.horiAdvance / pointFraction;
+
+				for(int y = 0; y < bitmap->rows; y++) {
+					for(int x = 0; x < bitmap->width; x++) {
+						Vec2i coord = startPixel + vec2i(x,y);
+						fontBitmapBuffer[coord.y*texSize.w + coord.x] = bitmap->buffer[y*bitmap->width + x];
+					}
+				}
+
+				glyphIndex++;
+			}
 		}
-
-		if(strCompare(file, "kaiu.ttf")) {
-			int stop = 234;
-		}
-
-		// TrueTypeInterpreter interpreter;
-		// interpreter.init();
-		// interpreter.setupFunctionsAndCvt(&font.info, font.height);
-
-		enableHinting = false;
-
-		if(!enableHinting) {
-			stbtt_PackFontRanges(&context, (uchar*)fileBuffer, 0, ranges, 	font.glyphRangeCount);
-		} else {
-			// stbtt_PackFontRangesHinted(&interpreter, &font.info, &context, ranges, font.glyphRangeCount);
-		}
-
-		stbtt_PackEnd(&context);
-		// interpreter.freeInterpreter();
 	}
 
 
 	Texture tex;
+	uchar* fontBitmap = mallocArray(unsigned char, texSize.x*texSize.y*4);
+	memSet(fontBitmap, 255, texSize.w*texSize.h*4);
+	for(int i = 0; i < texSize.w*texSize.h; i++) fontBitmap[i*4+3] = fontBitmapBuffer[i];
 
-	// Clear to white, we only care about alpha.
-	memSet(fontBitmap, 255, size.w*size.h*4);
-
-	// Normal texture.
-	for(int i = 0; i < size.w*size.h; i++) {
-		fontBitmap[i*4+3] = fontBitmapBuffer[i];
-	}
-	// GL_RGBA8
-	loadTexture(&tex, fontBitmap, size.w, size.h, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+	loadTexture(&tex, fontBitmap, texSize.w, texSize.h, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
 	font.tex = tex;
 
-	// Bright texture.
-	for(int i = 0; i < size.w*size.h; i++) {
-		float v = colorIntToFloat(fontBitmapBuffer[i]);
-		if(v > 0) {
-			// v += 0.2f;
-			// v = pow(v, 2.2f);
-			// v = pow(v, 1/2.2f);
-		}
-		v = clampMax(v, 1.0f);
-		fontBitmap[i*4+3] = colorFloatToInt(v);
-	}
-	// loadTexture(&tex, fontBitmap, size.w, size.h, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
-	loadTexture(&tex, fontBitmap, size.w, size.h, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
-	font.brightTex = tex;
 
-	// Dark texture.
-	for(int i = 0; i < size.w*size.h; i++) {
-		float v = colorIntToFloat(fontBitmapBuffer[i]);
-		// if(v < 0.8
-		if(v > 0) {
-			// v = 1;
-			// v += 0.2f;
-			// v = pow(v, 2.2f);
-
-			// v = pow(v, 1/2.2f);
-			// v = pow(v, 1/2.2f);
-			// v = pow(v, 1/2.2f);
-		}
-		v = clampMax(v, 1.0f);
-		fontBitmap[i*4+3] = colorFloatToInt(v);
-	}
-	loadTexture(&tex, fontBitmap, size.w, size.h, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
-	// loadTexture(&tex, fontBitmap, size.w, size.h, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
-	font.darkTex = tex;
-
-	// GL_RGBA8
-	// INTERNAL_TEXTURE_FORMAT
-
-	popTMemoryStack();
+	free(fontBitmapBuffer);
+	free(fontBitmap);
 
 	*fontSlot = font;
 	return fontSlot;
 }
 
 void freeFont(Font* font) {
-	freeAndSetNullSave(font->cData);
-	freeAndSetNullSave(font->info.data);
+	freeZero(font->cData);
+	// FT_Done_Face(font->face);
+	// FT_Done_Library(font->library);
 	glDeleteTextures(1, &font->tex.id);
-	font->height = 0;
+	font->heightIndex = 0;
 }
 
-Font* getFont(char* fontFile, float height, char* boldFontFile = 0, char* italicFontFile = 0) {
+Font* getFont(char* fontFile, float heightIndex, char* boldFontFile = 0, char* italicFontFile = 0) {
 
 	int fontCount = arrayCount(globalGraphicsState->fonts);
 	int fontSlotCount = arrayCount(globalGraphicsState->fonts[0]);
 	Font* fontSlot = 0;
 	for(int i = 0; i < fontCount; i++) {
-		if(globalGraphicsState->fonts[i][0].height == 0) {
+		if(globalGraphicsState->fonts[i][0].heightIndex == 0) {
 			fontSlot = &globalGraphicsState->fonts[i][0];
 			break;
 		} else {
 			if(strCompare(fontFile, globalGraphicsState->fonts[i][0].file)) {
 				for(int j = 0; j < fontSlotCount; j++) {
-					int h = globalGraphicsState->fonts[i][j].height;
-					if(h == 0 || h == height) {
+					int h = globalGraphicsState->fonts[i][j].heightIndex;
+					if(h == 0 || h == heightIndex) {
 						fontSlot = &globalGraphicsState->fonts[i][j];
 						break;
 					}
@@ -666,24 +634,26 @@ Font* getFont(char* fontFile, float height, char* boldFontFile = 0, char* italic
 	}
 
 	// We are going to assume for now that a font size of 0 means it is uninitialized.
-	if(fontSlot->height == 0) {
-		Font* font = fontInit(fontSlot, fontFile, height);
+	if(fontSlot->heightIndex == 0) {
+		Font* font = fontInit(fontSlot, fontFile, heightIndex);
 		if(!font) {
-			return getFont(globalGraphicsState->fallbackFont, height, globalGraphicsState->fallbackFontBold, globalGraphicsState->fallbackFontItalic);
+			return getFont(globalGraphicsState->fallbackFont, heightIndex, globalGraphicsState->fallbackFontBold, globalGraphicsState->fallbackFontItalic);
 		}
 
 		if(boldFontFile) {
 			fontSlot->boldFont = getPStruct(Font);
-			fontInit(fontSlot->boldFont, boldFontFile, height);
+			fontInit(fontSlot->boldFont, boldFontFile, heightIndex);
 		}
 		if(italicFontFile) {
 			fontSlot->italicFont = getPStruct(Font);
-			fontInit(fontSlot->italicFont, italicFontFile, height);
+			fontInit(fontSlot->italicFont, italicFontFile, heightIndex);
 		}
 	}
 
 	return fontSlot;
 }
+
+
 
 Rect scissorRectScreenSpace(Rect r, float screenHeight) {
 	Rect scissorRect = {r.min.x, r.min.y+screenHeight, r.max.x, r.max.y+screenHeight};
@@ -1023,6 +993,25 @@ void drawRectProgressHollow(Rect r, float p, Vec4 c0, Vec4 oc) {
 
 	glLineWidth(0.5f);
 	drawRectOutline(r, oc);
+}
+
+void drawTriangle(Vec2 p, float size, Vec2 dir, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	float z = globalGraphicsState->zOrder;
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	dir = normVec2(dir) * size;
+	Vec2 tp;
+	glBegin(GL_TRIANGLES);
+		tp = p + dir;
+		glVertex3f(tp.x, tp.y, z);
+		tp = p + rotateVec2(dir, degreeToRadian(360/3));
+		glVertex3f(tp.x, tp.y, z);
+		tp = p + rotateVec2(dir, degreeToRadian(360/3*2));
+		glVertex3f(tp.x, tp.y, z);
+	glEnd();
 }
 
 void drawArrow(Vec3 start, Vec3 end, Vec3 up, float thickness, Vec4 color) {
@@ -1447,17 +1436,30 @@ int getUnicodeRangeOffset(int c, Font* font) {
 	return unicodeOffset;
 }
 
-// @Getglyphbox.
+// Taken from stbtt_truetype.
+void getPackedQuad(PackedChar *chardata, Vec2i texDim, int char_index, Vec2 pos, Rect* r, Rect* uv, int alignToInteger)
+{
+   PackedChar *b = chardata + char_index;
+
+   if (alignToInteger) {
+   	  *r = rectBLDim(roundFloat(pos.x + b->xBearing), roundFloat(pos.y - (b->height - b->yBearing)), b->width, b->height);
+   } else {
+   	  *r = rectBLDim(pos.x + b->xBearing, pos.y - (b->height - b->yBearing), b->width, b->height);
+   }
+
+   Vec2 ip = vec2(1.0f / texDim.w, 1.0f / texDim.h);
+   *uv = rect(b->x0*ip.x, b->y0*ip.y, b->x1*ip.x, b->y1*ip.y);
+}
+
 void getTextQuad(int c, Font* font, Vec2 pos, Rect* r, Rect* uv) {
-	stbtt_aligned_quad q;
+
 	int unicodeOffset = getUnicodeRangeOffset(c, font);
-	stbtt_GetPackedQuad(font->cData, font->tex.dim.w, font->tex.dim.h, unicodeOffset, pos.x, pos.y, &q, font->pixelAlign);
+	getPackedQuad(font->cData, font->tex.dim, unicodeOffset, pos, r, uv, font->pixelAlign);
 
 	float off = font->baseOffset;
 	if(font->pixelAlign) off = roundInt(off);
-
-	*r = rect(q.x0, q.y0 - off, q.x1, q.y1 - off);
-	*uv = rect(q.s0, q.t0, q.s1, q.t1);
+	r->bottom -= off;
+	r->top -= off;
 }
 
 float getCharAdvance(int c, Font* font) {
@@ -1469,14 +1471,21 @@ float getCharAdvance(int c, Font* font) {
 float getCharAdvance(int c, int c2, Font* font) {
 	int unicodeOffset = getUnicodeRangeOffset(c, font);
 	float result = font->cData[unicodeOffset].xadvance;
-	float kernAdvance = stbtt_GetCodepointKernAdvance(&font->info, c, c2) * font->pixelScale;
 
-	// result += kernAdvance;
-	// result = roundFloat(result);
+	if(FT_HAS_KERNING(font->face)) {
+		FT_Vector kerning;
+
+		uint charIndex1 = FT_Get_Char_Index(font->face, c);
+		uint charIndex2 = FT_Get_Char_Index(font->face, c2);
+
+		FT_Get_Kerning(font->face, charIndex1, charIndex2, FT_KERNING_DEFAULT, &kerning);
+		float kernAdvance = kerning.x * font->pixelScale;
+
+		result += kernAdvance;
+	}
 
 	return result;
 }
-
 
 
 
@@ -1516,6 +1525,107 @@ TextSimInfo initTextSimInfo(Vec2 startPos) {
 	return tsi;
 }
 
+enum {
+	TEXT_MARKER_BOLD = 0,
+	TEXT_MARKER_ITALIC,
+	TEXT_MARKER_COLOR,
+};
+
+#define Marker_Size 3
+#define Bold_Marker "<b>"
+#define Italic_Marker "<i>"
+#define Color_Marker "<c>"
+
+// The marker system is badly designed and has all kinds of edge cases where it breaks if you
+// don't pay attention, so... put markers in sparingly.
+
+int parseTextMarkers(char* text, TextSimInfo* tsi, int* type = 0) {
+	// Return how many characters to skip.
+
+	if(text[0] == '<') {
+		if(text[1] != '\0' && text[2] != '\0' && text[2] == '>') {
+			switch(text[1]) {
+				case 'b': if(type) { *type = TEXT_MARKER_BOLD; } return Marker_Size;
+				case 'i': if(type) { *type = TEXT_MARKER_ITALIC; } return Marker_Size;
+				case 'c': if(type) { *type = TEXT_MARKER_COLOR; } 
+					if(tsi->colorMode) return Marker_Size;
+					else return Marker_Size + 6; // FFFFFF
+			}
+		}
+	}
+
+	return 0;
+}
+
+void updateMarkers(char* text, TextSimInfo* tsi, Font* font, bool skip = false) {
+
+	int type;
+	int length = 0;
+	while(length = parseTextMarkers(text + tsi->index, tsi, &type)) {
+	// if(length) {
+		if(skip) {
+			tsi->index += length;
+			tsi->wrapIndex += length;
+			if(type == TEXT_MARKER_COLOR) {
+				tsi->colorMode = !tsi->colorMode;
+			}
+			continue;
+		}
+
+		switch(type) {
+			case TEXT_MARKER_BOLD: {
+				tsi->index += length;
+				tsi->wrapIndex += length;
+
+				if(!font->boldFont) return;
+				if(!tsi->bold) {
+					glEnd();
+					glBindTexture(GL_TEXTURE_2D, font->boldFont->tex.id);
+					glBegin(GL_QUADS);
+				} else {
+					glEnd();
+					glBindTexture(GL_TEXTURE_2D, font->tex.id);
+					glBegin(GL_QUADS);
+				}
+				tsi->bold = !tsi->bold;
+			} break;
+
+			case TEXT_MARKER_ITALIC: {
+				tsi->index += length;
+				tsi->wrapIndex += length;
+
+				if(!font->italicFont) return;
+				if(!tsi->italic && font->italicFont) {
+					glEnd();
+					glBindTexture(GL_TEXTURE_2D, font->italicFont->tex.id);
+					glBegin(GL_QUADS);
+				} else {
+					glEnd();
+					glBindTexture(GL_TEXTURE_2D, font->tex.id);
+					glBegin(GL_QUADS);
+				}
+				tsi->italic = !tsi->italic;
+			} break;
+
+			case TEXT_MARKER_COLOR: {
+				tsi->index += Marker_Size;
+				tsi->wrapIndex += Marker_Size;
+				Vec3 c;
+				if(!tsi->colorMode) {
+					c.r = colorIntToFloat(strHexToInt(getTStringCpy(&text[tsi->index], 2))); tsi->index += 2;
+					c.g = colorIntToFloat(strHexToInt(getTStringCpy(&text[tsi->index], 2))); tsi->index += 2;
+					c.b = colorIntToFloat(strHexToInt(getTStringCpy(&text[tsi->index], 2))); tsi->index += 2;
+					tsi->colorOverwrite = COLOR_SRGB(c);
+					
+					tsi->wrapIndex += 6;
+				}
+
+				tsi->colorMode = !tsi->colorMode;
+			} break;
+		}
+	}
+}
+
 int textSim(char* text, Font* font, TextSimInfo* tsi, TextInfo* ti, Vec2 startPos = vec2(0,0), int wrapWidth = 0) {
 	ti->lineBreak = false;
 
@@ -1545,11 +1655,26 @@ int textSim(char* text, Font* font, TextSimInfo* tsi, TextInfo* ti, Vec2 startPo
 		float wordWidth = 0;
 		if(c == '\n') wordWidth = getCharAdvance(c, font);
 
+		char* tempText = text;
 		int it = i;
 		while(c != '\n' && c != '\0' && c != ' ') {
+
+			// Awkward.
+			bool hadMarker = false;
+			int markerLength = 0;
+			while(markerLength = parseTextMarkers(tempText + it, tsi)) {
+				// Pretend markers aren't there by moving text pointer.
+				tempText += markerLength;
+				hadMarker = true;
+			}
+			if(hadMarker) {
+				c = unicodeDecode((uchar*)(&tempText[it]), &size);
+				continue;
+			}
+
 			wordWidth += getCharAdvance(c, font);
 			it += size;
-			c = unicodeDecode((uchar*)(&text[it]), &size);
+			c = unicodeDecode((uchar*)(&tempText[it]), &size);
 		}
 
 		if(tsi->pos.x + wordWidth > startPos.x + wrapWidth) {
@@ -1566,14 +1691,14 @@ int textSim(char* text, Font* font, TextSimInfo* tsi, TextInfo* ti, Vec2 startPo
 		if(wrapped) tsi->breakPos = tsi->pos;
 
 		tsi->pos.x = startPos.x;
-		tsi->pos.y -= font->height;
+		// tsi->pos.y -= font->height;
+		tsi->pos.y -= font->lineSpacing;
 
 		if(wrapped) {
 			return textSim(text, font, tsi, ti, startPos, wrapWidth);
 		}
 	} else {
 		getTextQuad(t, font, tsi->pos, &ti->r, &ti->uv);
-		// tsi->pos.x += getCharAdvance(t, font);
 
 		if(text[i+1] != '\0') {
 			int tSize2;
@@ -1615,74 +1740,17 @@ TextSettings textSettings(Font* font, Vec4 color) {
 
 
 enum {
-	TEXT_NOSHADOW = 0,
-	TEXT_SHADOW,
-	TEXT_OUTLINE,
+	TEXTSHADOW_MODE_NOSHADOW = 0,
+	TEXTSHADOW_MODE_SHADOW,
+	TEXTSHADOW_MODE_OUTLINE,
 };
-
-#define Bold_Mark "<b>"
-#define Bold_Mark_Size 3
-#define Italic_Mark "<i>"
-#define Italic_Mark_Size 3
-#define Color_Mark "<c>"
-#define Color_Mark_Size 3
-
-void textParseMarkers(char* text, TextSimInfo* tsi, Font* font, bool skip = false) {
-	if(text[tsi->index] == Bold_Mark[0]) {
-		if(strStartsWith(&text[tsi->index], Bold_Mark, Bold_Mark_Size)) {
-			tsi->index += Bold_Mark_Size;
-			if(skip) return;
-
-			if(!tsi->bold) {
-				glEnd();
-				glBindTexture(GL_TEXTURE_2D, font->boldFont->tex.id);
-				glBegin(GL_QUADS);
-			} else {
-				glEnd();
-				glBindTexture(GL_TEXTURE_2D, font->tex.id);
-				glBegin(GL_QUADS);
-			}
-			tsi->bold = !tsi->bold;
-		} else if(strStartsWith(&text[tsi->index], Italic_Mark, Italic_Mark_Size)) {
-			tsi->index += Italic_Mark_Size;
-			if(skip) return;
-			
-			if(!tsi->italic) {
-				glEnd();
-				glBindTexture(GL_TEXTURE_2D, font->italicFont->tex.id);
-				glBegin(GL_QUADS);
-			} else {
-				glEnd();
-				glBindTexture(GL_TEXTURE_2D, font->tex.id);
-				glBegin(GL_QUADS);
-			}
-			tsi->italic = !tsi->italic;
-		} else if(strStartsWith(&text[tsi->index], Color_Mark, Color_Mark_Size)) {
-			if(skip) {
-				tsi->index += 9; // <c>FFFFFF
-				return;
-			}
-
-			tsi->index += 3;
-			Vec3 c;
-			if(!tsi->colorMode) {
-				c.r = colorIntToFloat(strHexToInt(getTStringCpy(&text[tsi->index], 2))); tsi->index += 2;
-				c.g = colorIntToFloat(strHexToInt(getTStringCpy(&text[tsi->index], 2))); tsi->index += 2;
-				c.b = colorIntToFloat(strHexToInt(getTStringCpy(&text[tsi->index], 2))); tsi->index += 2;
-				tsi->colorOverwrite = COLOR_SRGB(c);
-			}
-
-			tsi->colorMode = !tsi->colorMode;
-		}
-	}
-}
 
 Vec2 getTextDim(char* text, Font* font, Vec2 startPos = vec2(0,0), int wrapWidth = 0) {
 	float maxX = startPos.x;
 
 	TextSimInfo tsi = initTextSimInfo(startPos);
 	while(true) {
-		textParseMarkers(text, &tsi, font, true);
+		updateMarkers(text, &tsi, font, true);
 
 		TextInfo ti;
 		if(!textSim(text, font, &tsi, &ti, startPos, wrapWidth)) break;
@@ -1699,9 +1767,6 @@ Vec2 testgetTextStartPos(char* text, Font* font, Vec2 startPos, Vec2i align = ve
 	Vec2 dim = getTextDim(text, font, startPos, wrapWidth);
 	startPos.x -= (align.x+1)*0.5f*dim.w;
 	startPos.y -= (align.y-1)*0.5f*dim.h;
-
-	// startPos.x = roundFloat(startPos.x);
-	// startPos.y = roundFloat(startPos.y);
 
 	return startPos;
 }
@@ -1725,11 +1790,8 @@ void drawText(char* text, Vec2 startPos, Vec2i align, int wrapWidth, TextSetting
 	Vec4 sc = COLOR_SRGB(settings.shadowColor);
 
 	pushColor(c);
-	// Choose texture based on color brightness.
+
 	int texId = font->tex.id;
-	float colorSum = c.x + c.y + c.z;
-	if(colorSum <= 1.0f) texId = font->darkTex.id;
-	else if(colorSum >= 2.0f) texId = font->brightTex.id;
 	glBindTexture(GL_TEXTURE_2D, texId);
 	glBegin(GL_QUADS);
 
@@ -1737,32 +1799,40 @@ void drawText(char* text, Vec2 startPos, Vec2i align, int wrapWidth, TextSetting
 	while(true) {
 		
 		Font* f = font;
-		textParseMarkers(text, &tsi, font);
+		updateMarkers(text, &tsi, font);
 		if(tsi.bold) f = font->boldFont;
 		if(tsi.italic) f = font->italicFont;
-		if(tsi.colorMode) pushColor(vec4(tsi.colorOverwrite, 1));
-		else pushColor(c);
 
 		TextInfo ti;
 		if(!textSim(text, f, &tsi, &ti, startPos, wrapWidth)) break;
 		if(text[ti.index] == '\n') continue;
 
-		if(settings.shadowMode != TEXT_NOSHADOW) {
+		if(settings.shadowMode != TEXTSHADOW_MODE_NOSHADOW) {
 			pushColor(sc);
 
-			if(settings.shadowMode == TEXT_SHADOW) {
-				Rect r = rectTrans(ti.r, normVec2(settings.shadowDir) * settings.shadowSize);
-				pushRect(r, ti.uv, z);
-			} else if(settings.shadowMode == TEXT_OUTLINE) {
+			if(settings.shadowMode == TEXTSHADOW_MODE_SHADOW) {
+				Vec2 p = ti.r.min + normVec2(settings.shadowDir) * settings.shadowSize;
+				Rect sr = rectBLDim(vec2(roundFloat(p.x), roundFloat(p.y)), rectDim(ti.r));
+				pushRect(sr, ti.uv, z);
+			} else if(settings.shadowMode == TEXTSHADOW_MODE_OUTLINE) {
 				for(int i = 0; i < 8; i++) {
+					
+					// Not sure if we should align to pixels on an outline.
+
 					Vec2 dir = rotateVec2(vec2(1,0), (M_2PI/8)*i);
 					Rect r = rectTrans(ti.r, dir*settings.shadowSize);
 					pushRect(r, ti.uv, z);
+
+					// Vec2 dir = rotateVec2(vec2(1,0), (M_2PI/8)*i);
+					// Vec2 p = ti.r.min + dir * settings.shadowSize;
+					// Rect sr = rectBLDim(vec2(roundFloat(p.x), roundFloat(p.y)), rectDim(ti.r));
+					// pushRect(sr, ti.uv, z);
 				}
 			}
-
-			pushColor(c);
 		}
+
+		if(tsi.colorMode) pushColor(vec4(tsi.colorOverwrite, 1));
+		else pushColor(c);
 
 		pushRect(ti.r, ti.uv, z);
 	}
@@ -2042,8 +2112,36 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 			GLenum glError = glGetError(); printf("GLError: %i\n", glError);
 		}
 
-		swapBuffers(sd);
+		if(!init) {
+			swapBuffers(sd);
+		}
 
 		*swapTime = timerInit();
 	}
+}
+
+void drawLastFrameStretched(HWND windowHandle, int w, int h) {
+	#if USE_SRGB 
+	glEnable(GL_FRAMEBUFFER_SRGB);
+	#endif 
+
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glLoadIdentity();
+	glViewport(0, 0, w, h);
+	glOrtho(0,1,1,0, -1, 1);
+
+	glBindSamplers(0, 1, &globalGraphicsState->samplers[SAMPLER_NORMAL]);
+
+	drawRect(rect(0, 1, 1, 0), rect(0,1,1,0), getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
+
+	#if USE_SRGB
+	glDisable(GL_FRAMEBUFFER_SRGB);
+	#endif
+
+	HDC dc = GetDC(windowHandle);
+	wglSwapIntervalEXT(0);
+	SwapBuffers(dc);
+	wglSwapIntervalEXT(1);
 }

@@ -16,9 +16,10 @@
 	
 	- Multiple selection.
 	- Shortest distance to camera for widgets.
-	- Selection doesnt select the closest to camera.
 	- Revert.
 	- Cleanup.
+	- Get pathtracing working again.
+	- Windows key slow.
 
 	- Panel.
 	- Investigae slow compile times with -d2cgsummary flag.
@@ -46,12 +47,10 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "external\stb_image_write.h"
 
-#define STB_RECT_PACK_IMPLEMENTATION
-#include "external\stb_rect_pack.h"
-
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "external\stb_truetype.h"
-
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include FT_PARAMETER_TAGS_H
+#include FT_MODULE_H
 
 
 
@@ -75,6 +74,7 @@ MemoryBlock* globalMemory;
 #include "openglDefines.cpp"
 #include "userSettings.cpp"
 #include "rendering.cpp"
+#include "newGui.cpp"
 
 #include "raycast.cpp"
 
@@ -184,6 +184,7 @@ struct AppData {
 
 	// App.
 
+	NewGui gui;
 	Font* font;
 
 	// 
@@ -310,12 +311,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(strLen(fd.fileName) <= 2) continue; // Skip ..
 
-			// if(strCompare(fd.fileName, "arrow.png")) {
-				Texture tex;
-				char* filePath = fillString("%s%s", App_Image_Folder, fd.fileName);
-				loadTextureFromFile(&tex, filePath, -1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
-				addTexture(tex);
-			// }
+			Texture tex;
+			char* filePath = fillString("%s%s", App_Image_Folder, fd.fileName);
+			loadTextureFromFile(&tex, filePath, -1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+			addTexture(tex);
 		}
 
 		//
@@ -337,7 +336,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		//
 		//
 
-		ad->msaaSamples = 4;
+		ad->msaaSamples = 8;
 		ad->dt = 1/(float)60;
 
 		ad->graphicsState.zOrder = 0;
@@ -359,23 +358,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 			attachToFrameBuffer(FRAMEBUFFER_DebugMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA8, 0, 0, ad->msaaSamples);
 			attachToFrameBuffer(FRAMEBUFFER_DebugNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA8, 0, 0);
 
-		// attachToFrameBuffer(FRAMEBUFFER_ScreenShot, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0);
 			attachToFrameBuffer(FRAMEBUFFER_ScreenShot, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8, 0, 0);
 
 			ad->updateFrameBuffers = true;
 
 
-
-		// ad->frameBufferSize = vec2i(2560, 1440);
-			ad->frameBufferSize = ws->biggestMonitorSize;
-			Vec2i fRes = ad->frameBufferSize;
+			Vec2i fRes = ws->currentRes;
 
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, fRes.w, fRes.h);
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, fRes.w, fRes.h);
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugMsaa, fRes.w, fRes.h);
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugNoMsaa, fRes.w, fRes.h);
-
-		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_ScreenShot, fRes.w, fRes.h);
 		}
 
 	//
@@ -420,7 +413,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->entityUI.localMode = false;
 		ad->entityUI.snapGridSize = 1;
 		ad->entityUI.snapGridDim = 100;
-}
+	}
 
 
 
@@ -431,6 +424,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 		SetWindowLongPtr(systemData->windowHandle, GWLP_WNDPROC, (LONG_PTR)mainWindowCallBack);
 
 		gs->screenRes = ws->currentRes;
+
+		// Bad news.
+		for(int i = 0; i < arrayCount(globalGraphicsState->fonts); i++) {
+			for(int j = 0; j < arrayCount(globalGraphicsState->fonts[0]); j++) {
+				Font* font = &globalGraphicsState->fonts[i][j];
+				if(font->heightIndex != 0) {
+					freeFont(font);
+				} else break;
+			}
+		}
 	}
 
 	// Update timer.
@@ -461,7 +464,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// updateCursor(ws);
 	}
 
-	UpdateWindow(systemData->windowHandle);
+	// UpdateWindow(systemData->windowHandle);
 
 	if(input->keysPressed[KEYCODE_ESCAPE]) {
 		if(ws->fullscreen) {
@@ -485,8 +488,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	if(ad->updateFrameBuffers) {
-		ad->updateFrameBuffers = false;
 		gs->screenRes = ws->currentRes;
+
+		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, ws->currentRes.w, ws->currentRes.h);
+		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, ws->currentRes.w, ws->currentRes.h);
+		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugMsaa, ws->currentRes.w, ws->currentRes.h);
+		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugNoMsaa, ws->currentRes.w, ws->currentRes.h);
+
+		ad->updateFrameBuffers = false;
 	}
 
 
@@ -1858,24 +1867,84 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glDisable(GL_NORMALIZE);
 	}
 
+	{
+		Rect sr = getScreenRect(ws);
+
+		// glOrtho(0, rectW(sr), -rectH(sr), 0, -10,10);
+		glViewport(0,0, rectW(sr), rectH(sr));
 
 
+		// newGuiBegin(NewGui* gui, Input* input = 0) {
+		NewGui* gui = &ad->gui;
+		newGuiBegin(gui, &ad->input);
+
+		{
+			Font* font = getFont("OpenSans-Regular.ttf", -17);
+
+			Vec4 cBackground = vec4(0.3f,1);
+			Vec4 cButton = vec4(0.5f,1);
+			Vec4 cOutline = vec4(0.9f,1);
+
+			float panelRounding = 7;
+			float buttonRounding = 4;
+
+			BoxSettings bs = boxSettings(cBackground, panelRounding, cOutline);
+			TextSettings ts = textSettings(font, vec4(0.99f,1));
+
+			BoxSettings bous = boxSettings(cButton, buttonRounding, cOutline);
+			TextBoxSettings bus = textBoxSettings(ts, bous);
+
+
+			gui->textSettings = ts;
+			gui->boxSettings = bs;
+			gui->buttonSettings = bus;
+
+			// TextSettings textSettings;
+			// BoxSettings boxSettings;
+			// TextBoxSettings textBoxSettings;
+			// TextBoxSettings buttonSettings;
+			// TextEditSettings editSettings;
+			// SliderSettings sliderSettings;
+			// ScrollRegionSettings scrollSettings;
+			// BoxSettings popupSettings;
+			// TextBoxSettings comboBoxSettings;
+		}
+
+		// Left panel.
+		#if 1
+		{
+			float panelOffset = 5;
+			float panelMargin = 10;
+			Vec2 panelDim = vec2(150,400);
+			Rect pr = rectTLDim(vec2(panelOffset,-panelOffset), panelDim);
+
+			newGuiQuickBox(gui, pr);
+
+			{
+				Rect r = rectExpand(pr, -vec2(panelMargin));
+
+				Font* font = gui->textSettings.font;
+				Vec2 p = rectTL(r);
+				float eh = font->height * 1.1f;
+				float ew = rectW(r);
+
+				newGuiQuickButton(gui, rectTLDim(p, vec2(ew, eh)), "Button!");
+			}
+		}
+		#endif
+
+		newGuiEnd(gui);
+	}
 
 	//@Draw Info.
-	#if 0
+	#if 1
 	{
 		Rect sr = getScreenRect(ws);
 		glViewport(0,0, rectW(sr), rectH(sr));
-		// glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
-
-		// Rect tr = ad->textureScreenRect;		
-		// glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
-
-
 
 		Rect tr = ad->textureScreenRect;
-		Font* font = getFont("OpenSans-Bold.ttf", 20);
-		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXT_SHADOW, vec2(1,-1), 1.5, vec4(0,0,0,1));
+		Font* font = getFont("OpenSans-Regular.ttf", -17);
+		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXTSHADOW_MODE_SHADOW, vec2(-1,-1), 1, vec4(0,0,0,1));
 
 		Vec2i texDim = ad->settings.texDim;
 
@@ -1886,9 +1955,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		drawText(fillString("%i. samples", ad->settings.sampleCount), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
 		drawText(fillString("%fms per pixel", (float)(ad->processTime/(texDim.x*texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-
-		drawText(fillString("cpos: %f,%f,%f", PVEC3(ad->world.camera.pos)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("crot: %f,%f,%f", PVEC3(ad->world.camera.rot)), p, vec2i(1,1), settings); p += vec2(0,-lh);
 	}
 	#endif
 

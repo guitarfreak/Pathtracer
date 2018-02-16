@@ -106,6 +106,12 @@ void freeAndSetNullSave(void* data) {
 	freeAndSetNullSave(ptr);          \
 	ptr = mallocString(count);
 
+void freeZero(void* data) {
+	if(data) {
+		free(data);
+		data = 0;
+	}
+}
 
 //
 // Strings
