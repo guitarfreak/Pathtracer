@@ -261,8 +261,6 @@ Layout* layoutQuickRowArray(Layout* node, Rect region, float* s, float count) {
 
 
 
-
-
 enum GuiFocus {
 	Gui_Focus_MLeft = 0,
 	Gui_Focus_MRight,
@@ -293,12 +291,27 @@ struct BoxSettings {
 BoxSettings boxSettings(Vec4 color, float roundedCorner, Vec4 borderColor) {
 	return {color, roundedCorner, borderColor};
 }
+BoxSettings boxSettings(Vec4 color, float roundedCorner) {
+	return {color, roundedCorner, 0};
+}
 BoxSettings boxSettings(Vec4 color) {
 	return {color, 0};
 }
 BoxSettings boxSettings() {
 	return {0};
 }
+
+struct CheckBoxSettings {
+	BoxSettings boxSettings;
+	Vec4 color;
+	float sizeMod;
+};
+
+CheckBoxSettings checkBoxSettings(BoxSettings boxSettings, Vec4 color, float sizeMod) {
+	return {boxSettings, color, sizeMod};
+}
+
+
 
 struct TextBoxSettings {
 	TextSettings textSettings;
@@ -354,7 +367,7 @@ struct SliderSettings {
 };
 
 SliderSettings sliderSettings(TextBoxSettings textBoxSettings, float size, float minSize, float lineWidth, float rounding, float heightOffset, Vec4 color, Vec4 lineColor) {
-	return {textBoxSettings, size, minSize, lineWidth, rounding, heightOffset, color, lineColor, 0,0,false,0};
+	return {textBoxSettings, size, minSize, lineWidth, rounding, heightOffset, color, lineColor, 1,1,false,0};
 }
 
 enum {
@@ -516,6 +529,8 @@ struct NewGui {
 	BoxSettings popupSettings;
 	TextBoxSettings comboBoxSettings;
 
+	CheckBoxSettings checkBoxSettings;
+
 	int zLevel;
 
 	Rect scissor;
@@ -530,7 +545,7 @@ struct NewGui {
 
 LayoutData* newGuiLayoutPush(NewGui* gui, LayoutData ld);
 LayoutData* newGuiLayoutPop(NewGui* gui, bool updateY = true);
-void newGuiBegin(NewGui* gui, Input* input = 0) {
+void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws) {
 	int voidId = 0;
 
 	gui->id = 1;
@@ -552,6 +567,7 @@ void newGuiBegin(NewGui* gui, Input* input = 0) {
 	gui->colorModActive = vec4(0.17f, 0);
 
 	gui->input = input;
+	gui->windowSettings = ws;
 
 	gui->scissor = rectCenDim(0,0,10000000,10000000);
 	gui->scissorStack[0] = gui->scissor;
@@ -1200,21 +1216,29 @@ Rect scissorTestIntersect(Rect scissor, Rect r) {
 }
 
 
+void drawArrow(Vec2 a, Vec2 b, Vec4 color, Rect scissor) {
+	
+}
 
 void drawText(Rect r, char* text, Vec2i align, Rect scissor, TextSettings settings) {
 	Vec2 pos = rectCen(r) + (rectDim(r)/2) * vec2(align);
 
-	// scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(-3,-3)));
+	scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(-0,-0)));
 	drawText(text, pos, align, settings);
-	// scissorTestScreen(scissor);
+	scissorTestScreen(scissor);
 }
 
 void drawBox(Rect r, Rect scissor, BoxSettings settings) {
 	scissorTestScreen(scissor);
 
+	r.left = roundFloat(r.left);
+	r.right = roundFloat(r.right);
+	r.top = roundFloat(r.top);
+	r.bottom = roundFloat(r.bottom);
+
 	if(settings.color.a != 0) {
 		drawRectRounded(r, settings.color, settings.roundedCorner);
-	}
+	}		
 	glLineWidth(0.5f);
 	if(settings.borderColor.a != 0) {
 		drawRectRoundedOutlined(r, settings.color, settings.borderColor, settings.roundedCorner);
@@ -1232,21 +1256,16 @@ void drawTextBox(Rect r, char* text, Vec2i align, Rect scissor, TextBoxSettings 
 
 void drawTextEditBox(char* text, Rect textRect, bool active, Rect scissor, TextEditVars editVars, TextEditSettings editSettings) {
 
-	BoxSettings* boxSettings = &editSettings.textBoxSettings.boxSettings;
+	BoxSettings* boSettings = &editSettings.textBoxSettings.boxSettings;
 	TextSettings* textSettings = &editSettings.textBoxSettings.textSettings;
 
 	Vec2 startPos = rectL(textRect) + vec2(editSettings.textOffset,0);
 	if(active) startPos += editVars.scrollOffset;
 
-	scissorTestScreen(scissor);
-	drawRect(textRect, boxSettings->color);
-	if(boxSettings->borderColor.a != 0) {
-		glLineWidth(0.5f);
-		drawRectOutline(textRect, boxSettings->borderColor);
-	}
+	drawBox(textRect, scissor, *boSettings);
 
 	// scissorTestScreen(rectExpand(scissor, vec2(-1,-1)));
-	scissorTestScreen(rectExpand(getRectScissor(textRect, scissor), vec2(-3,-3)));
+	scissorTestScreen(rectExpand(getRectScissor(textRect, scissor), vec2(-2,-2)));
 	// scissorTestScreen(getRectScissor(textRect, scissor));
 
 	if(active) text = editSettings.textBuffer;
@@ -1274,7 +1293,7 @@ void drawTextEditBox(char* text, Rect textRect, bool active, Rect scissor, TextE
 			cRect = rectTrans(cRect, vec2(2,0)); // Small offset for looks.
 		}
 
-		drawRect(cRect, editSettings.colorCursor);
+		drawBox(cRect, scissor, boxSettings(editSettings.colorCursor));
 	}
 
 	scissorTestScreen(scissor);
@@ -1299,22 +1318,19 @@ enum {
 void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSettings settings) {
 	scissorTestScreen(scissor);
 
-	BoxSettings* boxSettings = &settings.textBoxSettings.boxSettings;
+	BoxSettings* boSettings = &settings.textBoxSettings.boxSettings;
 	TextSettings* textSettings = &settings.textBoxSettings.textSettings;
 
 	// rectExpand(&sr, vec2(0,-settings.heightOffset*2));
 	rectExpand(&sr, vec2(-settings.heightOffset*2,-settings.heightOffset*2));
 
-	if(boxSettings->color.a > 0) drawRect(br, boxSettings->color);
+	drawBox(br, scissor, *boSettings);
 	if(settings.lineColor.a > 0 && settings.lineWidth > 0) {
 		glLineWidth(settings.lineWidth);
 		drawLine(rectL(br), rectR(br), settings.lineColor);
 	}
 
-	if(settings.rounding > 0) drawRectRounded(sr, settings.color, settings.rounding);
-	else drawRect(sr, settings.color);
-
-	if(boxSettings->borderColor.a != 0) drawRectOutline(br, boxSettings->borderColor);
+	drawBox(sr, scissor, boxSettings(settings.color, settings.rounding));
 
 	// scissorTestScreen(rectExpand(scissor, vec2(-1,-1)));
 	scissorTestScreen(getRectScissor(br, scissor));
@@ -1390,6 +1406,27 @@ bool newGuiQuickPButton(NewGui* gui, Rect r, TextBoxSettings* settings = 0) {
 	return newGuiQuickPButton(gui, r, "", vec2i(0,0), settings);
 }
 
+bool newGuiQuickCheckBox(NewGui* gui, Rect r, bool* value, CheckBoxSettings* settings = 0) {
+	Rect intersection = getRectScissor(gui->scissor, r);
+	bool active = newGuiGoButtonAction(gui, intersection, gui->zLevel);
+	if(rectEmpty(intersection)) return false;
+
+	if(active) {
+		*value = !(*value);
+	}
+
+	CheckBoxSettings set = settings == 0 ? gui->checkBoxSettings : *settings;
+	set.boxSettings.color += newGuiColorMod(gui);
+
+	Rect cr = rectCenDim(rectCen(r), vec2(min(rectW(r), rectH(r))));
+	drawBox(cr, gui->scissor, set.boxSettings);
+
+	if(*value) {
+		drawBox(rectExpand(cr, vec2(-rectW(cr)*(1 - set.sizeMod))), gui->scissor, boxSettings(set.color, set.boxSettings.roundedCorner/2));
+	}
+
+	return active;
+}
 
 bool newGuiQuickTextEditAllVars(NewGui* gui, Rect r, void* data, int varType, int maxSize, TextEditSettings* editSettings = 0) {
 	Rect intersect = getRectScissor(gui->scissor, r);
@@ -1530,6 +1567,8 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 
 			if(typeIsInt) floatVal = roundInt(floatVal);
 			slider = newGuiCalcSlider(floatVal, r, sliderSize, floatMin, floatMax, true);
+
+			if(gui->input->keysDown[KEYCODE_SHIFT]) floatVal = roundFloat(floatVal);
 		}
 
 		if(typeIsInt) Void_Dref(int, val) = floatVal;
@@ -2284,3 +2323,41 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 
 
 
+
+
+
+struct QuickRow {
+	Rect* rects;
+	int index;
+	int count;
+};
+
+Rect quickRowNext(QuickRow* qr) {
+	if(qr->index >= qr->count) return rect(0,0,0,0);
+	else return qr->rects[qr->index++];
+}
+
+QuickRow quickRow(Rect r, float padding, float* columns, int count) {
+	Layout lay = layout(rect(0,0,0,0), false, vec2i(-1,0), vec2(padding, 0));
+	Layout* node = layoutQuickRowArray(&lay, r, columns, count);
+	
+	QuickRow qr = {};
+	qr.rects = getTArray(Rect, count);
+	qr.index = 0;
+	qr.count = count;
+
+	for(int i = 0; i < count; i++) qr.rects[i] = layoutInc(&node);
+
+	return qr;
+}
+
+QuickRow quickRow(Rect r, float padding, float s0, float s1 = -1, float s2 = -1, float s3 = -1) {
+	float columns[4] = {};
+	int count = 0;
+	columns[count++] = s0;
+	if(s1 != -1) columns[count++] = s1;
+	if(s2 != -1) columns[count++] = s2;
+	if(s3 != -1) columns[count++] = s3;
+
+	return quickRow(r, padding, columns, count);
+}

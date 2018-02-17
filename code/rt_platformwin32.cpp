@@ -262,9 +262,9 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	return 0;
         } break;
 
-        case WM_MOVING: {
-        	InvalidateRect(window, NULL, FALSE); 
-        } break;
+        // case WM_MOVING: {
+        	// InvalidateRect(window, NULL, FALSE); 
+        // } break;
 
         default: {
             return DefWindowProc(window, message, wParam, lParam);

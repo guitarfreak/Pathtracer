@@ -15,18 +15,22 @@
 	- Refraction.
 	
 	- Multiple selection.
-	- Shortest distance to camera for widgets.
 	- Revert.
 	- Cleanup.
-	- Get pathtracing working again.
-	- Windows key slow.
+	- Cursor type flicker.
+	- Combobox.
+	- Block main keys when text editing.
 
 	- Panel.
 	- Investigae slow compile times with -d2cgsummary flag.
+	- Shortest distance to camera for widgets.
+	
+	- Detect thread count.
 
 	Done Today: 
 
 	Bugs:
+	- Windows key slow sometimes.
 
 =================================================================================
 */
@@ -185,21 +189,26 @@ struct AppData {
 	// App.
 
 	NewGui gui;
+	float panelHeight;
+
 	Font* font;
 
 	// 
 
 	World world;
+	EntityUI entityUI;
 	RaytraceSettings settings;
 	Vec3* buffer;
 	Texture raycastTexture;
 	Rect textureScreenRect;
 
-	bool activeProcessing;
 	bool keepUpdating;
-	bool drawSceneWired;
 	bool fitToScreen;
+	bool drawSceneWired;
 
+	char screenShotName[50];
+
+	bool activeProcessing;
 	int threadCount;
 	ProcessPixelsData threadData[RAYTRACE_THREAD_JOB_COUNT];
 	bool waitingForThreadStop;
@@ -208,15 +217,6 @@ struct AppData {
 	f64 processTime;
 
 	int texFastMode;
-
-	// Editing
-
-	EntityUI entityUI;
-
-	// // Test
-
-	// char* grid;
-	// Vec2i gridSize;
 };
 
 
@@ -264,8 +264,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	// Init.
 
 	if(init) {
-
-		// @AppInit.
 
 		//
 		// AppData.
@@ -413,6 +411,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->entityUI.localMode = false;
 		ad->entityUI.snapGridSize = 1;
 		ad->entityUI.snapGridDim = 100;
+
+
+		strCpy(ad->screenShotName, "screenshot");
 	}
 
 
@@ -528,43 +529,41 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#if 1
 
 	{
-
-
 		// @Settings.
-		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
-
-		// ad->settings.sampleMode = SAMPLE_MODE_MSAA8X;
-		// ad->settings.sampleMode = SAMPLE_MODE_GRID;
-		// ad->settings.sampleCountGrid = 1;
-		// ad->settings.sampleGridWidth = 1;
-
-		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
-		ad->settings.sampleCountGrid = 4;
-		ad->settings.sampleGridWidth = 10;
-
-		ad->settings.rayBouncesMax = 6;
-
-		ad->keepUpdating = false;
-    
-		ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
-		// ad->threadCount = 1;
-
-		// glClearColor(1,0,0,1);
-		// glClear(GL_COLOR_BUFFER_BIT);
 
 		if(init) {
+			ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
+
+			ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
+			ad->settings.sampleCountGrid = 4;
+			ad->settings.sampleGridWidth = 10;
+
+			ad->settings.rayBouncesMax = 6;
+
+			ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
+			// ad->threadCount = 1;
+
+			ad->keepUpdating = false;
+
 			ad->drawSceneWired = true;
 			ad->fitToScreen = true;
 
-			{
-				int count = 20000;
+			ad->settings.randomDirectionCount = 20000;
 
-				ad->settings.randomDirectionCount = count;
+			Camera* cam = &ad->world.camera;
+			cam->pos = vec3(0, -50, 10);
+			cam->rot = vec3(0, 0, 0);
+			cam->fov = 90;
+			cam->dim.w = 10;
+			cam->farDist = 10000;
+
+			// Precalc random directions.
+			{
+				int count = ad->settings.randomDirectionCount;
 				ad->settings.randomDirections = mallocArray(Vec3, count);
 				float precision = 0.001f;
 
 				for(int i = 0; i < count; i++) {
-
 					// Cube discard method.
 
 					Vec3 randomDir;
@@ -577,20 +576,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					ad->settings.randomDirections[i] = randomDir;
 				}
 			}
-		}
-
-		// if(init || reload) {
-		if(init) {
-			Camera* cam = &ad->world.camera;
-			cam->pos = vec3(0, -50, 10);
-			cam->rot = vec3(0, 0, 0);
-			cam->fov = 90;
-
-			float aspectRatio = (float)ad->settings.texDim.w / ad->settings.texDim.h;
-			cam->dim.w = 10;
-			cam->dim.h = cam->dim.w*(1/aspectRatio);
-			cam->nearDist = camDistanceFromFOVandWidth(cam->fov, cam->dim.w);
-			cam->farDist = 10000;
 		}
 
 		// Mouse capture.
@@ -636,6 +621,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			Camera* cam = &ad->world.camera;
+
+			float aspectRatio = (float)ad->settings.texDim.w / ad->settings.texDim.h;
+			cam->dim.h = cam->dim.w*(1/aspectRatio);
+			cam->nearDist = camDistanceFromFOVandWidth(cam->fov, cam->dim.w);
 
 			if(ad->fpsMode) {
 				float speed = 0.1f;
@@ -906,11 +895,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 				int sampleCount;
 				if(mode == SAMPLE_MODE_GRID) sampleCount = settings->sampleCountGrid*settings->sampleCountGrid;
 				else if(mode == SAMPLE_MODE_BLUE) {
-					settings->sampleCountGrid *= 1.3f;  // Mod for blue noise.
-					sampleCount = blueNoise(rect(0,0,1,1), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
+					float sampleCountGrid = settings->sampleCountGrid * 1.3f;  // Mod for blue noise.
+					sampleCount = blueNoise(rect(0,0,1,1), 1/(float)sampleCountGrid, &blueNoiseSamples);
 				} else if(mode == SAMPLE_MODE_BLUE_MULTI) {
-					settings->sampleCountGrid *= 1.3f;
-					sampleCount = blueNoise(rect(vec2(0.0f),vec2(settings->sampleGridWidth)), 1/(float)settings->sampleCountGrid, &blueNoiseSamples);
+					float sampleCountGrid = settings->sampleCountGrid * 1.3f;
+					sampleCount = blueNoise(rect(vec2(0.0f),vec2(settings->sampleGridWidth)), 1/(float)sampleCountGrid, &blueNoiseSamples);
 				}
 				else if(mode == SAMPLE_MODE_MSAA4X) sampleCount = 4;
 				else if(mode == SAMPLE_MODE_MSAA8X) sampleCount = 8;
@@ -1046,6 +1035,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		// Screenshot.
+		#if 0
 		if(input->keysPressed[KEYCODE_RETURN] && !ad->activeProcessing) {
 			Vec2i texDim = ad->settings.texDim;
 			int size = texDim.w * texDim.h;
@@ -1062,12 +1052,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			free(intBuffer);
 		}
+		#endif
 
-		if(input->keysPressed[KEYCODE_1]) ad->texFastMode = 0;
-		if(input->keysPressed[KEYCODE_2]) ad->texFastMode = 1;
-		if(input->keysPressed[KEYCODE_3]) ad->texFastMode = 2;
-		if(input->keysPressed[KEYCODE_4]) ad->texFastMode = 3;
-		if(input->keysPressed[KEYCODE_5]) ad->texFastMode = 4;
+		// if(input->keysPressed[KEYCODE_1]) ad->texFastMode = 0;
+		// if(input->keysPressed[KEYCODE_2]) ad->texFastMode = 1;
+		// if(input->keysPressed[KEYCODE_3]) ad->texFastMode = 2;
+		// if(input->keysPressed[KEYCODE_4]) ad->texFastMode = 3;
+		// if(input->keysPressed[KEYCODE_5]) ad->texFastMode = 4;
 
 		{
 
@@ -1877,103 +1868,212 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glViewport(0,0, rectW(sr), rectH(sr));
 
 
-		// newGuiBegin(NewGui* gui, Input* input = 0) {
 		NewGui* gui = &ad->gui;
-		newGuiBegin(gui, &ad->input);
+		newGuiBegin(gui, &ad->input, ws);
 
 		{
-			Font* font = getFont("OpenSans-Regular.ttf", -17);
-
+			Font* font = getFont("LiberationSans-Regular.ttf", -15, "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf");
+			
+			// Dark.
+			Vec4 cText = vec4(1,1);
 			Vec4 cBackground = vec4(0.3f,1);
-			Vec4 cButton = vec4(0.5f,1);
-			Vec4 cOutline = vec4(0.9f,1);
+			Vec4 cEdit = vec4(0.2f,1);
+			Vec4 cButton = vec4(0.4f,1);
+			Vec4 cOutline = vec4(0.7f,1);
+
+			// Bright.
+			// Vec4 cText = vec4(0,1);
+			// Vec4 cBackground = vec4(1,1);
+			// Vec4 cEdit = vec4(0.9f,1);
+			// Vec4 cButton = vec4(0.7f,1);
+			// Vec4 cOutline = vec4(0.1f,1);
 
 			float panelRounding = 7;
 			float buttonRounding = 4;
 
 			BoxSettings bs = boxSettings(cBackground, panelRounding, cOutline);
-			TextSettings ts = textSettings(font, vec4(0.99f,1));
+			TextSettings ts = textSettings(font, cText);
 
 			BoxSettings bous = boxSettings(cButton, buttonRounding, cOutline);
 			TextBoxSettings bus = textBoxSettings(ts, bous);
 
-
 			gui->textSettings = ts;
 			gui->boxSettings = bs;
+			gui->textBoxSettings = textBoxSettings(ts, bs);
 			gui->buttonSettings = bus;
 
-			// TextSettings textSettings;
-			// BoxSettings boxSettings;
-			// TextBoxSettings textBoxSettings;
-			// TextBoxSettings buttonSettings;
-			// TextEditSettings editSettings;
-			// SliderSettings sliderSettings;
+			TextBoxSettings etbs = gui->textBoxSettings;
+			etbs.boxSettings.color = cEdit;
+			etbs.boxSettings.roundedCorner = 0;
+			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, vec4(0.5f,0.2,0,1), vec4(0,1,1,1), 5);
+			gui->sliderSettings = sliderSettings(etbs, 15, 15, 0, 0, 4, cButton, vec4(0,0,0,0));
+
 			// ScrollRegionSettings scrollSettings;
 			// BoxSettings popupSettings;
 			// TextBoxSettings comboBoxSettings;
+
+			BoxSettings cbs = gui->boxSettings;
+			cbs.color = cEdit;
+			gui->checkBoxSettings = checkBoxSettings(cbs, cButton, 0.5f);
 		}
 
 		// Left panel.
-		#if 0
+		#if 1
 		{
-			float panelOffset = 5;
-			float panelMargin = 10;
-			Vec2 panelDim = vec2(150,400);
+			float panelOffset = 0;
+			float panelMargin = 5;
+
+			Vec2 panelDim = vec2(200,ad->panelHeight);
 			Rect pr = rectTLDim(vec2(panelOffset,-panelOffset), panelDim);
 
 			newGuiQuickBox(gui, pr);
 
+			if(init) newGuiScissorPush(gui, rect(0,0,0,0));
 			{
-				Rect pri = rectExpand(pr, -vec2(panelMargin));
+				Rect pri = rectExpand(pr, -vec2(panelMargin*2));
 
 				Font* font = gui->textSettings.font;
+
+				float elementHeight = font->height * 1.5f;
+				float elementWidth = rectW(pri);
+				Vec2 padding = vec2(panelMargin-1, panelMargin-1);
+
 				Vec2 p = rectTL(pri);
-				float eh = font->height * 1.2f;
-				float ew = rectW(pri);
-				float gap = panelMargin/2;
+				float eh = elementHeight;
+				float ew = elementWidth;
+				Vec2 pad = padding;
 
-				Rect r;
+				{
+					RaytraceSettings* settings = &ad->settings;
+					World* world = &ad->world;
 
-				r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+gap;
-				newGuiQuickText(gui, r, "Pathtracer Settings", vec2i(0,0));
+					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, vec4(0, 1));
+					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings(vec4(0,0.4f,0.6f,0.5f)));
 
-				RaytraceSettings* s = &ad->settings;
+					Rect r;
+					char* s;
+					QuickRow qr;
 
-				gap = 1;
-				r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+gap;
-				newGuiQuickText(gui, r, fillString("TextDim %i %i", s->texDim.w, s->texDim.h), vec2i(-1,0));
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
 
-				r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+gap;
-				newGuiQuickText(gui, r, fillString("SampleMode %i", s->sampleMode, s->texDim.h), vec2i(-1,0));
+					s = "TexDim";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.w);
+					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.h);
 
+					s = "SampleMode";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+					newGuiQuickSlider(gui, quickRowNext(&qr), &settings->sampleMode, 0, SAMPLE_MODE_COUNT-1);
+
+					s = "SampleGridDim";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
+
+					s = "SampleCellCount";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
+
+					s = "MaxRayBounces";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMax);
+
+
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					newGuiQuickTextBox(gui, r, "<b>App Settings<b>", vec2i(0,0), &headerSettings);
+
+					s = "KeepUpdating";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, eh); 
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
+					quickRowNext(&qr);
+					newGuiQuickCheckBox(gui, quickRowNext(&qr), &ad->keepUpdating);
+
+					s = "FitToScreen";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, eh);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
+					quickRowNext(&qr);
+					newGuiQuickCheckBox(gui, quickRowNext(&qr), &ad->fitToScreen);
+
+					s = "Cam Fov";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+					newGuiQuickSlider(gui, quickRowNext(&qr), &world->camera.fov, 20, 150);
+
+
+					eh = font->height;
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					newGuiQuickTextBox(gui, r, "<b>Statistics<b>", vec2i(0,0), &headerSettings);
+
+					char* stats[] = {
+						"Pixel count", fillString("%i.", settings->texDim.x * settings->texDim.h),
+						"Samples per pixel", fillString("%i.", ad->settings.sampleCount), 
+						"Total samples", fillString("%i.", settings->texDim.x * settings->texDim.h * ad->settings.sampleCount), 
+						"Total time", fillString("%fs", (float)ad->processTime),
+						"Time per pixel", fillString("%fms", (float)(ad->processTime/(settings->texDim.x*settings->texDim.y)*1000000)),
+					};
+
+					for(int i = 0; i < arrayCount(stats); i += 2) {
+						char* s1 = stats[i];
+						char* s2 = stats[i+1];
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s1, font).w, 0, getTextDim(s2, font).w);
+
+						newGuiQuickText(gui, quickRowNext(&qr), s1, vec2i(-1,0));
+						quickRowNext(&qr);
+						newGuiQuickText(gui, quickRowNext(&qr), s2, vec2i(-1,0));
+					}
+					eh = elementHeight;
+
+
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, 0.6f, 0);
+					newGuiQuickTextEdit(gui, quickRowNext(&qr), ad->screenShotName, arrayCount(ad->screenShotName)-1);
+
+					if(newGuiQuickButton(gui, quickRowNext(&qr), "Screenshot")) {
+						if(!ad->activeProcessing && ad->buffer) {
+							Vec2i texDim = ad->settings.texDim;
+							int size = texDim.w * texDim.h;
+							char* intBuffer = mallocArray(char, size*3);
+
+							Vec3* floatBuffer = ad->buffer;
+							for(int i = 0; i < size; i++) {
+								intBuffer[i*3 + 0] = colorFloatToInt(floatBuffer[i].r);
+								intBuffer[i*3 + 1] = colorFloatToInt(floatBuffer[i].g);
+								intBuffer[i*3 + 2] = colorFloatToInt(floatBuffer[i].b);
+							}
+
+							stbi_write_png(fillString("%s%s%s", "Screenshots\\", ad->screenShotName, ".png"), texDim.w, texDim.h, 3, intBuffer, 0);
+
+							free(intBuffer);
+						}
+					}
+
+				}
+
+				ad->panelHeight = pr.top - p.y - pad.y + panelMargin;
 			}
 		}
 		#endif
 
 		newGuiEnd(gui);
 	}
-
-	//@Draw Info.
-	#if 1
-	{
-		Rect sr = getScreenRect(ws);
-		glViewport(0,0, rectW(sr), rectH(sr));
-
-		Rect tr = ad->textureScreenRect;
-		Font* font = getFont("OpenSans-Regular.ttf", -17);
-		TextSettings settings = textSettings(font, vec4(1,0.5f,0,1), TEXTSHADOW_MODE_SHADOW, vec2(-1,-1), 1, vec4(0,0,0,1));
-
-		Vec2i texDim = ad->settings.texDim;
-
-		Vec2 p = rectTR(tr) + vec2(-font->height*0.25f,0);
-		float lh = font->height * 0.9f;
-		drawText(fillString("%i x %i", texDim.x, texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%i. pixels", texDim.x * texDim.h), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%i. samples", ad->settings.sampleCount), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%fs", (float)ad->processTime), p, vec2i(1,1), settings); p += vec2(0,-lh);
-		drawText(fillString("%fms per pixel", (float)(ad->processTime/(texDim.x*texDim.y)*1000000)), p, vec2i(1,1), settings); p += vec2(0,-lh);
-	}
-	#endif
 
 	#endif
 

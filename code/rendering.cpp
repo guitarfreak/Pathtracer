@@ -643,11 +643,12 @@ Font* getFont(char* fontFile, float heightIndex, char* boldFontFile = 0, char* i
 		if(boldFontFile) {
 			fontSlot->boldFont = getPStruct(Font);
 			fontInit(fontSlot->boldFont, boldFontFile, heightIndex);
-		}
+		} else font->boldFont = 0;
+
 		if(italicFontFile) {
 			fontSlot->italicFont = getPStruct(Font);
 			fontInit(fontSlot->italicFont, italicFontFile, heightIndex);
-		}
+		} else font->italicFont = 0;
 	}
 
 	return fontSlot;
@@ -1562,31 +1563,24 @@ void updateMarkers(char* text, TextSimInfo* tsi, Font* font, bool skip = false) 
 	int type;
 	int length = 0;
 	while(length = parseTextMarkers(text + tsi->index, tsi, &type)) {
-	// if(length) {
-		if(skip) {
-			tsi->index += length;
-			tsi->wrapIndex += length;
-			if(type == TEXT_MARKER_COLOR) {
-				tsi->colorMode = !tsi->colorMode;
-			}
-			continue;
-		}
-
 		switch(type) {
 			case TEXT_MARKER_BOLD: {
 				tsi->index += length;
 				tsi->wrapIndex += length;
 
 				if(!font->boldFont) return;
-				if(!tsi->bold) {
-					glEnd();
-					glBindTexture(GL_TEXTURE_2D, font->boldFont->tex.id);
-					glBegin(GL_QUADS);
-				} else {
-					glEnd();
-					glBindTexture(GL_TEXTURE_2D, font->tex.id);
-					glBegin(GL_QUADS);
+				if(!skip) {
+					if(!tsi->bold) {
+						glEnd();
+						glBindTexture(GL_TEXTURE_2D, font->boldFont->tex.id);
+						glBegin(GL_QUADS);
+					} else {
+						glEnd();
+						glBindTexture(GL_TEXTURE_2D, font->tex.id);
+						glBegin(GL_QUADS);
+					}
 				}
+
 				tsi->bold = !tsi->bold;
 			} break;
 
@@ -1595,19 +1589,28 @@ void updateMarkers(char* text, TextSimInfo* tsi, Font* font, bool skip = false) 
 				tsi->wrapIndex += length;
 
 				if(!font->italicFont) return;
-				if(!tsi->italic && font->italicFont) {
-					glEnd();
-					glBindTexture(GL_TEXTURE_2D, font->italicFont->tex.id);
-					glBegin(GL_QUADS);
-				} else {
-					glEnd();
-					glBindTexture(GL_TEXTURE_2D, font->tex.id);
-					glBegin(GL_QUADS);
+				if(!skip) {
+					if(!tsi->italic && font->italicFont) {
+						glEnd();
+						glBindTexture(GL_TEXTURE_2D, font->italicFont->tex.id);
+						glBegin(GL_QUADS);
+					} else {
+						glEnd();
+						glBindTexture(GL_TEXTURE_2D, font->tex.id);
+						glBegin(GL_QUADS);
+					}
 				}
+
 				tsi->italic = !tsi->italic;
 			} break;
 
 			case TEXT_MARKER_COLOR: {
+				if(skip) {
+					tsi->index += length;
+					tsi->wrapIndex += length;
+					if(type == TEXT_MARKER_COLOR) tsi->colorMode = !tsi->colorMode;
+					continue;
+				} 
 				tsi->index += Marker_Size;
 				tsi->wrapIndex += Marker_Size;
 				Vec3 c;
@@ -1732,7 +1735,7 @@ TextSettings textSettings(Font* font, Vec4 color, int shadowMode, Vec2 shadowDir
 	return {font, color, shadowMode, shadowDir, shadowSize, shadowColor};
 }
 TextSettings textSettings(Font* font, Vec4 color, int shadowMode, float shadowSize, Vec4 shadowColor) {
-	return {font, color, shadowMode, vec2(1,-1), shadowSize, shadowColor};
+	return {font, color, shadowMode, vec2(-1,-1), shadowSize, shadowColor};
 }
 TextSettings textSettings(Font* font, Vec4 color) {
 	return {font, color};
@@ -1750,10 +1753,13 @@ Vec2 getTextDim(char* text, Font* font, Vec2 startPos = vec2(0,0), int wrapWidth
 
 	TextSimInfo tsi = initTextSimInfo(startPos);
 	while(true) {
+		Font* f = font;
 		updateMarkers(text, &tsi, font, true);
+		if(tsi.bold) f = font->boldFont;
+		else if(tsi.italic) f = font->italicFont;
 
 		TextInfo ti;
-		if(!textSim(text, font, &tsi, &ti, startPos, wrapWidth)) break;
+		if(!textSim(text, f, &tsi, &ti, startPos, wrapWidth)) break;
 
 		maxX = max(maxX, ti.pos.x + ti.posAdvance.x);
 	}
@@ -1801,7 +1807,7 @@ void drawText(char* text, Vec2 startPos, Vec2i align, int wrapWidth, TextSetting
 		Font* f = font;
 		updateMarkers(text, &tsi, font);
 		if(tsi.bold) f = font->boldFont;
-		if(tsi.italic) f = font->italicFont;
+		else if(tsi.italic) f = font->italicFont;
 
 		TextInfo ti;
 		if(!textSim(text, f, &tsi, &ti, startPos, wrapWidth)) break;
@@ -1852,13 +1858,18 @@ void drawTextLineCulled(char* text, Font* font, Vec2 startPos, float width, Vec4
 
 	TextSimInfo tsi = initTextSimInfo(startPos);
 	while(true) {
+		Font* f = font;
+		updateMarkers(text, &tsi, font, true);
+		if(tsi.bold) f = font->boldFont;
+		else if(tsi.italic) f = font->italicFont;
+
 		TextInfo ti;
-		if(!textSim(text, font, &tsi, &ti, startPos, 0)) break;
+		if(!textSim(text, f, &tsi, &ti, startPos, 0)) break;
 		if(text[ti.index] == '\n') continue;
 
 		if(ti.pos.x > startPos.x + width) break;
 
-		drawRect(ti.r, color, ti.uv, font->tex.id);
+		drawRect(ti.r, color, ti.uv, f->tex.id);
 	}
 }
 
@@ -1867,11 +1878,16 @@ Vec2 textIndexToPos(char* text, Font* font, Vec2 startPos, int index, Vec2i alig
 
 	TextSimInfo tsi = initTextSimInfo(startPos);
 	while(true) {
+		Font* f = font;
+		updateMarkers(text, &tsi, font, true);
+		if(tsi.bold) f = font->boldFont;
+		else if(tsi.italic) f = font->italicFont;
+
 		TextInfo ti;
-		int result = textSim(text, font, &tsi, &ti, startPos, wrapWidth);
+		int result = textSim(text, f, &tsi, &ti, startPos, wrapWidth);
 
 		if(ti.index == index) {
-			Vec2 pos = ti.pos - vec2(0, font->height/2);
+			Vec2 pos = ti.pos - vec2(0, f->height/2);
 			return pos;
 		}
 
@@ -1892,8 +1908,13 @@ void drawTextSelection(char* text, Font* font, Vec2 startPos, int index1, int in
 
 	TextSimInfo tsi = initTextSimInfo(startPos);
 	while(true) {
+		Font* f = font;
+		updateMarkers(text, &tsi, font, true);
+		if(tsi.bold) f = font->boldFont;
+		else if(tsi.italic) f = font->italicFont;
+
 		TextInfo ti;
-		int result = textSim(text, font, &tsi, &ti, startPos, wrapWidth);
+		int result = textSim(text, f, &tsi, &ti, startPos, wrapWidth);
 
 		bool endReached = ti.index == index2;
 
@@ -1905,7 +1926,7 @@ void drawTextSelection(char* text, Font* font, Vec2 startPos, int index1, int in
 				else if(!result) lineEnd = tsi.pos;
 				else lineEnd = ti.pos;
 
-				Rect r = rect(lineStart - vec2(0,font->height), lineEnd);
+				Rect r = rect(lineStart - vec2(0,f->height), lineEnd);
 				drawRect(r, color);
 
 				lineStart = ti.pos;
@@ -1931,10 +1952,15 @@ int textMouseToIndex(char* text, Font* font, Vec2 startPos, Vec2 mousePos, Vec2i
 	bool foundLine = false;
 	TextSimInfo tsi = initTextSimInfo(startPos);
 	while(true) {
+		Font* f = font;
+		updateMarkers(text, &tsi, font, true);
+		if(tsi.bold) f = font->boldFont;
+		else if(tsi.italic) f = font->italicFont;
+
 		TextInfo ti;
-		int result = textSim(text, font, &tsi, &ti, startPos, wrapWidth);
+		int result = textSim(text, f, &tsi, &ti, startPos, wrapWidth);
 		
-		bool fLine = valueBetween(mousePos.y, ti.pos.y - font->height, ti.pos.y);
+		bool fLine = valueBetween(mousePos.y, ti.pos.y - f->height, ti.pos.y);
 		if(fLine) foundLine = true;
 		else if(foundLine) return ti.index-1;
 

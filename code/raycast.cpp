@@ -228,13 +228,13 @@ enum {
 
 struct RaytraceSettings {
 	int mode;
-
 	Vec2i texDim;
-
 	int sampleMode;
 	int sampleCountGrid;
-
+	int sampleGridWidth;
 	int rayBouncesMax;
+
+	// Precalc.
 
 	int randomDirectionCount;
 	Vec3* randomDirections;
@@ -242,11 +242,9 @@ struct RaytraceSettings {
 	int sampleCount;
 	Vec2* samples;
 
-	int sampleGridWidth;
+	// Blue noise.
 	int sampleGridCount; // width*width
 	int* sampleGridOffsets;
-
-	// Precalc.
 
 	Vec3 camTopLeft;
 	Vec2 pixelPercent;
