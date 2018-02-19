@@ -23,8 +23,12 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
 	WindowsData wData = windowsData(instance, prevInstance, commandLine, showCode);
 
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	int coreCount = sysinfo.dwNumberOfProcessors;
+
 	ThreadQueue threadQueue;
-	threadInit(&threadQueue, 7);
+	threadInit(&threadQueue, coreCount-1);
 
 	AppMemory appMemory = {};
 

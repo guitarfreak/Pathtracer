@@ -82,3 +82,14 @@ void clearTMemory(MemoryBlock * memory = 0) {
 	clearMemoryArray(memory->tMemory);
 }
 
+
+
+char** getTStringArray(char** strings, int count) {
+
+	char** array = getTArray(char*, count);
+	for(int i = 0; i < count; i++) {
+		array[i] = getTString(strLen(strings[i]));
+	}
+
+	return array;
+}

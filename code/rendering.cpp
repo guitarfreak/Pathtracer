@@ -2036,10 +2036,6 @@ void openglClearFrameBuffers() {
 	bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 	glClearColor(0,0,0,0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-	bindFrameBuffer(FRAMEBUFFER_DebugMsaa);
-	glClearColor(0,0,0,0);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
 void openglDefaultSetup() {
@@ -2124,7 +2120,7 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 
 	{
 		// Sleep until monitor refresh.
-		if(!init) {
+		if(!init && !globalVsyncSwitch) {
 			double frameTime = timerUpdate(*swapTime);
 			double sleepTime = ((double)1/60) - frameTime;
 			if(sleepTime < 0) sleepTime = ((double)1/30) - frameTime;
@@ -2139,35 +2135,20 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 		}
 
 		if(!init) {
+        	if(globalVsyncSwitch) {
+        		wglSwapIntervalEXT(0);
+        	}
+
 			swapBuffers(sd);
+
+        	if(globalVsyncSwitch) {
+        		wglSwapIntervalEXT(1);
+        		globalVsyncSwitch = false;
+        	}
 		}
 
 		*swapTime = timerInit();
 	}
-}
 
-void drawLastFrameStretched(HWND windowHandle, int w, int h) {
-	#if USE_SRGB 
-	glEnable(GL_FRAMEBUFFER_SRGB);
-	#endif 
 
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glLoadIdentity();
-	glViewport(0, 0, w, h);
-	glOrtho(0,1,1,0, -1, 1);
-
-	glBindSamplers(0, 1, &globalGraphicsState->samplers[SAMPLER_NORMAL]);
-
-	drawRect(rect(0, 1, 1, 0), rect(0,1,1,0), getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
-
-	#if USE_SRGB
-	glDisable(GL_FRAMEBUFFER_SRGB);
-	#endif
-
-	HDC dc = GetDC(windowHandle);
-	wglSwapIntervalEXT(0);
-	SwapBuffers(dc);
-	wglSwapIntervalEXT(1);
 }

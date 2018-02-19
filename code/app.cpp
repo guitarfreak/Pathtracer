@@ -24,16 +24,20 @@
 	- Panel.
 	- Investigae slow compile times with -d2cgsummary flag.
 	- Shortest distance to camera for widgets.
-	
-	- Detect thread count.
+
+	- Could do custom window border with WM_NCHITTEST.
+
+	- Check for monitor framerate and Sleep accordingly.
 
 	Done Today: 
 
 	Bugs:
 	- Windows key slow sometimes.
+	- F11 rapid pressing.
 
 =================================================================================
 */
+
 
 
 // External.
@@ -273,7 +277,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		*ad = {};
 
 		// int windowStyle = (WS_POPUP | WS_BORDER);
-		// int windowStyle = (WS_POPUP | WS_BORDER);
+		// int windowStyle = (WS_POPUP);
 		int windowStyle = WS_OVERLAPPEDWINDOW;
 		initSystem(systemData, ws, windowsData, vec2i(1920*0.85f, 1080*0.85f), windowStyle, 1);
 
@@ -289,7 +293,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 		int fps = wglGetSwapIntervalEXT();
 
 		initInput(&ad->input);
+		systemData->input = &ad->input;
 
+		systemData->minWindowDim = vec2i(200,200);
+		systemData->maxWindowDim = ws->biggestMonitorSize;
 
 		//
 		// Setup Textures.
@@ -353,20 +360,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_DEPTH, GL_DEPTH_COMPONENT32F, 0, 0, ad->msaaSamples);
 			attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0);
 
-			attachToFrameBuffer(FRAMEBUFFER_DebugMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA8, 0, 0, ad->msaaSamples);
-			attachToFrameBuffer(FRAMEBUFFER_DebugNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA8, 0, 0);
-
 			attachToFrameBuffer(FRAMEBUFFER_ScreenShot, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8, 0, 0);
 
 			ad->updateFrameBuffers = true;
 
 
-			Vec2i fRes = ws->currentRes;
+			ad->frameBufferSize = ws->biggestMonitorSize;
+			Vec2i fRes = ad->frameBufferSize;
+			
+			// Vec2i fRes = ws->currentRes;
 
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, fRes.w, fRes.h);
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, fRes.w, fRes.h);
-			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugMsaa, fRes.w, fRes.h);
-			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugNoMsaa, fRes.w, fRes.h);
 		}
 
 	//
@@ -423,6 +428,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 	if(reload) {
 		loadFunctions();
 		SetWindowLongPtr(systemData->windowHandle, GWLP_WNDPROC, (LONG_PTR)mainWindowCallBack);
+	    SetWindowLongPtr(systemData->windowHandle, GWLP_USERDATA, (LONG_PTR)systemData);
+
+	    DeleteFiber(systemData->messageFiber);
+	    systemData->messageFiber = CreateFiber(0, (PFIBER_START_ROUTINE)updateInput, systemData);
 
 		gs->screenRes = ws->currentRes;
 
@@ -451,11 +460,33 @@ extern "C" APPMAINFUNCTION(appMain) {
 	clearTMemory();
 
 	//
-	// Update input.
+	// Update input.WM_SIZE
 	//
 
 	{
-		updateInput(&ad->input, windowHandle);
+		if(false)
+		{
+			SystemData* sd = systemData;
+
+			sd->titleHeight = 30;
+			sd->borderSize = 10;
+			sd->visualBorderSize = 5;
+			Vec2 bDim = vec2(40,40);
+			sd->rMinimize = rectTLDim(vec2(100,-100), bDim);
+			sd->rMaximize = rectTLDim(vec2(200,-100), bDim);
+			sd->rClose = rectTLDim(vec2(300,-100), bDim);
+
+			Vec2i res = ws->currentRes;
+
+			ws->currentWindowRes = res;
+			ws->windowRect = rect(0, -ws->currentWindowRes.h, ws->currentWindowRes.w, 0);
+
+			Rect wr = ws->windowRect;
+			ws->clientRect = rect(wr.min + vec2(sd->visualBorderSize), wr.max - vec2(sd->visualBorderSize, sd->titleHeight));
+			ws->currentClientRes = vec2i(roundInt(rectW(ws->clientRect)), roundInt(rectH(ws->clientRect)));
+		}
+
+		SwitchToFiber(systemData->messageFiber);
 
 		if(ad->input.closeWindow) *isRunning = false;
 
@@ -463,9 +494,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// ws->customCursor = true;
 		// updateCursor(ws);
-	}
 
-	// UpdateWindow(systemData->windowHandle);
+		// UpdateWindow(systemData->windowHandle);
+	}
 
 	if(input->keysPressed[KEYCODE_ESCAPE]) {
 		if(ws->fullscreen) {
@@ -478,38 +509,31 @@ extern "C" APPMAINFUNCTION(appMain) {
 	if(input->keysPressed[KEYCODE_F11]) {
 		if(ws->fullscreen) setWindowMode(windowHandle, ws, WINDOW_MODE_WINDOWED);
 		else setWindowMode(windowHandle, ws, WINDOW_MODE_FULLBORDERLESS);
+
+		// Bug.
+		input->keysPressed[KEYCODE_F11] = false;
 	}
 
-
-	if(windowSizeChanged(windowHandle, ws)) {
+	if(input->resize) {
 		if(!windowIsMinimized(windowHandle)) {
 			updateResolution(windowHandle, ws);
 			ad->updateFrameBuffers = true;
 		}
+		input->resize = false;
 	}
 
 	if(ad->updateFrameBuffers) {
 		gs->screenRes = ws->currentRes;
 
-		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, ws->currentRes.w, ws->currentRes.h);
-		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, ws->currentRes.w, ws->currentRes.h);
-		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugMsaa, ws->currentRes.w, ws->currentRes.h);
-		setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_DebugNoMsaa, ws->currentRes.w, ws->currentRes.h);
+		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, ws->currentRes.w, ws->currentRes.h);
+		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, ws->currentRes.w, ws->currentRes.h);
 
 		ad->updateFrameBuffers = false;
 	}
 
-
-
-
 	openglDebug();
 	openglDefaultSetup();
 	openglClearFrameBuffers();
-
-
-
-
-
 
 
 
@@ -523,6 +547,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 	}
+
+	drawRect(ws->windowRect, vec4(1,0,0,1));
+
+	drawRect(rectTLDim(100,-100,50,50), vec4(1,0,0,1));
 
 
 
@@ -628,6 +656,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(ad->fpsMode) {
 				float speed = 0.1f;
+				// float speed = 1;
 				
 				cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
 				cam->rot.y += input->mouseDelta.y*speed*ad->dt;
@@ -1383,17 +1412,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glDisable(GL_LIGHTING);
 			ad->entityUI.snapGridSize = 3;
 
+			glLineWidth(1);
+
+			Vec4 lineColor = vec4(0,0.5f);
 			float size = ad->entityUI.snapGridSize;
 			float count = roundFloat(eui->snapGridDim / size);
 			Vec3 start = vec3(-(size*count)/2, -(size*count)/2, 0);
 			for(int i = 0; i < count+1; i++) {
 				Vec3 p = start + vec3(1,0,0) * i*size;
-				drawLine(p, p + vec3(0,size*count,0), vec4(0,1));
+				drawLine(p, p + vec3(0,size*count,0), lineColor);
 			}
 
 			for(int i = 0; i < count+1; i++) {
 				Vec3 p = start + vec3(0,1,0) * i*size;
-				drawLine(p, p + vec3(size*count,0,0), vec4(0,1));
+				drawLine(p, p + vec3(size*count,0,0), lineColor);
 			}
 			glEnable(GL_LIGHTING);
 		}
@@ -1860,12 +1892,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glDisable(GL_LIGHTING);
 		glDisable(GL_NORMALIZE);
 	}
+	#endif
 
+	#if 1
 	{
-		Rect sr = getScreenRect(ws);
+		// // Rect sr = getClientRect(ws);
 
-		// glOrtho(0, rectW(sr), -rectH(sr), 0, -10,10);
-		glViewport(0,0, rectW(sr), rectH(sr));
+		// // glLoadIdentity();
+		// // glOrtho(0, rectW(sr), -rectH(sr), 0, -10,10);
+
+		// Rect wr = getWindowRect(ws);
+		// Rect cr = getClientRect(ws);
+		// glViewport(cr.left,cr.bottom - wr.bottom,rectW(cr),rectH(cr));
+
+		// // glClear(GL_COLOR_BUFFER_BIT);
+		// drawRect(rectCenDim(0,0,10000,10000), vec4(0,1,0,1));
+
+		glViewport(0, 0, ws->currentRes.w, ws->currentRes.h);
 
 
 		NewGui* gui = &ad->gui;
@@ -1891,6 +1934,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			float panelRounding = 7;
 			float buttonRounding = 4;
 
+			float textPadding = font->height*0.4f;
+
 			BoxSettings bs = boxSettings(cBackground, panelRounding, cOutline);
 			TextSettings ts = textSettings(font, cText);
 
@@ -1905,12 +1950,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 			TextBoxSettings etbs = gui->textBoxSettings;
 			etbs.boxSettings.color = cEdit;
 			etbs.boxSettings.roundedCorner = 0;
-			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, vec4(0.5f,0.2,0,1), vec4(0,1,1,1), 5);
+			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, vec4(0.5f,0.2,0,1), vec4(0,1,1,1), textPadding);
 			gui->sliderSettings = sliderSettings(etbs, 15, 15, 0, 0, 4, cButton, vec4(0,0,0,0));
 
 			// ScrollRegionSettings scrollSettings;
-			// BoxSettings popupSettings;
-			// TextBoxSettings comboBoxSettings;
+			gui->popupSettings = boxSettings(cEdit, 0, cOutline);
+			gui->comboBoxSettings = textBoxSettings(gui->textSettings, boxSettings(cEdit, 0, cOutline), textPadding);
 
 			BoxSettings cbs = gui->boxSettings;
 			cbs.color = cEdit;
@@ -1969,7 +2014,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
 					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickSlider(gui, quickRowNext(&qr), &settings->sampleMode, 0, SAMPLE_MODE_COUNT-1);
+					newGuiQuickComboBox(gui, quickRowNext(&qr), &settings->sampleMode, sampleModeStrings, arrayCount(sampleModeStrings));
 
 					s = "SampleGridDim";
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2074,8 +2119,42 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		newGuiEnd(gui);
 	}
-
 	#endif
+
+
+
+	#if 0
+	if(false)
+	{
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		SystemData* sd = systemData;
+
+		// sd->titleHeight = 30;
+		// sd->borderSize = 10;
+		// Vec2 bDim = vec2(40,40);
+		// sd->rMinimize = rectTLDim(vec2(100,-100), bDim);
+		// sd->rMaximize = rectTLDim(vec2(200,-100), bDim);
+		// sd->rClose = rectTLDim(vec2(300,-100), bDim);
+
+		// Rect sr = getWindowRect(ws);
+		// drawRect(sr, vec4(0.5f,1));
+
+		// float vbs = sd->visualBorderSize;
+		// Rect tr = rect(vbs, -sd->titleHeight, rectW(sr)-vbs, -vbs);
+		// drawRect(tr, vec4(0,0,1,1));
+
+		drawRect(getClientRect(ws), vec4(0,1,1,1));
+
+		drawRect(sd->rMinimize, vec4(1,0,0,1));
+		drawRect(sd->rMaximize, vec4(1,0.3f,0,1));
+		drawRect(sd->rClose, vec4(1,0.6f,0,1));
+
+		// Rect rTitleBar;
+		// Rect rMinimize, rMaximize, rClose;
+		// float borderSize;
+	}
+	#endif 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
 

@@ -80,21 +80,18 @@ struct Input {
 	bool firstFrame;
 	Vec2 mousePos;
 	Vec2 mousePosNegative;
-
 	Vec2 mousePosScreen;
 	Vec2 mousePosNegativeScreen;
 	
-	int mouseDeltaX, mouseDeltaY; // These are useless.
-
-	Vec2 lastMousePos;
 	Vec2 mouseDelta;
 	int mouseWheel;
 	bool mouseButtonPressed[8];
 	bool mouseButtonDown[8];
 	bool mouseButtonReleased[8];
-
 	bool doubleClick;
 	Vec2 doubleClickPos;
+
+	Vec2 lastMousePos;
 
 	bool keysDown[KEYCODE_COUNT];
 	bool keysPressed[KEYCODE_COUNT];
@@ -108,6 +105,7 @@ struct Input {
 	bool closeWindow;
 	bool maximizeWindow;
 	bool minimizeWindow;
+	bool resize;
 };
 
 
@@ -218,62 +216,27 @@ struct SystemData {
 	WNDCLASS windowClass;
 
 	HGLRC openglContext;
+
+	Vec2i minWindowDim;
+	Vec2i maxWindowDim;
+
+	void* mainFiber;
+	void* messageFiber;
+	Input* input;
+
+	int coreCount;
+
+	// For nchittest
+
+	float titleHeight;
+	float borderSize;
+	float visualBorderSize;
+	Rect rMinimize, rMaximize, rClose;
 };
 
 void systemDataInit(SystemData* sd, HINSTANCE instance) {
 	sd->instance = instance;
 }
-
-// void drawLastFrameStretched(int w, int h);
-void drawLastFrameStretched(HWND windowHandle, int w, int h);
-LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-    switch(message) {
-        case WM_DESTROY: {
-            PostMessage(window, message, wParam, lParam);
-        } break;
-
-        case WM_CLOSE: {
-            PostMessage(window, message, wParam, lParam);
-        } break;
-
-        case WM_QUIT: {
-            PostMessage(window, message, wParam, lParam);
-        } break;
-
-        case WM_KILLFOCUS: {
-        	DWORD id = GetThreadId(GetCurrentThread());
-            PostThreadMessage(id, message, wParam, lParam);
-
-            return DefWindowProc(window, message, wParam, lParam);
-        } break;
-
-        case WM_PAINT: {
-        	PAINTSTRUCT ps;
-        	HDC hdc = BeginPaint(window, &ps); 
-        	EndPaint(window, &ps);
-
-        	RECT cr; 
-        	GetClientRect(window, &cr);
-        	int viewWidth = cr.right - cr.left;
-        	int viewHeight = cr.bottom - cr.top;
-
-        	drawLastFrameStretched(window, viewWidth, viewHeight);
-
-        	return 0;
-        } break;
-
-        // case WM_MOVING: {
-        	// InvalidateRect(window, NULL, FALSE); 
-        // } break;
-
-        default: {
-            return DefWindowProc(window, message, wParam, lParam);
-        } break;
-    }
-
-    return 1;
-}
-
 
 struct MonitorData {
 	Rect fullRect;
@@ -295,11 +258,18 @@ struct WindowSettings {
 	Vec2i biggestMonitorSize;
 
 	Vec2i currentRes;
-	float aspectRatio;
+
+	Vec2i currentClientRes;
+	Vec2i currentWindowRes;
+	Rect clientRect;
+	Rect windowRect;
+
+	float aspectRatio;	
 
 	bool customCursor;
 	POINT lastMousePosition;
 };
+
 
 void updateCursor(WindowSettings* ws) {
 	if(!ws->customCursor) {
@@ -326,6 +296,349 @@ BOOL CALLBACK monitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMoni
 	ws->monitorCount++;
 
 	return true;
+}
+
+
+Vec2 getMousePos(HWND windowHandle, bool yInverted = true) {
+	POINT point;    
+	GetCursorPos(&point);
+	ScreenToClient(windowHandle, &point);
+	Vec2 mousePos = vec2(0,0);
+	mousePos.x = point.x;
+	mousePos.y = point.y;
+	if(yInverted) mousePos.y = -mousePos.y;
+
+	return mousePos;
+}
+
+Vec2 getMousePosS(bool yInverted = true) {
+	POINT point;    
+	GetCursorPos(&point);
+	Vec2 mousePos = vec2(0,0);
+	mousePos.x = point.x;
+	mousePos.y = point.y;
+	if(yInverted) mousePos.y = -mousePos.y;
+
+	return mousePos;
+}
+
+bool mouseInClientArea(HWND windowHandle) {
+	POINT point;    
+	GetCursorPos(&point);
+	ScreenToClient(windowHandle, &point);
+
+	Vec2i mp = vec2i(point.x, point.y);
+
+	RECT cr; 
+	GetClientRect(windowHandle, &cr);
+	bool result = (mp.x >= cr.left && mp.x < cr.right && 
+				   mp.y >= cr.top  && mp.y < cr.bottom);
+
+	return result;
+}
+
+#include <Windowsx.h>
+
+
+bool globalVsyncSwitch = false;
+LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+
+	SystemData* sd = (SystemData*)GetWindowLongPtrA(window, GWLP_USERDATA);
+
+    switch(message) {
+        case WM_DESTROY: {
+            PostMessage(window, message, wParam, lParam);
+        } break;
+
+        case WM_CLOSE: {
+            PostMessage(window, message, wParam, lParam);
+        } break;
+
+        case WM_QUIT: {
+            PostMessage(window, message, wParam, lParam);
+        } break;
+
+        case WM_KILLFOCUS: {
+            PostMessage(window, message, wParam, lParam);
+        } break;
+
+        case WM_SIZE: {
+        	sd->input->resize = true;
+        } break;
+
+        #if 0
+        case WM_NCHITTEST: {
+        	// return HTCAPTION;
+
+        	// HTCAPTION
+        	// int result = DefWindowProc(window, message, wParam, lParam);
+        	int x = GET_X_LPARAM(lParam);
+        	int y = GET_Y_LPARAM(lParam);
+        	int stop = 234;
+
+        	// ScreenToClient(window, &p);
+
+        	RECT wr; 
+        	GetWindowRect(window, &wr);
+
+        	x = x - wr.left;
+        	y = y - wr.top;
+
+        	// Rect r = rect(wr.left, wr.bottom, wr.right, wr.top);
+        	Rect r = rectTLDim(vec2(0,0), vec2(wr.right - wr.left, wr.bottom - wr.top));
+
+        	// r.top *= -1;
+        	// r.bottom *= -1;
+
+        	Vec2 p = vec2(x,-y);
+
+        	// printf("%i %i\n", x, y);
+        	// printf("%i %i\n", wr.left, wr.top);
+
+
+        	float b = sd->borderSize;
+        	float t = sd->titleHeight;
+
+        	// printf("%f %f, %f %f %f %f, %f\n", PVEC2(p), PRECT(r), t);
+
+        	// Border.
+        	if((p.x < r.left+b) || (p.x > r.right-b) || (p.y < r.bottom+b) || (p.y > r.top-b)) {
+        		Rect br = rect(r.left+b, r.bottom+b, r.right-b, r.top-b);
+
+        		printf("%f %f, %f %f %f %f, %f\n", PVEC2(p), PRECT(br), t);
+
+        		     if(p.x < br.left && p.y < br.bottom) return HTBOTTOMLEFT;
+        		else if(p.x > br.right && p.y < br.bottom) return HTBOTTOMRIGHT;
+				else if(p.x < br.left && p.y > br.top) return HTTOPLEFT;
+        		else if(p.x > br.right && p.y > br.top) return HTTOPRIGHT;
+        		else if(p.y < br.bottom) return HTBOTTOM;
+        		else if(p.x > br.right) return HTRIGHT;
+        		else if(p.y > br.top) return HTTOP;
+        		else if(p.x < br.left) return HTLEFT;
+        	}
+
+        	if(pointInRect(p, sd->rMinimize)) return HTMINBUTTON;
+        	if(pointInRect(p, sd->rMaximize)) return HTMAXBUTTON;
+        	if(pointInRect(p, sd->rClose)) return HTCLOSE;
+
+        	if(p.y >= -t) return HTCAPTION;
+
+        	return HTCLIENT;
+        } break;
+
+        // case WM_NCPAINT: {
+	       //  PAINTSTRUCT ps;
+	       //  // HDC hdc = BeginPaint(window, &ps); 
+	       //  HDC hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
+	       //  EndPaint(window, &ps);
+
+        // 	return 0;
+        // } break;
+
+        case WM_NCLBUTTONDOWN: {
+        	int test = wParam;
+        	if(test == HTMINBUTTON) SendMessage(window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        	else if(test == HTMAXBUTTON) SendMessage(window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+        	else if(test == HTCLOSE) SendMessage(window, WM_SYSCOMMAND, SC_CLOSE, 0);
+
+            else return DefWindowProc(window, message, wParam, lParam);
+        } break;
+
+        case WM_NCCALCSIZE: {
+        	return 0;
+        } break;
+		#endif
+
+        case WM_PAINT: {
+        	PAINTSTRUCT ps;
+        	HDC hdc = BeginPaint(window, &ps); 
+        	EndPaint(window, &ps);
+
+        	SwitchToFiber(sd->mainFiber);
+
+        	return 0;
+        } break;
+
+        case WM_GETMINMAXINFO: {
+            LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
+            lpMMI->ptMinTrackSize.x = sd->minWindowDim.w;
+            lpMMI->ptMinTrackSize.y = sd->minWindowDim.h;
+
+            lpMMI->ptMaxTrackSize.x = sd->maxWindowDim.w;
+            lpMMI->ptMaxTrackSize.y = sd->maxWindowDim.h;
+        } break;
+
+        case WM_TIMER: {
+        	globalVsyncSwitch = true;
+        	SwitchToFiber(sd->mainFiber);
+        } break;
+
+        default: {
+            return DefWindowProc(window, message, wParam, lParam);
+        } break;
+    }
+
+    return 1;
+}
+
+void CALLBACK updateInput(SystemData* sd) {
+	for(;;) {
+
+		Input* input = sd->input;
+		HWND windowHandle = sd->windowHandle;
+
+		SetTimer(windowHandle, 1, 1, 0);
+
+		input->anyKey = false;
+	    input->mouseWheel = 0;
+	    for(int i = 0; i < arrayCount(input->mouseButtonPressed); i++) input->mouseButtonPressed[i] = 0;
+	    for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) input->mouseButtonReleased[i] = 0;
+	    for(int i = 0; i < arrayCount(input->keysPressed); i++) input->keysPressed[i] = 0;
+	    input->mShift = 0;
+	    input->mCtrl = 0;
+	    input->mAlt = 0;
+	    input->inputCharacterCount = 0;
+	    input->mouseDelta = vec2(0,0);
+
+	    input->doubleClick = false;
+
+	    input->closeWindow = false;
+		input->maximizeWindow = false;
+		input->minimizeWindow = false;
+	    bool killedFocus = false;
+
+	    bool mouseInClient = mouseInClientArea(windowHandle);
+
+	    MSG message;
+	    // while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
+	    while(PeekMessage(&message, windowHandle, 0, 0, PM_REMOVE)) {
+	        switch(message.message) {
+		        case WM_LBUTTONDBLCLK: {
+		        	input->doubleClick = true;
+					input->doubleClickPos = getMousePos(windowHandle, true);
+		        } break;
+
+	            case WM_KEYDOWN:
+	            case WM_KEYUP: {
+	                uint vk = uint(message.wParam);
+
+	                bool keyDown = (message.message == WM_KEYDOWN);
+	                int keycode = vkToKeycode(vk);
+	                input->keysDown[keycode] = keyDown;
+	                input->keysPressed[keycode] = keyDown;
+	                input->mShift = ((GetKeyState(VK_SHIFT) & 0x80) != 0);
+	                input->mCtrl = ((GetKeyState(VK_CONTROL) & 0x80) != 0);
+	                input->mAlt = ((GetKeyState(VK_MENU) & 0x80) != 0);
+
+	                if(keyDown) {
+	                	input->anyKey = true;
+	                }
+
+	                TranslateMessage(&message); 
+	                DispatchMessage(&message); 
+	            } break;
+
+	            case WM_CHAR: {
+	                // input->inputCharacters[input->inputCharacterCount] = (char)uint(message.wParam);
+	            	uint charIndex = uint(message.wParam);
+	            	if(charIndex < ' ' || charIndex > '~') break;
+	            	char c = (char)charIndex;
+	                input->inputCharacters[input->inputCharacterCount] = c;
+	                input->inputCharacterCount++;
+	            } break;
+
+	            case WM_INPUT: {
+	            	RAWINPUT inputBuffer;
+	            	UINT rawInputSize = sizeof(inputBuffer);
+	            	GetRawInputData((HRAWINPUT)(message.lParam), RID_INPUT, &inputBuffer, &rawInputSize, sizeof(RAWINPUTHEADER));
+	            	RAWINPUT* raw = (RAWINPUT*)(&inputBuffer);
+	            	
+	            	if (raw->header.dwType == RIM_TYPEMOUSE && raw->data.mouse.usFlags == MOUSE_MOVE_RELATIVE) {
+
+	            	    input->mouseDelta += vec2(raw->data.mouse.lLastX, raw->data.mouse.lLastY);
+
+	            	    USHORT buttonFlags = raw->data.mouse.usButtonFlags;
+
+	            	    if(mouseInClient) {
+							if(buttonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
+								// SetCapture(windowHandle);
+								input->mouseButtonPressed[0] = true; 
+								input->mouseButtonDown[0] = true; 
+							}
+							if(buttonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) {
+								// SetCapture(windowHandle);
+								input->mouseButtonPressed[1] = true; 
+								input->mouseButtonDown[1] = true; 
+							}
+							if(buttonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) {
+								// SetCapture(windowHandle);
+								input->mouseButtonPressed[2] = true; 
+								input->mouseButtonDown[2] = true; 
+							}
+
+							if(buttonFlags & RI_MOUSE_WHEEL) {
+								input->mouseWheel += ((SHORT)raw->data.mouse.usButtonData) / WHEEL_DELTA;
+							}
+	            	    }
+
+	            	    if(buttonFlags & RI_MOUSE_LEFT_BUTTON_UP) {
+	            	    	// SetCapture(windowHandle);
+	            	    	input->mouseButtonDown[0] = false; 
+	            	    	input->mouseButtonReleased[0] = true; 
+	            	    }
+	            	    if(buttonFlags & RI_MOUSE_RIGHT_BUTTON_UP) {
+	            	    	// SetCapture(windowHandle);
+	            	    	input->mouseButtonDown[1] = false; 
+	            	    	input->mouseButtonReleased[1] = true; 
+	            	    }
+	            	    if(buttonFlags & RI_MOUSE_MIDDLE_BUTTON_UP) {
+	            	    	// SetCapture(windowHandle);
+	            	    	input->mouseButtonDown[2] = false; 
+	            	    	input->mouseButtonReleased[2] = true; 
+	            	    }
+
+	            	} break;
+
+	            	TranslateMessage(&message);
+	            	DispatchMessage(&message);
+	            } break;
+
+	            case WM_DESTROY: 
+	            case WM_CLOSE: 
+	            case WM_QUIT: 
+	            	input->closeWindow = true;
+	            	break;
+
+	            case WM_KILLFOCUS: {
+	            	killedFocus = true;
+	            } break;
+
+	            default: {
+	                TranslateMessage(&message); 
+	                DispatchMessage(&message); 
+	            } break;
+	        }
+	    }
+
+	    if(killedFocus) {
+	    	for(int i = 0; i < KEYCODE_COUNT; i++) {
+	    		input->keysDown[i] = false;
+	    	}
+	    	*input = {};
+	    }
+
+	    input->mousePos = getMousePos(windowHandle, false);
+	    input->mousePosNegative = getMousePos(windowHandle, true);
+
+	    input->mousePosScreen = getMousePosS(false);
+	    input->mousePosNegativeScreen = getMousePosS(true);
+
+	    input->lastMousePos = input->mousePos;
+
+	    input->firstFrame = false;
+
+	    SwitchToFiber(sd->mainFiber);
+	}
 }
 
 void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, Vec2i res, int style, int , int monitor = 0) {
@@ -373,8 +686,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 
 	int ww = cr.right - cr.left;
 	int wh = cr.bottom - cr.top;
-	// int wx = ws->fullRes.x/2 - ww/2;
-	// int wy = ws->fullRes.y/2 - wh/2;
 	int wx, wy;
 	{
 		MonitorData* md = ws->monitors + monitor;
@@ -384,24 +695,14 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 	ws->res = vec2i(ww, wh);
 
     WNDCLASS windowClass = {};
-    // windowClass.style = CS_OWNDC|CS_HREDRAW|CS_VREDRAW;
     windowClass.style = CS_OWNDC|CS_HREDRAW|CS_VREDRAW|CS_DBLCLKS;
      
-    // windowClass.style = CS_OWNDC;
-
-    // windowClass.style = CS_HREDRAW|CS_VREDRAW;
-    // windowClass.style = CS_OWNDC;
     windowClass.lpfnWndProc = mainWindowCallBack;
     windowClass.hInstance = systemData->instance;
     windowClass.lpszClassName = "App";
     windowClass.hCursor = LoadCursor(0, IDC_ARROW);
-    // windowClass.hCursor = 0;
-    // windowClass.hbrBackground = CreateSolidBrush(RGB(30,30,30));
-    // windowClass.hbrBackground = CreateSolidBrush(RGB(0,0,0));
-    // windowClass.hbrBackground = (HBRUSH)CreateSolidBrush(0x00000000);
+    // windowClass.hbrBackground = (HBRUSH)(CreateSolidBrush(RGB(255,0,0)));
     // windowClass.hbrBackground = 0;
-    // windowClass.hbrBackground = CreateSolidBrush(RGB(255,0,0));
-
 
     if(!RegisterClass(&windowClass)) {
         DWORD errorCode = GetLastError();
@@ -460,24 +761,37 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 
     systemData->openglContext = openglContext;
 
+    #ifndef HID_USAGE_PAGE_GENERIC
+    #define HID_USAGE_PAGE_GENERIC         ((USHORT) 0x01)
+    #endif
+    #ifndef HID_USAGE_GENERIC_MOUSE
+    #define HID_USAGE_GENERIC_MOUSE        ((USHORT) 0x02)
+    #endif
 
-    // #ifndef HID_USAGE_PAGE_GENERIC
-    // #define HID_USAGE_PAGE_GENERIC         ((USHORT) 0x01)
-    // #endif
-    // #ifndef HID_USAGE_GENERIC_MOUSE
-    // #define HID_USAGE_GENERIC_MOUSE        ((USHORT) 0x02)
-    // #endif
-
-    // RAWINPUTDEVICE Rid[1];
-    // Rid[0].usUsagePage = HID_USAGE_PAGE_GENERIC; 
-    // Rid[0].usUsage = HID_USAGE_GENERIC_MOUSE; 
-    // Rid[0].dwFlags = RIDEV_INPUTSINK;   
-    // Rid[0].hwndTarget = systemData->windowHandle;
-    // bool r = RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
-
-    // printf("%Opengl Version: %s\n", (char*)glGetString(GL_VERSION));
+    RAWINPUTDEVICE Rid[1];
+    Rid[0].usUsagePage = HID_USAGE_PAGE_GENERIC; 
+    Rid[0].usUsage = HID_USAGE_GENERIC_MOUSE; 
+    Rid[0].hwndTarget = systemData->windowHandle;
+    Rid[0].dwFlags = RIDEV_INPUTSINK;   
+    bool r = RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
+    assert(r);
 
 	// SetCursor(LoadCursor(0, IDC_ARROW));
+
+    systemData->mainFiber = ConvertThreadToFiber(0);
+    SetWindowLongPtr(systemData->windowHandle, GWLP_USERDATA, (LONG_PTR)systemData);
+    systemData->messageFiber = CreateFiber(0, (PFIBER_START_ROUTINE)updateInput, systemData);
+
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    systemData->coreCount = sysinfo.dwNumberOfProcessors;
+
+    // SetWindowLong(systemData->windowHandle, GWL_EXSTYLE, GetWindowLong(systemData->windowHandle, GWL_EXSTYLE | WS_EX_TRANSPARENT));
+
+    // SetWindowLong(systemData->windowHandle, GWL_EXSTYLE, GetWindowLong(systemData->windowHandle, GWL_EXSTYLE) | WS_EX_LAYERED);
+    // SetLayeredWindowAttributes(systemData->windowHandle, RGB(0,0,0), 0, LWA_COLORKEY);
+
+    // SetLayeredWindowAttributes(systemData->windowHandle, RGB(255,0,0), 0, LWA_COLORKEY);
 }
 
 void showWindow(HWND windowHandle) {
@@ -492,176 +806,6 @@ float getScalingFactor(HWND windowHandle) {
     float ScreenScalingFactor = (float)PhysicalScreenHeight / (float)LogicalScreenHeight;
 
     return ScreenScalingFactor;
-}
-
-Vec2 getMousePos(HWND windowHandle, bool yInverted = true) {
-	POINT point;    
-	GetCursorPos(&point);
-	ScreenToClient(windowHandle, &point);
-	Vec2 mousePos = vec2(0,0);
-	mousePos.x = point.x;
-	mousePos.y = point.y;
-	if(yInverted) mousePos.y = -mousePos.y;
-
-	return mousePos;
-}
-
-Vec2 getMousePosS(bool yInverted = true) {
-	POINT point;    
-	GetCursorPos(&point);
-	Vec2 mousePos = vec2(0,0);
-	mousePos.x = point.x;
-	mousePos.y = point.y;
-	if(yInverted) mousePos.y = -mousePos.y;
-
-	return mousePos;
-}
-
-void updateInput(Input* input, HWND windowHandle) {
-	input->anyKey = false;
-
-    input->mouseWheel = 0;
-    for(int i = 0; i < arrayCount(input->mouseButtonPressed); i++) input->mouseButtonPressed[i] = 0;
-    for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) input->mouseButtonReleased[i] = 0;
-    for(int i = 0; i < arrayCount(input->keysPressed); i++) input->keysPressed[i] = 0;
-    input->mShift = 0;
-    input->mCtrl = 0;
-    input->mAlt = 0;
-    input->inputCharacterCount = 0;
-
-    input->mouseDeltaX = 0;
-    input->mouseDeltaY = 0;
-    input->doubleClick = false;
-
-    input->closeWindow = false;
-	input->maximizeWindow = false;
-	input->minimizeWindow = false;
-
-    bool killedFocus = false;
-
-    MSG message;
-    // while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
-    while(PeekMessage(&message, windowHandle, 0, 0, PM_REMOVE)) {
-        switch(message.message) {
-            case WM_MOUSEWHEEL: {
-                short wheelDelta = HIWORD(message.wParam);
-                input->mouseWheel = wheelDelta / WHEEL_DELTA;
-            } break;
-
-	        case WM_LBUTTONDBLCLK: {
-	        	input->doubleClick = true;
-				input->doubleClickPos = getMousePos(windowHandle, true);
-	        } 
-	        // break;
-            case WM_LBUTTONDOWN: { 
-            	SetCapture(windowHandle);
-            	input->mouseButtonPressed[0] = true; 
-				input->mouseButtonDown[0] = true; 
-			} break;
-            case WM_RBUTTONDOWN: { 
-            	SetCapture(windowHandle);
-            	input->mouseButtonPressed[1] = true; 
-				input->mouseButtonDown[1] = true; 
-			} break;
-            case WM_MBUTTONDOWN: { 
-            	SetCapture(windowHandle);
-            	input->mouseButtonPressed[2] = true; 
-				input->mouseButtonDown[2] = true; 
-			} break;
-
-	        case WM_LBUTTONUP: { 
-            	ReleaseCapture();
-				input->mouseButtonDown[0] = false; 
-				input->mouseButtonReleased[0] = true;
-			} break;
-	        case WM_RBUTTONUP: { 
-            	ReleaseCapture();
-				input->mouseButtonDown[1] = false; 
-				input->mouseButtonReleased[1] = true;
-			} break;
-	        case WM_MBUTTONUP: { 
-            	ReleaseCapture();
-				input->mouseButtonDown[2] = false; 
-				input->mouseButtonReleased[2] = true;
-			} break;
-
-            case WM_KEYDOWN:
-            case WM_KEYUP: {
-                uint vk = uint(message.wParam);
-
-                bool keyDown = (message.message == WM_KEYDOWN);
-                int keycode = vkToKeycode(vk);
-                input->keysDown[keycode] = keyDown;
-                input->keysPressed[keycode] = keyDown;
-                input->mShift = ((GetKeyState(VK_SHIFT) & 0x80) != 0);
-                input->mCtrl = ((GetKeyState(VK_CONTROL) & 0x80) != 0);
-                input->mAlt = ((GetKeyState(VK_MENU) & 0x80) != 0);
-
-                if(keyDown) {
-                	input->anyKey = true;
-                }
-                
-                TranslateMessage(&message); 
-                DispatchMessage(&message); 
-            } break;
-
-            case WM_CHAR: {
-                // input->inputCharacters[input->inputCharacterCount] = (char)uint(message.wParam);
-            	uint charIndex = uint(message.wParam);
-            	if(charIndex < ' ' || charIndex > '~') break;
-            	char c = (char)charIndex;
-                input->inputCharacters[input->inputCharacterCount] = c;
-                input->inputCharacterCount++;
-            } break;
-
-            // case WM_INPUT: {
-            // 	RAWINPUT inputBuffer;
-            // 	UINT rawInputSize = sizeof(inputBuffer);
-            // 	GetRawInputData((HRAWINPUT)(message.lParam), RID_INPUT, &inputBuffer, &rawInputSize, sizeof(RAWINPUTHEADER));
-            // 	RAWINPUT* raw = (RAWINPUT*)(&inputBuffer);
-            	
-            // 	if (raw->header.dwType == RIM_TYPEMOUSE) {
-            // 	    int xPosRelative = raw->data.mouse.lLastX;
-            // 	    int yPosRelative = raw->data.mouse.lLastY;
-
-            // 	    input->mouseDeltaX = -xPosRelative;
-            // 	    input->mouseDeltaY = -yPosRelative;
-            // 	} break;
-            // } break;
-
-            case WM_DESTROY: 
-            case WM_CLOSE: 
-            case WM_QUIT: 
-            	input->closeWindow = true;
-            	break;
-
-            case WM_KILLFOCUS: {
-            	killedFocus = true;
-            } break;
-
-            default: {
-                TranslateMessage(&message); 
-                DispatchMessage(&message); 
-            } break;
-        }
-    }
-
-    if(killedFocus) {
-    	for(int i = 0; i < KEYCODE_COUNT; i++) {
-    		input->keysDown[i] = false;
-    	}
-    }
-
-    input->mousePos = getMousePos(windowHandle, false);
-    input->mousePosNegative = getMousePos(windowHandle, true);
-
-    input->mousePosScreen = getMousePosS(false);
-    input->mousePosNegativeScreen = getMousePosS(true);
-
-    input->mouseDelta = input->mousePos - input->lastMousePos;
-    input->lastMousePos = input->mousePos;
-
-    input->firstFrame = false;
 }
 
 // MetaPlatformFunction();
@@ -810,6 +954,14 @@ void setWindowMode(HWND hwnd, WindowSettings* wSettings, int mode) {
 void swapBuffers(SystemData* systemData) {
     SwapBuffers(systemData->deviceContext);
 }
+
+// Rect getWindowRect(WindowSettings* ws) {
+// 	return ws->windowRect;
+// }
+
+// Rect getClientRect(WindowSettings* ws) {
+// 	return ws->clientRect;
+// }
 
 Rect getScreenRect(WindowSettings* ws) {
 	return rect(0, -ws->currentRes.h, ws->currentRes.w, 0);

@@ -319,6 +319,10 @@ struct TextBoxSettings {
 	float sideAlignPadding;
 };
 
+TextBoxSettings textBoxSettings(TextSettings textSettings, BoxSettings boxSettings, float padding) {
+	return {textSettings, boxSettings, padding};
+}
+
 TextBoxSettings textBoxSettings(TextSettings textSettings, BoxSettings boxSettings) {
 	return {textSettings, boxSettings, 0};
 }
@@ -2243,6 +2247,7 @@ void newGuiPopupSetup(NewGui* gui) {
 
 		TextBoxSettings s = gui->textBoxSettings;
 		s.boxSettings.color.a = 0;
+		s.boxSettings.borderColor.a = 0;
 		if(newGuiQuickButton(gui, getScreenRect(gui->windowSettings), &s)) {
 			gui->popupStackCount = 0;
 		}
@@ -2261,63 +2266,71 @@ void newGuiPopupSetup(NewGui* gui) {
 }
 
 void newGuiUpdateComboBoxPopups(NewGui* gui) {
-	// for(int i = 0; i < gui->popupStackCount; i++) {
-	// 	PopupData pd = gui->popupStack[i];
+	for(int i = 0; i < gui->popupStackCount; i++) {
+		PopupData pd = gui->popupStack[i];
 
-	// 	if(pd.type == POPUP_TYPE_COMBO_BOX) {
-	// 		TextBoxSettings bs = gui->buttonSettings;
-	// 		bs.boxSettings.roundedCorner = 0;
-	// 		bs.boxSettings.borderColor = vec4(0,0);
-	// 		bs.boxSettings.color = gui->popupSettings.color;
-
-
-	// 		ComboBoxData cData = gui->comboBoxData;
-	// 		float padding = gui->comboBoxSettings.sideAlignPadding;
-	// 		float fontHeight = gui->textSettings.font->height;
-
-	// 		float maxWidth = 0;
-	// 		for(int i = 0; i < cData.count; i++) {
-	// 			float w = getTextDim(cData.strings[i], bs.textSettings.font).w;
-	// 			maxWidth = max(maxWidth, w);
-	// 		}
-	// 		maxWidth += padding*2 + 4;
-	// 		// clamp(&maxWidth, POPUP_MIN_WIDTH, POPUP_MAX_WIDTH);
-
-	// 		// Rect r = rectTDim(rectT(pd.r), vec2(maxWidth, (fontHeight+1) * cData.count));
-	// 		float popupWidth = rectW(pd.r);
-	// 		clampMin(&popupWidth, POPUP_MIN_WIDTH);
-	// 		// Rect r = rectTDim(rectT(pd.r), vec2(popupWidth, (fontHeight) * cData.count + 1));
-	// 		Rect r = rectTDim(rectT(pd.r)-vec2(0,2), vec2(max(maxWidth, rectW(pd.r)), (fontHeight) * cData.count + 2));
+		if(pd.type == POPUP_TYPE_COMBO_BOX) {
+			TextBoxSettings bs = gui->buttonSettings;
+			bs.boxSettings.roundedCorner = 0;
+			bs.boxSettings.borderColor = vec4(0,0);
+			bs.boxSettings.color = gui->popupSettings.color;
 
 
-	// 		newGuiSetHotAllMouseOver(gui, r, gui->zLevel);
-	// 		drawBox(r, gui->scissor, gui->popupSettings);
+			ComboBoxData cData = gui->comboBoxData;
 
-	// 		scissorState();
-	// 		Rect layoutRect = rectExpand(r, vec2(-padding*2,-2));
-	// 		newGuiScissorLayoutPush(gui, layoutRect, layoutData(layoutRect, gui->textSettings.font->height, 0, 0));
+			float padding = gui->comboBoxSettings.sideAlignPadding;
+			float fontHeight = gui->textSettings.font->height;
 
-	// 		gui->comboBoxSettings.sideAlignPadding = 0;
+			float maxWidth = 0;
+			for(int i = 0; i < cData.count; i++) {
+				float w = getTextDim(cData.strings[i], bs.textSettings.font).w;
+				maxWidth = max(maxWidth, w);
+			}
+			maxWidth += padding*2 + 4;
+			// clamp(&maxWidth, POPUP_MIN_WIDTH, POPUP_MAX_WIDTH);
 
-	// 		for(int i = 0; i < cData.count; i++) {
-	// 			bs.boxSettings.color = gui->popupSettings.color;
-	// 			if(cData.index == i) bs.boxSettings.color += newGuiHotActiveColorMod(true, false);
-	// 			// if(cData.index == i) bs.boxSettings.borderColor.a = 1;
-	// 			// else bs.boxSettings.borderColor.a = 0;
+			// Rect r = rectTDim(rectT(pd.r), vec2(maxWidth, (fontHeight+1) * cData.count));
+			float popupWidth = rectW(pd.r);
+			clampMin(&popupWidth, POPUP_MIN_WIDTH);
+			// Rect r = rectTDim(rectT(pd.r), vec2(popupWidth, (fontHeight) * cData.count + 1));
+			Rect r = rectTDim(rectT(pd.r)-vec2(0,2), vec2(max(maxWidth, rectW(pd.r)), (fontHeight) * cData.count + 2));
 
-	// 			if(newGuiQuickButton(gui, newGuiLRectAdv(gui), cData.strings[i], vec2i(-1,0), &bs)) {
-	// 				gui->comboBoxData.index = i;
-	// 				gui->comboBoxData.finished = true;
 
-	// 				*gui->comboBoxIndex = gui->comboBoxData.index;
-	// 				// newGuiPopupPop(gui);
-	// 			}
-	// 		}
+			newGuiSetHotAllMouseOver(gui, r, gui->zLevel);
+			drawBox(r, gui->scissor, gui->popupSettings);
 
-	// 		newGuiScissorLayoutPop(gui);
-	// 		scissorState(false);						
-	// 	}
-	// }
+			// scissorState();
+			Rect layoutRect = rectExpand(r, vec2(-padding*2,-2));
+			// newGuiScissorLayoutPush(gui, layoutRect, layoutData(layoutRect, gui->textSettings.font->height, 0, 0));
+			// newGuiScissorLayoutPush(gui, layoutRect, layoutData(layoutRect, gui->textSettings.font->height, vec2(0,0)));
+
+			gui->comboBoxSettings.sideAlignPadding = 0;
+
+			Vec2 p = rectTL(layoutRect);
+
+			for(int i = 0; i < cData.count; i++) {
+				bs.boxSettings.color = gui->popupSettings.color;
+				if(cData.index == i) bs.boxSettings.color += newGuiHotActiveColorMod(true, false);
+				// if(cData.index == i) bs.boxSettings.borderColor.a = 1;
+				// else bs.boxSettings.borderColor.a = 0;
+
+				Rect br = rectTLDim(p, vec2(rectW(layoutRect), fontHeight));
+				p.y -= rectH(br);
+
+				// if(newGuiQuickButton(gui, newGuiLRectAdv(gui), cData.strings[i], vec2i(-1,0), &bs)) {
+				if(newGuiQuickButton(gui, br, cData.strings[i], vec2i(-1,0), &bs)) {
+					gui->comboBoxData.index = i;
+					gui->comboBoxData.finished = true;
+
+					*gui->comboBoxIndex = gui->comboBoxData.index;
+					// newGuiPopupPop(gui);
+				}
+			}
+
+			// newGuiScissorLayoutPop(gui);
+			// scissorState(false);						
+		}
+	}
 }
 
 

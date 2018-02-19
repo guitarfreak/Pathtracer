@@ -203,6 +203,14 @@ enum SampleMode {
 	SAMPLE_MODE_COUNT,	
 };
 
+char* sampleModeStrings[] = {
+	"GRID",
+	"BLUE",
+	"BLUE_MULTI",
+	"MSAA4X",
+	"MSAA8X",
+};
+
 struct World {
 	Camera camera;
 
