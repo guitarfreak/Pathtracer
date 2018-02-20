@@ -232,6 +232,11 @@ struct SystemData {
 	float borderSize;
 	float visualBorderSize;
 	Rect rMinimize, rMaximize, rClose;
+	Vec2 buttonDim;
+
+	bool vsyncTempTurnOff;
+
+	bool maximized;
 };
 
 void systemDataInit(SystemData* sd, HINSTANCE instance) {
@@ -263,11 +268,17 @@ struct WindowSettings {
 	Vec2i currentWindowRes;
 	Rect clientRect;
 	Rect windowRect;
+	Rect titleRect;
+	Rect viewPortRect;
+
+	bool vsync;
 
 	float aspectRatio;	
 
 	bool customCursor;
 	POINT lastMousePosition;
+
+	int styleBorderSize;
 };
 
 
@@ -340,7 +351,6 @@ bool mouseInClientArea(HWND windowHandle) {
 #include <Windowsx.h>
 
 
-bool globalVsyncSwitch = false;
 LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
 
 	SystemData* sd = (SystemData*)GetWindowLongPtrA(window, GWLP_USERDATA);
@@ -363,10 +373,14 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         } break;
 
         case WM_SIZE: {
+        	if(wParam == SIZE_MAXIMIZED) sd->maximized = true;
+        	else if(wParam == SIZE_RESTORED) sd->maximized = false;
+
+        	sd->vsyncTempTurnOff = true;
         	sd->input->resize = true;
         } break;
 
-        #if 0
+        #if 1
         case WM_NCHITTEST: {
         	// return HTCAPTION;
 
@@ -374,7 +388,6 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	// int result = DefWindowProc(window, message, wParam, lParam);
         	int x = GET_X_LPARAM(lParam);
         	int y = GET_Y_LPARAM(lParam);
-        	int stop = 234;
 
         	// ScreenToClient(window, &p);
 
@@ -395,7 +408,6 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	// printf("%i %i\n", x, y);
         	// printf("%i %i\n", wr.left, wr.top);
 
-
         	float b = sd->borderSize;
         	float t = sd->titleHeight;
 
@@ -405,7 +417,7 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	if((p.x < r.left+b) || (p.x > r.right-b) || (p.y < r.bottom+b) || (p.y > r.top-b)) {
         		Rect br = rect(r.left+b, r.bottom+b, r.right-b, r.top-b);
 
-        		printf("%f %f, %f %f %f %f, %f\n", PVEC2(p), PRECT(br), t);
+        		// printf("%f %f, %f %f %f %f, %f\n", PVEC2(p), PRECT(br), t);
 
         		     if(p.x < br.left && p.y < br.bottom) return HTBOTTOMLEFT;
         		else if(p.x > br.right && p.y < br.bottom) return HTBOTTOMRIGHT;
@@ -417,11 +429,16 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         		else if(p.x < br.left) return HTLEFT;
         	}
 
-        	if(pointInRect(p, sd->rMinimize)) return HTMINBUTTON;
-        	if(pointInRect(p, sd->rMaximize)) return HTMAXBUTTON;
-        	if(pointInRect(p, sd->rClose)) return HTCLOSE;
+        	Vec2 off = vec2(0,0);
+        	if(sd->maximized) {
+        		off.y = GetSystemMetrics(SM_CXSIZEFRAME);
+        	}
 
-        	if(p.y >= -t) return HTCAPTION;
+        	if(pointInRect(p+off, sd->rMinimize)) return HTMINBUTTON;
+        	if(pointInRect(p+off, sd->rMaximize)) return HTMAXBUTTON;
+        	if(pointInRect(p+off, sd->rClose)) return HTCLOSE;
+
+        	if(p.y+off.y > -t-sd->visualBorderSize) return HTCAPTION;
 
         	return HTCLIENT;
         } break;
@@ -438,7 +455,10 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         case WM_NCLBUTTONDOWN: {
         	int test = wParam;
         	if(test == HTMINBUTTON) SendMessage(window, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-        	else if(test == HTMAXBUTTON) SendMessage(window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+        	else if(test == HTMAXBUTTON) {
+	        	if(!sd->maximized) SendMessage(window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+	        	else SendMessage(window, WM_SYSCOMMAND, SC_RESTORE, 0);
+        	}
         	else if(test == HTCLOSE) SendMessage(window, WM_SYSCOMMAND, SC_CLOSE, 0);
 
             else return DefWindowProc(window, message, wParam, lParam);
@@ -469,7 +489,7 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         } break;
 
         case WM_TIMER: {
-        	globalVsyncSwitch = true;
+        	sd->vsyncTempTurnOff = true;
         	SwitchToFiber(sd->mainFiber);
         } break;
 
@@ -792,6 +812,8 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     // SetLayeredWindowAttributes(systemData->windowHandle, RGB(0,0,0), 0, LWA_COLORKEY);
 
     // SetLayeredWindowAttributes(systemData->windowHandle, RGB(255,0,0), 0, LWA_COLORKEY);
+
+    ws->styleBorderSize = GetSystemMetrics(SM_CXSIZEFRAME);
 }
 
 void showWindow(HWND windowHandle) {
@@ -852,10 +874,12 @@ Rect getWindowWindowRect(HWND windowHandle) {
 }
 
 void getWindowProperties(HWND windowHandle, int* viewWidth, int* viewHeight, int* width, int* height, int* x, int* y) {
-    RECT cr; 
-    GetClientRect(windowHandle, &cr);
-    *viewWidth = cr.right - cr.left;
-    *viewHeight = cr.bottom - cr.top;
+	if(viewWidth && viewHeight) {
+	    RECT cr; 
+	    GetClientRect(windowHandle, &cr);
+	    *viewWidth = cr.right - cr.left;
+	    *viewHeight = cr.bottom - cr.top;
+	}
 
     if(width && height) {
     	RECT wr; 
@@ -912,8 +936,14 @@ DWORD getWindowStyle(HWND hwnd) {
 	return GetWindowLong(hwnd, GWL_STYLE);
 }
 
-void updateResolution(HWND windowHandle, WindowSettings* ws) {
+void updateResolution(HWND windowHandle, SystemData* sd, WindowSettings* ws) {
 	getWindowProperties(windowHandle, &ws->currentRes.x, &ws->currentRes.y,0,0,0,0);
+
+	if(sd->maximized) {
+		ws->currentRes.w -= ws->styleBorderSize*2;
+		ws->currentRes.h -= ws->styleBorderSize*2;
+	}
+
 	ws->aspectRatio = ws->currentRes.x / (float)ws->currentRes.y;
 }
 
@@ -955,17 +985,21 @@ void swapBuffers(SystemData* systemData) {
     SwapBuffers(systemData->deviceContext);
 }
 
-// Rect getWindowRect(WindowSettings* ws) {
-// 	return ws->windowRect;
-// }
+Rect getWindowRect(WindowSettings* ws) {
+	return ws->windowRect;
+}
 
-// Rect getClientRect(WindowSettings* ws) {
-// 	return ws->clientRect;
-// }
+Rect getClientRect(WindowSettings* ws) {
+	return ws->clientRect;
+}
 
 Rect getScreenRect(WindowSettings* ws) {
-	return rect(0, -ws->currentRes.h, ws->currentRes.w, 0);
+	return getClientRect(ws);
 }
+// Rect getScreenRect(WindowSettings* ws) {
+// 	return rect(0, -ws->currentRes.h, ws->currentRes.w, 0);
+// }
+
 
 // void captureMouse(HWND windowHandle, bool t, Input* input) {
 // 	if(t) {

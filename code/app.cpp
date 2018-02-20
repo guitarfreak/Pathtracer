@@ -29,6 +29,8 @@
 
 	- Check for monitor framerate and Sleep accordingly.
 
+	- Restore button after maximize.
+
 	Done Today: 
 
 	Bugs:
@@ -87,6 +89,69 @@ MemoryBlock* globalMemory;
 #include "raycast.cpp"
 
 
+
+
+
+void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
+	sd->titleHeight = 22;
+
+	sd->borderSize = 5;
+	sd->visualBorderSize = 1;
+
+	float buttonGap = sd->borderSize;
+	Vec2 bDim = vec2(sd->titleHeight-buttonGap);
+	sd->buttonDim = bDim;
+
+	if(sd->maximized) {
+		sd->borderSize = 0;
+		sd->visualBorderSize = 0;
+	}
+
+	if(ws->fullscreen) {
+		sd->borderSize = 0;
+		sd->visualBorderSize = 0;
+		sd->titleHeight = 0;
+	}
+
+	Vec2i res = ws->currentRes;
+
+	ws->currentWindowRes = res;
+	ws->windowRect = rect(0, -ws->currentWindowRes.h, ws->currentWindowRes.w, 0);
+
+	Rect wr = ws->windowRect;
+	ws->clientRect = rect(wr.min + vec2(sd->visualBorderSize), wr.max - vec2(sd->visualBorderSize, sd->titleHeight+sd->visualBorderSize));
+	ws->currentClientRes = vec2i(roundInt(rectW(ws->clientRect)), roundInt(rectH(ws->clientRect)));
+
+	float vbs = sd->visualBorderSize;
+	ws->titleRect = rect(vbs, -sd->titleHeight - vbs, rectW(ws->windowRect)-vbs, -vbs);
+
+	Vec2 p = rectTR(ws->windowRect) - vec2(sd->visualBorderSize);
+	sd->rClose = rectTRDim(p, bDim); p.x -= bDim.w + buttonGap;
+	sd->rMaximize = rectTRDim(p, bDim); p.x -= bDim.w + buttonGap;
+	sd->rMinimize = rectTRDim(p, bDim); p.x -= bDim.w + buttonGap;
+
+	if(ws->fullscreen) {
+		sd->rClose    = rect(-1,-1,-1,-1);
+		sd->rMaximize = rect(-1,-1,-1,-1);
+		sd->rMinimize = rect(-1,-1,-1,-1);
+	}
+
+	ws->viewPortRect = rect(0, 0, res.w, res.h);
+
+	if(sd->maximized) {
+		float sbs = ws->styleBorderSize;
+		ws->viewPortRect = rect(sbs, sbs, res.w, res.h);
+	}
+}
+
+void setClientViewport(WindowSettings* ws, int left, int bottom, int width, int height) {
+
+	Rect cr = ws->clientRect;
+	Rect wr = ws->windowRect;
+
+	Vec2i res = vec2i(roundInt(rectW(cr)), roundInt(rectH(cr)));
+	glViewport(left + roundInt(cr.left), bottom + roundInt(cr.bottom-wr.bottom), width, height);
+}
 
 
 
@@ -289,7 +354,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		const char* extensions = wglGetExtensionsStringEXT();
 
-		wglSwapIntervalEXT(1);
+		if(true) {
+			wglSwapIntervalEXT(1);
+			ws->vsync = true;
+		} else {
+			wglSwapIntervalEXT(0);
+			ws->vsync = false;
+		}
 		int fps = wglGetSwapIntervalEXT();
 
 		initInput(&ad->input);
@@ -464,27 +535,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	//
 
 	{
-		if(false)
-		{
-			SystemData* sd = systemData;
-
-			sd->titleHeight = 30;
-			sd->borderSize = 10;
-			sd->visualBorderSize = 5;
-			Vec2 bDim = vec2(40,40);
-			sd->rMinimize = rectTLDim(vec2(100,-100), bDim);
-			sd->rMaximize = rectTLDim(vec2(200,-100), bDim);
-			sd->rClose = rectTLDim(vec2(300,-100), bDim);
-
-			Vec2i res = ws->currentRes;
-
-			ws->currentWindowRes = res;
-			ws->windowRect = rect(0, -ws->currentWindowRes.h, ws->currentWindowRes.w, 0);
-
-			Rect wr = ws->windowRect;
-			ws->clientRect = rect(wr.min + vec2(sd->visualBorderSize), wr.max - vec2(sd->visualBorderSize, sd->titleHeight));
-			ws->currentClientRes = vec2i(roundInt(rectW(ws->clientRect)), roundInt(rectH(ws->clientRect)));
-		}
+		updateWindowFrameData(systemData, ws);
 
 		SwitchToFiber(systemData->messageFiber);
 
@@ -516,10 +567,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	if(input->resize) {
 		if(!windowIsMinimized(windowHandle)) {
-			updateResolution(windowHandle, ws);
+			updateResolution(windowHandle, systemData, ws);
 			ad->updateFrameBuffers = true;
 		}
 		input->resize = false;
+
+		updateWindowFrameData(systemData, ws);
 	}
 
 	if(ad->updateFrameBuffers) {
@@ -540,18 +593,53 @@ extern "C" APPMAINFUNCTION(appMain) {
 	// @AppLoop.
 
 	{
+		glClearColor(1,0,1,1);
+		glClear(GL_COLOR_BUFFER_BIT);
+
 		glLoadIdentity();
+		// Rect vr = ws->viewPortRect;
+		// glViewport(roundInt(vr.left), roundInt(vr.bottom), roundInt(vr.right), roundInt(vr.top));
 		Vec2i res = ws->currentRes;
-		glViewport(0,0, res.w, res.h);
+		glViewport(0,0,res.w,res.h);
 		glOrtho(0, res.w, -res.h, 0, -10,10);
 
 		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 	}
 
-	drawRect(ws->windowRect, vec4(1,0,0,1));
+	// drawRect(ws->windowRect, vec4(1,0,0,1));
 
-	drawRect(rectTLDim(100,-100,50,50), vec4(1,0,0,1));
+	// drawRect(rectTLDim(100,-100,50,50), vec4(1,0,0,1));
 
+
+
+	#if 1
+	{
+		SystemData* sd = systemData;
+
+		glDepthMask(false);
+
+		drawRect(ws->windowRect, vec4(0,1));
+		drawRect(ws->titleRect,  vec4(0.3f,1));
+		drawRect(ws->clientRect, vec4(0,1));
+
+		float c = 0.4f;
+		float a = 0.0f;
+		drawRect(sd->rMinimize,  vec4(c+a,c,c,1));
+		drawRect(sd->rMaximize,  vec4(c,c+a,c,1));
+		drawRect(sd->rClose,     vec4(c,c,c+a,1));
+
+		glDepthMask(true);
+	}
+	#endif 
+
+	{
+		glLoadIdentity();
+		Vec2i res = ws->currentClientRes;
+		setClientViewport(ws, 0, 0, res.w, res.h);
+		glOrtho(0, res.w, -res.h, 0, -10,10);
+
+		// drawRect(rectTLDim(0,0,100,100), vec4(1,0,0,1));
+	}
 
 
 	#if 1
@@ -1337,8 +1425,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Rect tr = ad->textureScreenRect;
 
 		glClearColor(0,0,0, 1);
-		glClear(GL_COLOR_BUFFER_BIT);
+		// glClear(GL_COLOR_BUFFER_BIT);
 
+		// setClientViewport(ws, tr.left, -tr.top, rectW(tr), rectH(tr));
 		glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
 
 		glDepthMask(false);
@@ -1894,7 +1983,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
-	#if 1
+	#if 0
 	{
 		// // Rect sr = getClientRect(ws);
 
@@ -2120,41 +2209,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		newGuiEnd(gui);
 	}
 	#endif
-
-
-
-	#if 0
-	if(false)
-	{
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		SystemData* sd = systemData;
-
-		// sd->titleHeight = 30;
-		// sd->borderSize = 10;
-		// Vec2 bDim = vec2(40,40);
-		// sd->rMinimize = rectTLDim(vec2(100,-100), bDim);
-		// sd->rMaximize = rectTLDim(vec2(200,-100), bDim);
-		// sd->rClose = rectTLDim(vec2(300,-100), bDim);
-
-		// Rect sr = getWindowRect(ws);
-		// drawRect(sr, vec4(0.5f,1));
-
-		// float vbs = sd->visualBorderSize;
-		// Rect tr = rect(vbs, -sd->titleHeight, rectW(sr)-vbs, -vbs);
-		// drawRect(tr, vec4(0,0,1,1));
-
-		drawRect(getClientRect(ws), vec4(0,1,1,1));
-
-		drawRect(sd->rMinimize, vec4(1,0,0,1));
-		drawRect(sd->rMaximize, vec4(1,0.3f,0,1));
-		drawRect(sd->rClose, vec4(1,0.6f,0,1));
-
-		// Rect rTitleBar;
-		// Rect rMinimize, rMaximize, rClose;
-		// float borderSize;
-	}
-	#endif 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
 

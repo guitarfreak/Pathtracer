@@ -2104,7 +2104,13 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 		{
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glLoadIdentity();
-			glViewport(0,0, res.w, res.h);
+
+			glClear(GL_COLOR_BUFFER_BIT);
+
+			Rect vr = ws->viewPortRect;
+			glViewport(roundInt(vr.left), roundInt(vr.bottom), roundInt(vr.right), roundInt(vr.top));
+			// glViewport(0,0, res.w, res.h);
+
 			glOrtho(0,1,1,0, -1, 1);
 			drawRect(rect(0, 1, 1, 0), frameBufferUV, getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
 		}
@@ -2119,8 +2125,10 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 	//
 
 	{
+		if(!ws->vsync) sd->vsyncTempTurnOff = false;
+
 		// Sleep until monitor refresh.
-		if(!init && !globalVsyncSwitch) {
+		if(!init && ws->vsync && !sd->vsyncTempTurnOff) {
 			double frameTime = timerUpdate(*swapTime);
 			double sleepTime = ((double)1/60) - frameTime;
 			if(sleepTime < 0) sleepTime = ((double)1/30) - frameTime;
@@ -2135,20 +2143,18 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 		}
 
 		if(!init) {
-        	if(globalVsyncSwitch) {
+        	if(sd->vsyncTempTurnOff) {
         		wglSwapIntervalEXT(0);
         	}
 
 			swapBuffers(sd);
 
-        	if(globalVsyncSwitch) {
+        	if(sd->vsyncTempTurnOff) {
         		wglSwapIntervalEXT(1);
-        		globalVsyncSwitch = false;
+        		sd->vsyncTempTurnOff = false;
         	}
 		}
 
 		*swapTime = timerInit();
 	}
-
-
 }
