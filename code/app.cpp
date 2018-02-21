@@ -25,18 +25,20 @@
 	- Investigae slow compile times with -d2cgsummary flag.
 	- Shortest distance to camera for widgets.
 
-	- Could do custom window border with WM_NCHITTEST.
-
 	- Check for monitor framerate and Sleep accordingly.
-	- Corner grabbing should be bigger.
+	- Cap framerate when not in vsync.
 
+	- Collision textedit and keyboard hotkeys.
+	- tracer ui active sets ui hot when dragged over.
+	- ui click activates tracer ui.
+	
+	- Detect windows text size.
 
 	Done Today: 
 
 	Bugs:
 	- Windows key slow sometimes.
 	- F11 rapid pressing.
-	- Original titlebar shines through sometimes when clicking titlebar.
 
 =================================================================================
 */
@@ -98,6 +100,10 @@ void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
 
 	Vec2 bDim = vec2(sd->titleHeight);
 
+	sd->titleHeight = sd->normalTitleHeight;
+	sd->borderSize = sd->normalBorderSize;
+	sd->visualBorderSize = sd->normalVisualBorderSize;
+
 	if(sd->maximized) {
 		sd->borderSize = 0;
 		sd->visualBorderSize = 0;
@@ -124,7 +130,7 @@ void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
 	float bm = sd->buttonMargin*2;
 
 	Rect titleRectWithSepLine = ws->titleRect;
-	titleRectWithSepLine.bottom += sd->visualBorderSize;
+	titleRectWithSepLine.bottom += 1;
 
 	Vec2 p = vec2(titleRectWithSepLine.right - bDim.w/2, rectCen(titleRectWithSepLine).y);
 	sd->rClose = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
@@ -261,6 +267,10 @@ struct AppData {
 	f64 time;
 	int frameCount;
 	i64 swapTime;
+	
+	f64 fpsTime;
+	int fpsCounter;
+	float avgFps;
 
 	bool updateFrameBuffers;
 	int msaaSamples; 
@@ -545,6 +555,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 		} else {
 			ad->dt = timerUpdate(ad->lastTimeStamp, &ad->lastTimeStamp);
 			ad->time += ad->dt;
+
+			ad->fpsTime += ad->dt;
+			ad->fpsCounter++;
+			if(ad->fpsTime >= 1) {
+				ad->avgFps = 1 / (ad->fpsTime / (f64)ad->fpsCounter);
+				ad->fpsTime = 0;
+				ad->fpsCounter = 0;
+			}
 		}
 	}
 
@@ -563,12 +581,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->frameCount++;
 
-		// ws->customCursor = true;
-		// updateCursor(ws);
+		if(systemData->mouseInClient) updateCursor(ws);
 
-		// UpdateWindow(systemData->windowHandle);
-
-		ws->windowHasFocus = systemData->windowHandle == GetFocus();
+		ws->windowHasFocus = systemData->windowIsFocused;
 	}
 
 	if(input->keysPressed[KEYCODE_ESCAPE]) {
@@ -613,6 +628,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
+
 	// @AppLoop.
 
 	{
@@ -635,10 +651,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		SystemData* sd = systemData;
 
-		sd->titleHeight = 22;
-		sd->borderSize = 5;
-		sd->visualBorderSize = 1;
+		sd->normalTitleHeight = 22;
+		sd->normalBorderSize = 5;
+		sd->normalVisualBorderSize = 1;
 		sd->buttonMargin = 3;
+		sd->cornerGrabSize = 20;
 
 		Vec4 cBorder = vec4(0,1);
 
@@ -666,7 +683,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec4 cText = vec4(1.0f,1);
 		Vec4 cTextShadow = vec4(0,1);
 
-		float fontHeight = sd->titleHeight*0.7f;
+		float fontHeight = sd->normalTitleHeight*0.7f;
 		float textPadding = fontHeight*0.3f;
 
 		glDepthMask(false);
@@ -848,11 +865,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cam->nearDist = camDistanceFromFOVandWidth(cam->fov, cam->dim.w);
 
 			if(ad->fpsMode) {
-				float speed = 0.1f;
-				// float speed = 1;
+				float speed = 0.0015f;
 				
-				cam->rot.x += -input->mouseDelta.x*speed*ad->dt;
-				cam->rot.y += input->mouseDelta.y*speed*ad->dt;
+				cam->rot.x += -input->mouseDelta.x*speed;
+				cam->rot.y += input->mouseDelta.y*speed;
 				clamp(&cam->rot.y, -M_PI_2 + 0.001f, M_PI_2 - 0.001f);
 			}
 
@@ -2132,7 +2148,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			float textPadding = font->height*0.4f;
 
-			BoxSettings bs = boxSettings(cBackground, panelRounding, cOutline);
+			BoxSettings bs = boxSettings(cBackground, 0, cOutline);
 			TextSettings ts = textSettings(font, cText);
 
 			BoxSettings bous = boxSettings(cButton, buttonRounding, cOutline);
@@ -2153,8 +2169,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gui->popupSettings = boxSettings(cEdit, 0, cOutline);
 			gui->comboBoxSettings = textBoxSettings(gui->textSettings, boxSettings(cEdit, 0, cOutline), textPadding);
 
-			BoxSettings cbs = gui->boxSettings;
-			cbs.color = cEdit;
+			BoxSettings cbs = boxSettings(cEdit, panelRounding, cOutline);
 			gui->checkBoxSettings = checkBoxSettings(cbs, cButton, 0.5f);
 		}
 
@@ -2218,15 +2233,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
 					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
 
-
-					// scissorState(false);
 					s = "SampleCellCount";
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
 					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					// newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
-					// scissorState();
-
+					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
 
 					s = "MaxRayBounces";
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;

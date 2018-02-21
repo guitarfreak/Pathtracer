@@ -544,6 +544,8 @@ struct NewGui {
 	LayoutData* ld;
 	LayoutData layoutStack[10];
 	int layoutStackIndex;
+
+	LPCSTR currentCursor;
 };
 
 
@@ -573,6 +575,8 @@ void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws) {
 	gui->input = input;
 	gui->windowSettings = ws;
 
+	gui->currentCursor = IDC_ARROW;
+
 	gui->scissor = rectCenDim(0,0,10000000,10000000);
 	gui->scissorStack[0] = gui->scissor;
 	gui->scissorStackIndex = 0;
@@ -590,6 +594,10 @@ void newGuiEnd(NewGui* gui) {
 
 	newGuiPopupSetup(gui);
 	newGuiUpdateComboBoxPopups(gui);
+
+	if(gui->currentCursor != IDC_ARROW) {
+		setCursor(gui->windowSettings, gui->currentCursor);
+	}
 
 	// newGuiLayoutPop(gui);
 
@@ -731,7 +739,7 @@ int newGuiInputFromFocus(Input* input, int focus, bool press = true) {
 }
 
 void newGuiSetCursor(NewGui* gui, LPCSTR cursorType) {
-	setCursor(gui->windowSettings, cursorType);
+	gui->currentCursor = cursorType;
 }
 
 
@@ -769,7 +777,9 @@ bool newGuiGoButtonAction(NewGui* gui, Rect r, float z, bool input, int focus = 
 	bool gotActive = newGuiGotActive(gui, id);
 	return gotActive;
 }
-
+bool newGuiGoButtonAction(NewGui* gui, Rect r) {
+	return newGuiGoButtonAction(gui, newGuiIncrementId(gui), r, gui->zLevel, 0);
+}
 
 int newGuiDragAction(NewGui* gui, int id, Rect r, float z, Vec2 mousePos, bool input, bool inputRelease, int focus = 0) {
 	newGuiSetActive(gui, id, input, focus);
@@ -1387,6 +1397,8 @@ bool _newGuiQuickButton(NewGui* gui, Rect r, char* text, Vec2i align, TextBoxSet
 	set.boxSettings.color += highlightOnActive?newGuiColorModB(gui):newGuiColorMod(gui);
 	drawTextBox(r, text, align, gui->scissor, set);
 
+	if(pointInRectEx(gui->input->mousePosNegative, intersection)) newGuiSetCursor(gui, IDC_HAND);
+
 	return active;
 }
 
@@ -1429,6 +1441,8 @@ bool newGuiQuickCheckBox(NewGui* gui, Rect r, bool* value, CheckBoxSettings* set
 		drawBox(rectExpand(cr, vec2(-rectW(cr)*(1 - set.sizeMod))), gui->scissor, boxSettings(set.color, set.boxSettings.roundedCorner/2));
 	}
 
+	if(pointInRectEx(gui->input->mousePosNegative, intersection)) newGuiSetCursor(gui, IDC_HAND);
+
 	return active;
 }
 
@@ -1455,7 +1469,8 @@ bool newGuiQuickTextEditAllVars(NewGui* gui, Rect r, void* data, int varType, in
 	else if(varType == 1) drawTextEditBox(*intData, r, event > 0, gui->scissor, gui->editVars, set);
 	else drawTextEditBox(*floatData, r, event > 0, gui->scissor, gui->editVars, set);
 
-	if(newGuiIsWasHotOrActive(gui)) newGuiSetCursor(gui, IDC_IBEAM);
+	// if(newGuiIsWasHotOrActive(gui)) newGuiSetCursor(gui, IDC_IBEAM);
+	if(pointInRectEx(gui->input->mousePosNegative, intersect)) newGuiSetCursor(gui, IDC_IBEAM);
 
 	if(event == 3) return true;
 
@@ -2248,7 +2263,8 @@ void newGuiPopupSetup(NewGui* gui) {
 		TextBoxSettings s = gui->textBoxSettings;
 		s.boxSettings.color.a = 0;
 		s.boxSettings.borderColor.a = 0;
-		if(newGuiQuickButton(gui, getScreenRect(gui->windowSettings), &s)) {
+
+		if(newGuiGoButtonAction(gui, getScreenRect(gui->windowSettings))) {
 			gui->popupStackCount = 0;
 		}
 

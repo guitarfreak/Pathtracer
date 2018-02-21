@@ -1136,6 +1136,26 @@ union Rect {
 	};
 };
 
+union Recti {
+	struct {
+		Vec2i min;
+		Vec2i max;
+	};
+	struct {
+		Vec2i cen;
+		Vec2i dim;
+	};
+	struct {
+		int left;
+		int bottom;
+		int right;
+		int top;
+	};
+	struct {
+		int e[4];
+	};
+};
+
 union Rect3 {
 	struct {
 		Vec3 min;
@@ -3047,10 +3067,10 @@ bool pointInRect(Vec2 p, Rect r) {
 }
 
 bool pointInRectEx(Vec2 p, Rect r) {
-	bool inRect = ( p.x > r.min.x &&
-					p.x < r.max.x &&
-					p.y > r.min.y &&
-					p.y < r.max.y   );
+	bool inRect = ( p.x >= r.min.x &&
+					p.x <  r.max.x &&
+					p.y >= r.min.y &&
+					p.y <  r.max.y   );
 
 	return inRect;
 }
@@ -3102,6 +3122,19 @@ Vec2 rectDistancePos(Rect r, Vec2 p) {
 Rect rectRound(Rect r) {
 	for(int i = 0; i < 4; i++) r.e[i] = roundFloat(r.e[i]);
 	return r;
+}
+
+//
+//
+//
+
+inline Recti recti() { return {0,0,0,0}; }
+inline Recti recti(int left, int bottom, int right, int top) { 
+	return {left,bottom,right,top}; 
+}
+inline Recti rectiRound(Rect r) {
+	return recti(roundInt(r.left), roundInt(r.bottom), 
+	             roundInt(r.right), roundInt(r.top));
 }
 
 //

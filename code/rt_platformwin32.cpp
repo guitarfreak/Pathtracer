@@ -230,15 +230,25 @@ struct SystemData {
 
 	// For nchittest
 
-	float titleHeight;
-	float borderSize;
-	float visualBorderSize;
-	float buttonMargin;
+	int titleHeight;
+	int borderSize;
+	int visualBorderSize;
+	int buttonMargin;
 	Rect rMinimize, rMaximize, rClose;
+	int cornerGrabSize;
+
+	int normalTitleHeight;
+	int normalBorderSize;
+	int normalVisualBorderSize;
 
 	bool vsyncTempTurnOff;
 
 	bool maximized;
+	bool killedFocus;
+	bool setFocus;
+	bool windowIsFocused;
+
+	bool mouseInClient;
 };
 
 void systemDataInit(SystemData* sd, HINSTANCE instance) {
@@ -385,51 +395,53 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
 
         #ifdef ENABLE_CUSTOM_WINDOW_FRAME
         case WM_NCHITTEST: {
-        	// return HTCAPTION;
+        	sd->mouseInClient = false;
 
-        	// HTCAPTION
-        	// int result = DefWindowProc(window, message, wParam, lParam);
         	int x = GET_X_LPARAM(lParam);
         	int y = GET_Y_LPARAM(lParam);
-
-        	// ScreenToClient(window, &p);
 
         	RECT wr; 
         	GetWindowRect(window, &wr);
 
         	x = x - wr.left;
         	y = y - wr.top;
+        	y *= -1;
 
-        	// Rect r = rect(wr.left, wr.bottom, wr.right, wr.top);
-        	Rect r = rectTLDim(vec2(0,0), vec2(wr.right - wr.left, wr.bottom - wr.top));
+        	Rect re = rectTLDim(vec2(0,0), vec2(wr.right - wr.left, wr.bottom - wr.top));
+        	Recti r = rectiRound(re);
+        	int b = sd->borderSize;
+        	int t = sd->titleHeight;
 
-        	// r.top *= -1;
-        	// r.bottom *= -1;
-
-        	Vec2 p = vec2(x,-y);
-
-        	// printf("%i %i\n", x, y);
-        	// printf("%i %i\n", wr.left, wr.top);
-
-        	float b = sd->borderSize;
-        	float t = sd->titleHeight;
-
-        	// printf("%f %f, %f %f %f %f, %f\n", PVEC2(p), PRECT(r), t);
+        	r.left += b;
+        	r.bottom += b+1;
+        	r.right -= b+1;
+        	r.top -= b;
 
         	// Border.
-        	if((p.x < r.left+b) || (p.x > r.right-b) || (p.y < r.bottom+b) || (p.y > r.top-b)) {
-        		Rect br = rect(r.left+b, r.bottom+b, r.right-b, r.top-b);
+        	if((x < r.left) || (x > r.right) || (y < r.bottom) || (y > r.top)) {
+        		// printf("%i %i, %i %i %i %i, %i\n", x,y, PRECT(r), t);
 
-        		// printf("%f %f, %f %f %f %f, %f\n", PVEC2(p), PRECT(br), t);
+        		float cg = sd->cornerGrabSize;
 
-        		     if(p.x < br.left && p.y < br.bottom) return HTBOTTOMLEFT;
-        		else if(p.x > br.right && p.y < br.bottom) return HTBOTTOMRIGHT;
-				else if(p.x < br.left && p.y > br.top) return HTTOPLEFT;
-        		else if(p.x > br.right && p.y > br.top) return HTTOPRIGHT;
-        		else if(p.y < br.bottom) return HTBOTTOM;
-        		else if(p.x > br.right) return HTRIGHT;
-        		else if(p.y > br.top) return HTTOP;
-        		else if(p.x < br.left) return HTLEFT;
+        		     if(x < r.left     && y < r.bottom+cg ||
+        		        x < r.left+cg  && y < r.bottom) return HTBOTTOMLEFT;
+        		else if(x > r.right    && y < r.bottom+cg ||
+        		        x > r.right-cg && y < r.bottom) return HTBOTTOMRIGHT;
+        		else if(x < r.left     && y > r.top-cg ||
+        		        x < r.left+cg  && y > r.top) return HTTOPLEFT;
+        		else if(x > r.right    && y > r.top-cg ||
+        		        x > r.right-cg && y > r.top) return HTTOPRIGHT;
+        		else if(y < r.bottom)  return HTBOTTOM;
+        		else if(x > r.right)   return HTRIGHT;
+        		else if(y > r.top)     return HTTOP;
+        		else if(x < r.left)    return HTLEFT;
+        	}
+
+        	// BottomRight corner grab.
+        	{
+        		Vec2 cornerPoint = vec2(r.right,r.bottom) - vec2(sd->cornerGrabSize,0);
+        		int result = dot(vec2(x,y) - cornerPoint, normVec2(vec2(1,-1)));
+        		if(result > 0) return HTBOTTOMRIGHT;
         	}
 
         	Vec2 off = vec2(0,0);
@@ -437,22 +449,25 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         		off.y = GetSystemMetrics(SM_CXSIZEFRAME);
         	}
 
+        	Vec2 p = vec2(x,y);
         	if(pointInRect(p+off, sd->rMinimize)) return HTMINBUTTON;
         	if(pointInRect(p+off, sd->rMaximize)) return HTMAXBUTTON;
         	if(pointInRect(p+off, sd->rClose)) return HTCLOSE;
 
         	if(p.y+off.y > -t-sd->visualBorderSize) return HTCAPTION;
 
+        	sd->mouseInClient = true;
+
         	return HTCLIENT;
         } break;
 
         case WM_NCPAINT: {
-	        PAINTSTRUCT ps;
-	        // HDC hdc = BeginPaint(window, &ps); 
-	        HDC hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
-	        EndPaint(window, &ps);
+	        HDC hdc;
+	        hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
+	        // Paint into this DC 
+	        ReleaseDC(window, hdc);
 
-        	// return 0;
+        	return 0;
         } break;
 
         case WM_NCLBUTTONDOWN: {
@@ -492,15 +507,19 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         } break;
 
         case WM_SETFOCUS: {
+        	sd->setFocus = true;
+        	sd->windowIsFocused = true;
         	sd->vsyncTempTurnOff = true;
         	SwitchToFiber(sd->mainFiber);
         } break;
 
         case WM_KILLFOCUS: {
-		    PostMessage(window, message, wParam, lParam);
+		    // PostMessage(window, message, wParam, lParam);
+		    sd->killedFocus = true;
+        	sd->windowIsFocused = false;
 
-        	sd->vsyncTempTurnOff = true;
-        	SwitchToFiber(sd->mainFiber);
+        	// sd->vsyncTempTurnOff = true;
+        	// SwitchToFiber(sd->mainFiber);
         } break;
 
         case WM_TIMER: {
@@ -540,9 +559,14 @@ void CALLBACK updateInput(SystemData* sd) {
 	    input->closeWindow = false;
 		input->maximizeWindow = false;
 		input->minimizeWindow = false;
-	    bool killedFocus = false;
 
 	    bool mouseInClient = mouseInClientArea(windowHandle);
+
+        #ifdef ENABLE_CUSTOM_WINDOW_FRAME
+        {
+        	mouseInClient = sd->mouseInClient && mouseInClientArea(windowHandle);
+        }
+        #endif
 
 	    MSG message;
 	    // while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
@@ -644,10 +668,6 @@ void CALLBACK updateInput(SystemData* sd) {
 	            	input->closeWindow = true;
 	            	break;
 
-	            case WM_KILLFOCUS: {
-	            	killedFocus = true;
-	            } break;
-
 	            default: {
 	                TranslateMessage(&message); 
 	                DispatchMessage(&message); 
@@ -655,11 +675,16 @@ void CALLBACK updateInput(SystemData* sd) {
 	        }
 	    }
 
-	    if(killedFocus) {
+	    if(sd->killedFocus || sd->setFocus) {
 	    	for(int i = 0; i < KEYCODE_COUNT; i++) {
 	    		input->keysDown[i] = false;
 	    	}
 	    	*input = {};
+
+	    	// input->mouse
+
+	    	sd->killedFocus = false;
+	    	sd->setFocus = false;
 	    }
 
 	    input->mousePos = getMousePos(windowHandle, false);
@@ -757,7 +782,7 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     windowClass.lpfnWndProc = mainWindowCallBack;
     windowClass.hInstance = systemData->instance;
     windowClass.lpszClassName = "App";
-    windowClass.hCursor = LoadCursor(0, IDC_ARROW);
+    // windowClass.hCursor = LoadCursor(0, IDC_ARROW);
     // windowClass.hbrBackground = (HBRUSH)(CreateSolidBrush(RGB(255,0,0)));
     // windowClass.hbrBackground = 0;
 
@@ -775,6 +800,7 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     }
 
 	SetFocus(systemData->windowHandle);
+	systemData->windowIsFocused = true;
 
 	// DWM_BLURBEHIND bb = {0};
 	// HRGN hRgn = CreateRectRgn(0, 0, -1, -1);
@@ -830,6 +856,7 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     Rid[0].usUsage = HID_USAGE_GENERIC_MOUSE; 
     Rid[0].hwndTarget = systemData->windowHandle;
     Rid[0].dwFlags = RIDEV_INPUTSINK;   
+    // Rid[0].dwFlags = 0;   
     bool r = RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
     assert(r);
 
