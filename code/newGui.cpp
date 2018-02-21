@@ -1227,7 +1227,7 @@ void drawArrow(Vec2 a, Vec2 b, Vec4 color, Rect scissor) {
 void drawText(Rect r, char* text, Vec2i align, Rect scissor, TextSettings settings) {
 	Vec2 pos = rectCen(r) + (rectDim(r)/2) * vec2(align);
 
-	scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(-0,-0)));
+	scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(2,2)));
 	drawText(text, pos, align, settings);
 	scissorTestScreen(scissor);
 }

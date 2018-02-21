@@ -28,14 +28,15 @@
 	- Could do custom window border with WM_NCHITTEST.
 
 	- Check for monitor framerate and Sleep accordingly.
+	- Corner grabbing should be bigger.
 
-	- Restore button after maximize.
 
 	Done Today: 
 
 	Bugs:
 	- Windows key slow sometimes.
 	- F11 rapid pressing.
+	- Original titlebar shines through sometimes when clicking titlebar.
 
 =================================================================================
 */
@@ -62,7 +63,7 @@
 #include FT_PARAMETER_TAGS_H
 #include FT_MODULE_H
 
-
+#define ENABLE_CUSTOM_WINDOW_FRAME
 
 struct ThreadQueue;
 struct GraphicsState;
@@ -93,14 +94,9 @@ MemoryBlock* globalMemory;
 
 
 void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
-	sd->titleHeight = 22;
+	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
 
-	sd->borderSize = 5;
-	sd->visualBorderSize = 1;
-
-	float buttonGap = sd->borderSize;
-	Vec2 bDim = vec2(sd->titleHeight-buttonGap);
-	sd->buttonDim = bDim;
+	Vec2 bDim = vec2(sd->titleHeight);
 
 	if(sd->maximized) {
 		sd->borderSize = 0;
@@ -115,20 +111,25 @@ void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
 
 	Vec2i res = ws->currentRes;
 
-	ws->currentWindowRes = res;
-	ws->windowRect = rect(0, -ws->currentWindowRes.h, ws->currentWindowRes.w, 0);
+	ws->windowRes = res;
+	ws->windowRect = rect(0, -ws->windowRes.h, ws->windowRes.w, 0);
 
 	Rect wr = ws->windowRect;
 	ws->clientRect = rect(wr.min + vec2(sd->visualBorderSize), wr.max - vec2(sd->visualBorderSize, sd->titleHeight+sd->visualBorderSize));
-	ws->currentClientRes = vec2i(roundInt(rectW(ws->clientRect)), roundInt(rectH(ws->clientRect)));
+	ws->clientRes = vec2i(roundInt(rectW(ws->clientRect)), roundInt(rectH(ws->clientRect)));
 
 	float vbs = sd->visualBorderSize;
 	ws->titleRect = rect(vbs, -sd->titleHeight - vbs, rectW(ws->windowRect)-vbs, -vbs);
 
-	Vec2 p = rectTR(ws->windowRect) - vec2(sd->visualBorderSize);
-	sd->rClose = rectTRDim(p, bDim); p.x -= bDim.w + buttonGap;
-	sd->rMaximize = rectTRDim(p, bDim); p.x -= bDim.w + buttonGap;
-	sd->rMinimize = rectTRDim(p, bDim); p.x -= bDim.w + buttonGap;
+	float bm = sd->buttonMargin*2;
+
+	Rect titleRectWithSepLine = ws->titleRect;
+	titleRectWithSepLine.bottom += sd->visualBorderSize;
+
+	Vec2 p = vec2(titleRectWithSepLine.right - bDim.w/2, rectCen(titleRectWithSepLine).y);
+	sd->rClose = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
+	sd->rMaximize = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
+	sd->rMinimize = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
 
 	if(ws->fullscreen) {
 		sd->rClose    = rect(-1,-1,-1,-1);
@@ -136,21 +137,39 @@ void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
 		sd->rMinimize = rect(-1,-1,-1,-1);
 	}
 
-	ws->viewPortRect = rect(0, 0, res.w, res.h);
+	ws->windowRectBL = rect(0, 0, res.w, res.h);
+
+	ws->clientRectBL = ws->windowRectBL;
+	ws->clientRectBL.min += vec2(sd->visualBorderSize);
+	ws->clientRectBL.max -= vec2(sd->visualBorderSize,sd->visualBorderSize+sd->titleHeight);
 
 	if(sd->maximized) {
 		float sbs = ws->styleBorderSize;
-		ws->viewPortRect = rect(sbs, sbs, res.w, res.h);
+		ws->windowRectBL = rect(sbs, sbs, sbs+res.w, sbs+res.h);
 	}
+
+	#else 
+
+	Vec2i res = ws->currentRes;
+	ws->clientRes = res;
+	ws->windowRes = res;
+
+	#endif
 }
 
-void setClientViewport(WindowSettings* ws, int left, int bottom, int width, int height) {
+void setClientViewport(WindowSettings* ws, Rect vp) {
+	vp = rectTrans(vp, ws->clientRectBL.min);
+	setViewPort(vp);
+}
 
-	Rect cr = ws->clientRect;
-	Rect wr = ws->windowRect;
+void setClientScissor(WindowSettings* ws, Rect vp) {
+	vp = rectTrans(vp, ws->clientRectBL.min);
+	scissorTest(vp);
+}
 
-	Vec2i res = vec2i(roundInt(rectW(cr)), roundInt(rectH(cr)));
-	glViewport(left + roundInt(cr.left), bottom + roundInt(cr.bottom-wr.bottom), width, height);
+void setWindowViewport(WindowSettings* ws, Rect vp) {
+	vp = rectTrans(vp, ws->windowRectBL.min);
+	setViewPort(vp);
 }
 
 
@@ -504,7 +523,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 	    DeleteFiber(systemData->messageFiber);
 	    systemData->messageFiber = CreateFiber(0, (PFIBER_START_ROUTINE)updateInput, systemData);
 
-		gs->screenRes = ws->currentRes;
+		// gs->screenRes = ws->currentRes;
+		gs->screenRes = ws->clientRes;
 
 		// Bad news.
 		for(int i = 0; i < arrayCount(globalGraphicsState->fonts); i++) {
@@ -531,7 +551,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	clearTMemory();
 
 	//
-	// Update input.WM_SIZE
+	// Update input.
 	//
 
 	{
@@ -547,6 +567,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// updateCursor(ws);
 
 		// UpdateWindow(systemData->windowHandle);
+
+		ws->windowHasFocus = systemData->windowHandle == GetFocus();
 	}
 
 	if(input->keysPressed[KEYCODE_ESCAPE]) {
@@ -557,7 +579,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 	}
 
-	if(input->keysPressed[KEYCODE_F11]) {
+	if(input->keysPressed[KEYCODE_F11] && !systemData->maximized) {
 		if(ws->fullscreen) setWindowMode(windowHandle, ws, WINDOW_MODE_WINDOWED);
 		else setWindowMode(windowHandle, ws, WINDOW_MODE_FULLBORDERLESS);
 
@@ -576,7 +598,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	if(ad->updateFrameBuffers) {
-		gs->screenRes = ws->currentRes;
+		// gs->screenRes = ws->currentRes;
+		gs->screenRes = ws->clientRes;
 
 		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, ws->currentRes.w, ws->currentRes.h);
 		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, ws->currentRes.w, ws->currentRes.h);
@@ -593,54 +616,136 @@ extern "C" APPMAINFUNCTION(appMain) {
 	// @AppLoop.
 
 	{
+		scissorState(false);
+
 		glClearColor(1,0,1,1);
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		glLoadIdentity();
-		// Rect vr = ws->viewPortRect;
-		// glViewport(roundInt(vr.left), roundInt(vr.bottom), roundInt(vr.right), roundInt(vr.top));
-		Vec2i res = ws->currentRes;
+		Vec2i res = ws->windowRes;
 		glViewport(0,0,res.w,res.h);
 		glOrtho(0, res.w, -res.h, 0, -10,10);
 
 		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 	}
 
-	// drawRect(ws->windowRect, vec4(1,0,0,1));
-
-	// drawRect(rectTLDim(100,-100,50,50), vec4(1,0,0,1));
-
-
-
-	#if 1
+	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
 	{
+		// Draw window frame;
+
 		SystemData* sd = systemData;
+
+		sd->titleHeight = 22;
+		sd->borderSize = 5;
+		sd->visualBorderSize = 1;
+		sd->buttonMargin = 3;
+
+		Vec4 cBorder = vec4(0,1);
+
+		Vec3 cTitleBarFocusedLeft     = vec3(0.03f,0.7f,0.30f);
+		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.03f,-0.1f,0.15f);
+		Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft  + vec3(0, -1, -0.1f);
+		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.2f);
+
+		Vec4 cTitleBarLeft, cTitleBarRight;
+		if(!ws->windowHasFocus) {
+			cTitleBarLeft = vec4(hslToRgbFloat(cTitleBarNotFocusedLeft),1);
+			cTitleBarRight = vec4(hslToRgbFloat(cTitleBarNotFocusedRight),1);
+		} else {
+			cTitleBarLeft = vec4(hslToRgbFloat(cTitleBarFocusedLeft),1);
+			cTitleBarRight = vec4(hslToRgbFloat(cTitleBarFocusedRight),1);
+		}
+
+		Vec4 cButton0 = vec4(0.2f,1);
+		Vec4 cButton1 = vec4(0.2f,1);
+		Vec4 cButton2 = vec4(0.2f,1);
+
+		Vec4 cButtonOutline = cBorder;
+		Vec4 cSymbol = vec4(0.7,1);
+
+		Vec4 cText = vec4(1.0f,1);
+		Vec4 cTextShadow = vec4(0,1);
+
+		float fontHeight = sd->titleHeight*0.7f;
+		float textPadding = fontHeight*0.3f;
 
 		glDepthMask(false);
 
-		drawRect(ws->windowRect, vec4(0,1));
-		drawRect(ws->titleRect,  vec4(0.3f,1));
-		drawRect(ws->clientRect, vec4(0,1));
+		drawRect(ws->windowRect, cBorder);
 
-		float c = 0.4f;
-		float a = 0.0f;
-		drawRect(sd->rMinimize,  vec4(c+a,c,c,1));
-		drawRect(sd->rMaximize,  vec4(c,c+a,c,1));
-		drawRect(sd->rClose,     vec4(c,c,c+a,1));
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glBlendEquation(GL_FUNC_ADD);
+
+		drawRectNewColoredW(ws->titleRect, cTitleBarLeft, cTitleBarRight);
+
+		{
+			glLineWidth(1);
+			Vec2 p0 = ws->titleRect.min;
+			Vec2 p1 = rectBR(ws->titleRect);
+			drawLine(vec2(roundFloat(p0.x),roundFloat(p0.y)+0.5f), vec2(roundFloat(p1.x),roundFloat(p1.y)+0.5f), cBorder);
+			glLineWidth(1);
+		}
+
+		if(pointInRectEx(input->mousePosWindow, sd->rMinimize)) cButton0.rgb += vec3(0.1f);
+		if(pointInRectEx(input->mousePosWindow, sd->rMaximize)) cButton1.rgb += vec3(0.1f);
+		if(pointInRectEx(input->mousePosWindow, sd->rClose))    cButton2.rgb += vec3(0.1f);
+		drawRectOutlined(sd->rMinimize,  cButton0, cButtonOutline);
+		drawRectOutlined(sd->rMaximize,  cButton1, cButtonOutline);
+		drawRectOutlined(sd->rClose,     cButton2, cButtonOutline);
+
+		{
+			glLineWidth(0.5f);
+
+			float off = rectW(sd->rMinimize)*0.2f;
+			{
+				Rect r = sd->rMinimize;
+				Vec2 p0 = rectBL(r) + vec2(off);
+				Vec2 p1 = rectBR(r) + vec2(-off,off);
+				drawLine(vec2(roundFloat(p0.x)-0.5f, roundFloat(p0.y))+0.5f, vec2(roundFloat(p1.x)-0.5f, roundFloat(p1.y))+0.5f, cSymbol);
+			}
+
+			{
+				Rect r = sd->rMaximize;
+				r = rectExpand(r, vec2(-off*2));
+				r = rect(roundFloat(r.left), roundFloat(r.bottom), roundFloat(r.right), roundFloat(r.top));
+				drawRectOutline(r, cSymbol);
+			}
+
+			{
+				Rect r = sd->rClose;
+				drawCross(rectCen(r), rectW(r)/2 - off, 1, vec2(1,0), cSymbol);
+			}
+
+			glLineWidth(1);
+		}
+
+		Vec2 tp = vec2(ws->titleRect.left + textPadding, rectCen(ws->titleRect).y);
+
+		Font* font = getFont("LiberationSans-Regular.ttf", fontHeight, "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf");
+		TextSettings ts = textSettings(font, cText, TEXTSHADOW_MODE_SHADOW, vec2(-1,-1), 1, cTextShadow);
+
+		drawText("<b>PathTracer<b>", tp, vec2i(-1,0), ts);
 
 		glDepthMask(true);
 	}
-	#endif 
+	#endif
 
+	if(true)
 	{
 		glLoadIdentity();
-		Vec2i res = ws->currentClientRes;
-		setClientViewport(ws, 0, 0, res.w, res.h);
+		Vec2i res = ws->clientRes;
+		setClientViewport(ws, rect(0,0,res.w,res.h));
 		glOrtho(0, res.w, -res.h, 0, -10,10);
 
-		// drawRect(rectTLDim(0,0,100,100), vec4(1,0,0,1));
-	}
+		scissorState(true);
+		setClientScissor(ws, rect(0,0,res.w,res.h));
 
+		glClearColor(0,0,0,1);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+		// drawRect(rectCenDim(vec2(0,0), vec2(1000000)), vec4(1,1,1,1));
+	}
 
 	#if 1
 
@@ -1427,8 +1532,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glClearColor(0,0,0, 1);
 		// glClear(GL_COLOR_BUFFER_BIT);
 
-		// setClientViewport(ws, tr.left, -tr.top, rectW(tr), rectH(tr));
-		glViewport(tr.left, -tr.top, rectW(tr), rectH(tr));
+		Vec2i res = ws->clientRes;
+		setClientViewport(ws, rect(tr.left, res.h+tr.bottom, tr.right, res.h+tr.top));
+
 
 		glDepthMask(false);
 		Vec3 cc = world->defaultEmitColor;
@@ -1983,7 +2089,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
-	#if 0
+	#if 1
 	{
 		// // Rect sr = getClientRect(ws);
 
@@ -1997,7 +2103,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// // glClear(GL_COLOR_BUFFER_BIT);
 		// drawRect(rectCenDim(0,0,10000,10000), vec4(0,1,0,1));
 
-		glViewport(0, 0, ws->currentRes.w, ws->currentRes.h);
+		// glViewport(0, 0, ws->currentRes.w, ws->currentRes.h);
+		setClientViewport(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
 
 
 		NewGui* gui = &ad->gui;
@@ -2111,11 +2218,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
 					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
 
+
+					// scissorState(false);
 					s = "SampleCellCount";
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
 					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
+					// newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
+					// scissorState();
+
 
 					s = "MaxRayBounces";
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;

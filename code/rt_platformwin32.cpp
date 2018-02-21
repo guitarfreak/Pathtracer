@@ -82,7 +82,9 @@ struct Input {
 	Vec2 mousePosNegative;
 	Vec2 mousePosScreen;
 	Vec2 mousePosNegativeScreen;
-	
+
+	Vec2 mousePosWindow;
+
 	Vec2 mouseDelta;
 	int mouseWheel;
 	bool mouseButtonPressed[8];
@@ -231,8 +233,8 @@ struct SystemData {
 	float titleHeight;
 	float borderSize;
 	float visualBorderSize;
+	float buttonMargin;
 	Rect rMinimize, rMaximize, rClose;
-	Vec2 buttonDim;
 
 	bool vsyncTempTurnOff;
 
@@ -264,12 +266,15 @@ struct WindowSettings {
 
 	Vec2i currentRes;
 
-	Vec2i currentClientRes;
-	Vec2i currentWindowRes;
+	Vec2i clientRes;
+	Vec2i windowRes;
+
 	Rect clientRect;
 	Rect windowRect;
 	Rect titleRect;
-	Rect viewPortRect;
+
+	Rect windowRectBL; // vec2(0,0) is bottom left
+	Rect clientRectBL; // vec2(0,0) is bottom left
 
 	bool vsync;
 
@@ -279,6 +284,8 @@ struct WindowSettings {
 	POINT lastMousePosition;
 
 	int styleBorderSize;
+
+	bool windowHasFocus;
 };
 
 
@@ -368,10 +375,6 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
             PostMessage(window, message, wParam, lParam);
         } break;
 
-        case WM_KILLFOCUS: {
-            PostMessage(window, message, wParam, lParam);
-        } break;
-
         case WM_SIZE: {
         	if(wParam == SIZE_MAXIMIZED) sd->maximized = true;
         	else if(wParam == SIZE_RESTORED) sd->maximized = false;
@@ -380,7 +383,7 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	sd->input->resize = true;
         } break;
 
-        #if 1
+        #ifdef ENABLE_CUSTOM_WINDOW_FRAME
         case WM_NCHITTEST: {
         	// return HTCAPTION;
 
@@ -443,14 +446,14 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	return HTCLIENT;
         } break;
 
-        // case WM_NCPAINT: {
-	       //  PAINTSTRUCT ps;
-	       //  // HDC hdc = BeginPaint(window, &ps); 
-	       //  HDC hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
-	       //  EndPaint(window, &ps);
+        case WM_NCPAINT: {
+	        PAINTSTRUCT ps;
+	        // HDC hdc = BeginPaint(window, &ps); 
+	        HDC hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
+	        EndPaint(window, &ps);
 
-        // 	return 0;
-        // } break;
+        	// return 0;
+        } break;
 
         case WM_NCLBUTTONDOWN: {
         	int test = wParam;
@@ -486,6 +489,18 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
 
             lpMMI->ptMaxTrackSize.x = sd->maxWindowDim.w;
             lpMMI->ptMaxTrackSize.y = sd->maxWindowDim.h;
+        } break;
+
+        case WM_SETFOCUS: {
+        	sd->vsyncTempTurnOff = true;
+        	SwitchToFiber(sd->mainFiber);
+        } break;
+
+        case WM_KILLFOCUS: {
+		    PostMessage(window, message, wParam, lParam);
+
+        	sd->vsyncTempTurnOff = true;
+        	SwitchToFiber(sd->mainFiber);
         } break;
 
         case WM_TIMER: {
@@ -656,6 +671,28 @@ void CALLBACK updateInput(SystemData* sd) {
 	    input->lastMousePos = input->mousePos;
 
 	    input->firstFrame = false;
+
+	    #ifdef ENABLE_CUSTOM_WINDOW_FRAME
+	    {
+	    	float xOff = -sd->visualBorderSize;
+	    	float yOff = sd->visualBorderSize+sd->titleHeight;
+
+	    	int frameSize = GetSystemMetrics(SM_CXSIZEFRAME);
+		    if(sd->maximized) {
+		    	xOff -= frameSize;
+		    	yOff += frameSize;
+		    }
+
+		    input->mousePosWindow = input->mousePosNegative;
+		    if(sd->maximized) input->mousePosWindow += vec2(-frameSize,frameSize);
+
+	    	input->mousePos += vec2(xOff, -yOff);
+	    	input->mousePosNegative += vec2(xOff, yOff);
+	    	input->mousePosScreen += vec2(xOff, -yOff);
+	    	input->mousePosNegativeScreen += vec2(xOff, yOff);
+		    input->lastMousePos += vec2(xOff, -yOff);
+	    }
+	    #endif
 
 	    SwitchToFiber(sd->mainFiber);
 	}
@@ -994,12 +1031,11 @@ Rect getClientRect(WindowSettings* ws) {
 }
 
 Rect getScreenRect(WindowSettings* ws) {
-	return getClientRect(ws);
+	return rect(0, -ws->clientRes.h, ws->clientRes.w, 0);
 }
 // Rect getScreenRect(WindowSettings* ws) {
 // 	return rect(0, -ws->currentRes.h, ws->currentRes.w, 0);
 // }
-
 
 // void captureMouse(HWND windowHandle, bool t, Input* input) {
 // 	if(t) {

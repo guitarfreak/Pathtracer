@@ -2163,6 +2163,9 @@ inline Vec3 hslToRgbFloat(Vec3 hsl) {
 
 	return vec3(c[0], c[1], c[2]);
 }
+inline Vec3 hslToRgbFloat(float h, float s, float l) {
+	return hslToRgbFloat(vec3(h,s,l));
+}
 
 inline Vec3 rgbToHslFloat(Vec3 rgb) {
 	Vec3 hsl = rgbToHsl(rgb);
@@ -3094,6 +3097,11 @@ Vec2 rectDistancePos(Rect r, Vec2 p) {
 		 if(p.y >= r.max.y) result.y = p.y - r.max.y;
 	else if(p.y <= r.min.y) result.y = p.y - r.min.y;
 	return result;
+}
+
+Rect rectRound(Rect r) {
+	for(int i = 0; i < 4; i++) r.e[i] = roundFloat(r.e[i]);
+	return r;
 }
 
 //

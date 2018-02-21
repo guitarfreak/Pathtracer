@@ -623,7 +623,7 @@ Font* getFont(char* fontFile, float heightIndex, char* boldFontFile = 0, char* i
 		} else {
 			if(strCompare(fontFile, globalGraphicsState->fonts[i][0].file)) {
 				for(int j = 0; j < fontSlotCount; j++) {
-					int h = globalGraphicsState->fonts[i][j].heightIndex;
+					float h = globalGraphicsState->fonts[i][j].heightIndex;
 					if(h == 0 || h == heightIndex) {
 						fontSlot = &globalGraphicsState->fonts[i][j];
 						break;
@@ -655,6 +655,14 @@ Font* getFont(char* fontFile, float heightIndex, char* boldFontFile = 0, char* i
 }
 
 
+void setViewPort(Rect r) {
+	int left   = roundInt(r.left);
+	int bottom = roundInt(r.bottom);
+	int right  = roundInt(r.right);
+	int top    = roundInt(r.top);
+
+	glViewport(left, bottom, right-left, top-bottom);
+}
 
 Rect scissorRectScreenSpace(Rect r, float screenHeight) {
 	Rect scissorRect = {r.min.x, r.min.y+screenHeight, r.max.x, r.max.y+screenHeight};
@@ -662,23 +670,26 @@ Rect scissorRectScreenSpace(Rect r, float screenHeight) {
 }
 
 void scissorTest(Rect r) {
-	Rect sr = r;
-	Vec2 dim = rectDim(sr);
-	glScissor(sr.min.x, sr.min.y, dim.x, dim.y);
+	int left   = roundInt(r.left);
+	int bottom = roundInt(r.bottom);
+	int right  = roundInt(r.right);
+	int top    = roundInt(r.top);
+
+	glScissor(left, bottom, right-left, top-bottom);
 }
 
 void scissorTest(Rect r, float screenHeight) {
 	Rect sr = scissorRectScreenSpace(r, screenHeight);
 	if(rectW(sr) < 0 || rectH(sr) < 0) sr = rect(0,0,0,0);
 
-	glScissor(sr.min.x, sr.min.y, rectW(sr), rectH(sr));
+	scissorTest(sr);
 }
 
 void scissorTestScreen(Rect r) {
 	Rect sr = scissorRectScreenSpace(r, globalGraphicsState->screenRes.h);
 	if(rectW(sr) < 0 || rectH(sr) < 0) sr = rect(0,0,0,0);
 
-	glScissor(sr.min.x, sr.min.y, rectW(sr), rectH(sr));
+	scissorTest(sr);
 }
 
 void scissorState(bool state = true) {
@@ -838,11 +849,6 @@ void drawRectNewColored(Rect r, Vec4 c0, Vec4 c1, Vec4 c2, Vec4 c3) {
 	Vec4 cs1 = COLOR_SRGB(c1);
 	Vec4 cs2 = COLOR_SRGB(c2);
 	Vec4 cs3 = COLOR_SRGB(c3);
-
-	// Vec4 cs0 = c0;
-	// Vec4 cs1 = c1;
-	// Vec4 cs2 = c2;
-	// Vec4 cs3 = c3;
 
 	glColor4f(1,1,1,1);
 	glBegin(GL_QUADS);
@@ -2082,6 +2088,7 @@ void openglDefaultSetup() {
 }
 
 
+void setWindowViewport(WindowSettings* ws, Rect vp);
 void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapTime, bool init) {
 	
 	//
@@ -2089,6 +2096,8 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 	//
 
 	{
+		scissorState(false);
+		
 		Vec2i frameBufferRes = getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->dim;
 		Vec2i res = ws->currentRes;
 		Rect frameBufferUV = rect(0,(float)res.h/frameBufferRes.h,(float)res.w/frameBufferRes.w,0);
@@ -2105,11 +2114,11 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glLoadIdentity();
 
+			glClearColor(0,0,0,0);
 			glClear(GL_COLOR_BUFFER_BIT);
 
-			Rect vr = ws->viewPortRect;
-			glViewport(roundInt(vr.left), roundInt(vr.bottom), roundInt(vr.right), roundInt(vr.top));
-			// glViewport(0,0, res.w, res.h);
+			Vec2i res = ws->windowRes;
+			setWindowViewport(ws, rect(0,0,res.w,res.h));
 
 			glOrtho(0,1,1,0, -1, 1);
 			drawRect(rect(0, 1, 1, 0), frameBufferUV, getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
