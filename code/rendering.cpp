@@ -923,6 +923,8 @@ void drawRectRounded(Rect r, Vec4 color, float size) {
 void drawRectShadow(Rect r, Vec4 color, float size) {
 	float z = globalGraphicsState->zOrder;
 
+	size *= 2;
+
 	glBindTexture(GL_TEXTURE_2D, 0);
 	Vec4 c = COLOR_SRGB(color);
 	Vec4 c2 = vec4(0,0);
@@ -2072,7 +2074,7 @@ void openglDefaultSetup() {
 	// glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	// glBlendEquation(GL_FUNC_ADD);
+	glBlendEquation(GL_FUNC_ADD);
 	// glViewport(0,0, ad->cur3dBufferRes.x, ad->cur3dBufferRes.y);
 
 

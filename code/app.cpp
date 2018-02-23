@@ -32,8 +32,9 @@
 	- tracer ui active sets ui hot when dragged over.
 	- ui click activates tracer ui.
 	
-	- Detect windows text size.
-	
+	- Detect windows text size and test ui with different sizes.
+	- Mouse wheel entity ui.
+
 	- Menu.
 
 	Done Today: 
@@ -182,15 +183,18 @@ void setWindowViewport(WindowSettings* ws, Rect vp) {
 
 
 bool keyPressed(NewGui* gui, Input* input, int keycode) {
-	bool result = false;
-	if(gui->activeId == 0) result = input->keysPressed[keycode];
-	return result;
+	if(gui->activeId != 0) return false;
+	else return input->keysPressed[keycode];
 }
 
 bool keyDown(NewGui* gui, Input* input, int keycode) {
-	bool result = false;
-	if(gui->activeId == 0) result = input->keysDown[keycode];
-	return result;
+	if(gui->activeId != 0) return false;
+	else return input->keysDown[keycode];
+}
+
+int mouseWheel(NewGui* gui, Input* input) {
+	if(gui->hotId[Gui_Focus_MWheel] != 0 || gui->activeId != 0) return false;
+	else return input->mouseWheel; 
 }
 
 
@@ -454,6 +458,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		gs->samplers[SAMPLER_NORMAL] = createSampler(16.0f, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE, GL_LINEAR, GL_LINEAR_MIPMAP_LINEAR);
 		gs->samplers[SAMPLER_NEAREST] = createSampler(16.0f, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE, GL_NEAREST, GL_NEAREST);
 
+		glBindSampler(0, gs->samplers[SAMPLER_NORMAL]);
+
 		//
 		//
 		//
@@ -474,8 +480,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0, ad->msaaSamples);
+			// attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, ad->msaaSamples);
 			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_DEPTH, GL_DEPTH_COMPONENT32F, 0, 0, ad->msaaSamples);
 			attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0);
+			// attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0);
 
 			attachToFrameBuffer(FRAMEBUFFER_ScreenShot, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8, 0, 0);
 
@@ -686,10 +694,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec4 cBorder = vec4(0,1);
 
-		Vec3 cTitleBarFocusedLeft     = vec3(0.03f,0.7f,0.25f);
-		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.03f,-0.1f,0.1f);
-		Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft  + vec3(0, -1, -0.1f);
-		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.1f);
+		// Vec3 cTitleBarFocusedLeft     = vec3(0.03f,0.7f,0.25f);
+		// Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.03f,-0.1f,0.1f);
+		// Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft  + vec3(0, -1, -0.1f);
+		// Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.1f);
+
+		Vec3 cTitleBarFocusedLeft     = vec3(0.00f,0.0f,0.15f);
+		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.00f,0.0f,0.1f);
+		Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft;
+		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight;
 
 		Vec4 cTitleBarLeft, cTitleBarRight;
 		if(!ws->windowHasFocus) {
@@ -700,14 +713,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cTitleBarRight = vec4(hslToRgbFloat(cTitleBarFocusedRight),1);
 		}
 
-		Vec4 cButton0 = vec4(0.8f,1);
-		Vec4 cButton1 = vec4(0.8f,1);
-		Vec4 cButton2 = vec4(0.8f,1);
+		float cButtons = 0.6f;
+		Vec4 cButton0 = vec4(cButtons,1);
+		Vec4 cButton1 = vec4(cButtons,1);
+		Vec4 cButton2 = vec4(cButtons,1);
 
 		Vec4 cButtonOutline = cBorder;
-		// Vec4 cSymbol = vec4(0.7,1);
 
 		Vec4 cText = vec4(1.0f,1);
+		if(!ws->windowHasFocus) cText = vec4(0.5f,1);
+
 		Vec4 cTextShadow = vec4(0,1);
 
 		float fontHeight = sd->normalTitleHeight*0.7f;
@@ -734,9 +749,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(pointInRectEx(input->mousePosWindow, sd->rMinimize)) cButton0.rgb += vec3(0.4f);
 		if(pointInRectEx(input->mousePosWindow, sd->rMaximize)) cButton1.rgb += vec3(0.4f);
 		if(pointInRectEx(input->mousePosWindow, sd->rClose))    cButton2.rgb += vec3(0.4f);
-		// drawRectOutlined(sd->rMinimize,  cButton0, cButtonOutline);
-		// drawRectOutlined(sd->rMaximize,  cButton1, cButtonOutline);
-		// drawRectOutlined(sd->rClose,     cButton2, cButtonOutline);
 
 		{
 			glLineWidth(1);
@@ -754,11 +766,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 				r = rectExpand(r, vec2(-off*2));
 				r = rectRound(r);
 				drawRectOutline(r, cButton1);
+				drawLine(rectTL(r)+vec2(0,-1.5f), rectTR(r)+vec2(0,-1.5f), cButton1);
 			}
 
 			{
 				Rect r = sd->rClose;
-				// drawCross(roundVec2(rectCen(r)) + vec2(0.5f,0.5f), rectW(r)/2 - off, 1, vec2(1,0), cButton2);
 				drawCross(roundVec2(rectCen(r)), rectW(r) - off*2, 1.5f, cButton2);
 			}
 		}
@@ -1356,8 +1368,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		EntityUI* eui = &ad->entityUI;
 
-		if(input->mouseWheel && eui->selectionState != ENTITYUI_ACTIVE) {
-			ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+input->mouseWheel, ENTITYUI_MODE_SIZE);
+		if(mouseWheel(gui, input) && eui->selectionState != ENTITYUI_ACTIVE) {
+			ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+ mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
 		}
 
 		if(input->mouseButtonPressed[2] && eui->selectionState != ENTITYUI_ACTIVE) {
@@ -2318,6 +2330,39 @@ extern "C" APPMAINFUNCTION(appMain) {
 		newGuiEnd(gui);
 	}
 	#endif
+
+	#if 0
+	{
+		// Gamma test.
+
+		Rect cr = ws->clientRect;
+		Vec2 p = vec2(0,0);
+		float h = rectH(cr)/7;
+		Rect r;
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRect(r, vec4(1,1), rect(0,1,1,0), getTexture(TEXTURE_GRADIENT)->id);
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r , vec4(1,0,0,1), vec4(0,1,0,1));
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r, vec4(1,0,0,1), vec4(1,0,0,1));
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r, vec4(1,1,1,1), vec4(1,1,1,1));
+		drawRectNewColoredW(r, vec4(1,0,0,0.5f), vec4(1,0,0,0.5f));
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
+		float a = 0.75f;
+		drawRectNewColoredW(r, vec4(0,a), vec4(0,a));
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
+		drawRect(r, vec4(1,1), rect(0,1,1,0), getTexture(TEXTURE_ALPHA_GRADIENT)->id);
+	}
+	#endif 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
 

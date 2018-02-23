@@ -1724,6 +1724,8 @@ bool newGuiQuickComboBox(NewGui* gui, Rect r, int* index, char** strings, int st
 	bool active = newGuiGoButtonAction(gui, intersection, gui->zLevel);
 	if(rectEmpty(intersection)) return false;
 
+	if(newGuiIsHot(gui)) newGuiSetCursor(gui, IDC_HAND);
+
 	TextBoxSettings set = settings == 0 ? gui->comboBoxSettings : *settings;
 	set.boxSettings.color += newGuiColorMod(gui);
 
@@ -2314,6 +2316,7 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 
 			newGuiSetHotAllMouseOver(gui, r, gui->zLevel);
 			drawBox(r, gui->scissor, gui->popupSettings);
+			drawRectShadow(r, vec4(0,1), 7);
 
 			// scissorState();
 			Rect layoutRect = rectExpand(r, vec2(-padding*2,-2));

@@ -321,6 +321,10 @@ inline double divZero(double a, double b) {
 	else return a/b;
 }
 
+inline float root(float a, float root) {
+	return pow(a, 1/root);
+}
+
 inline float camDistanceFromFOVandWidth(float fovInDegrees, float w) {
 	float angle = degreeToRadian(fovInDegrees);
 	float sideAngle = ((M_PI-angle)/2.0f);
@@ -3425,6 +3429,7 @@ Vec4 colorSRGB(Vec4 color) {
 	color.g = powf(color.g, 2.2f);
 	color.b = powf(color.b, 2.2f);
 	// color.a = powf(color.a, 2.2f);
+	// color.a = root(color.a, 2.85f);
 	return color;
 }
 
