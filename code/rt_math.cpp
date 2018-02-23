@@ -1907,6 +1907,10 @@ Vec2 operator+(Vec2 a, Vec2i b) {
 	return a;	
 }
 
+Vec2 roundVec2(Vec2 a) {
+	return vec2(roundFloat(a.x), roundFloat(a.y));
+}
+
 //
 //
 //

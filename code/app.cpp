@@ -179,6 +179,19 @@ void setWindowViewport(WindowSettings* ws, Rect vp) {
 }
 
 
+bool keyPressed(NewGui* gui, Input* input, int keycode) {
+	bool result = false;
+	if(gui->activeId == 0) result = input->keysPressed[keycode];
+	return result;
+}
+
+bool keyDown(NewGui* gui, Input* input, int keycode) {
+	bool result = false;
+	if(gui->activeId == 0) result = input->keysDown[keycode];
+	return result;
+}
+
+
 
 Vec3 mouseRayCast(Rect tr, Vec2 mp, Camera* cam) {
 
@@ -397,6 +410,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		systemData->minWindowDim = vec2i(200,200);
 		systemData->maxWindowDim = ws->biggestMonitorSize;
+
+		makeWindowTopmost(systemData);
 
 		//
 		// Setup Textures.
@@ -624,30 +639,40 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	openglDebug();
 	openglDefaultSetup();
-	openglClearFrameBuffers();
+	// openglClearFrameBuffers();
 
+	{
+		glClearColor(0,0,0,1);
+		scissorState();
+		glScissor(0,0,ws->windowRes.w,ws->windowRes.h);
 
+		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
+		scissorState(false);
+	}
 
 	// @AppLoop.
 
+	NewGui* gui = &ad->gui;
+
 	{
-		scissorState(false);
-
-		glClearColor(1,0,1,1);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		glLoadIdentity();
-		Vec2i res = ws->windowRes;
-		glViewport(0,0,res.w,res.h);
-		glOrtho(0, res.w, -res.h, 0, -10,10);
-
-		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
+		newGuiBegin(gui, &ad->input, ws);
 	}
 
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
 	{
-		// Draw window frame;
+		// @DrawFrame
+		{
+			scissorState(false);
+
+			glLoadIdentity();
+			Vec2i res = ws->windowRes;
+			glViewport(0,0,res.w,res.h);
+			glOrtho(0, res.w, -res.h, 0, -10,10);
+
+			bindFrameBuffer(FRAMEBUFFER_2dMsaa);
+		}
 
 		SystemData* sd = systemData;
 
@@ -659,10 +684,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec4 cBorder = vec4(0,1);
 
-		Vec3 cTitleBarFocusedLeft     = vec3(0.03f,0.7f,0.30f);
-		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.03f,-0.1f,0.15f);
+		Vec3 cTitleBarFocusedLeft     = vec3(0.03f,0.7f,0.25f);
+		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.03f,-0.1f,0.1f);
 		Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft  + vec3(0, -1, -0.1f);
-		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.2f);
+		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.1f);
 
 		Vec4 cTitleBarLeft, cTitleBarRight;
 		if(!ws->windowHasFocus) {
@@ -673,12 +698,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cTitleBarRight = vec4(hslToRgbFloat(cTitleBarFocusedRight),1);
 		}
 
-		Vec4 cButton0 = vec4(0.2f,1);
-		Vec4 cButton1 = vec4(0.2f,1);
-		Vec4 cButton2 = vec4(0.2f,1);
+		Vec4 cButton0 = vec4(0.8f,1);
+		Vec4 cButton1 = vec4(0.8f,1);
+		Vec4 cButton2 = vec4(0.8f,1);
 
 		Vec4 cButtonOutline = cBorder;
-		Vec4 cSymbol = vec4(0.7,1);
+		// Vec4 cSymbol = vec4(0.7,1);
 
 		Vec4 cText = vec4(1.0f,1);
 		Vec4 cTextShadow = vec4(0,1);
@@ -704,37 +729,36 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glLineWidth(1);
 		}
 
-		if(pointInRectEx(input->mousePosWindow, sd->rMinimize)) cButton0.rgb += vec3(0.1f);
-		if(pointInRectEx(input->mousePosWindow, sd->rMaximize)) cButton1.rgb += vec3(0.1f);
-		if(pointInRectEx(input->mousePosWindow, sd->rClose))    cButton2.rgb += vec3(0.1f);
-		drawRectOutlined(sd->rMinimize,  cButton0, cButtonOutline);
-		drawRectOutlined(sd->rMaximize,  cButton1, cButtonOutline);
-		drawRectOutlined(sd->rClose,     cButton2, cButtonOutline);
+		if(pointInRectEx(input->mousePosWindow, sd->rMinimize)) cButton0.rgb += vec3(0.4f);
+		if(pointInRectEx(input->mousePosWindow, sd->rMaximize)) cButton1.rgb += vec3(0.4f);
+		if(pointInRectEx(input->mousePosWindow, sd->rClose))    cButton2.rgb += vec3(0.4f);
+		// drawRectOutlined(sd->rMinimize,  cButton0, cButtonOutline);
+		// drawRectOutlined(sd->rMaximize,  cButton1, cButtonOutline);
+		// drawRectOutlined(sd->rClose,     cButton2, cButtonOutline);
 
 		{
-			glLineWidth(0.5f);
+			glLineWidth(1);
 
 			float off = rectW(sd->rMinimize)*0.2f;
 			{
 				Rect r = sd->rMinimize;
 				Vec2 p0 = rectBL(r) + vec2(off);
 				Vec2 p1 = rectBR(r) + vec2(-off,off);
-				drawLine(vec2(roundFloat(p0.x)-0.5f, roundFloat(p0.y))+0.5f, vec2(roundFloat(p1.x)-0.5f, roundFloat(p1.y))+0.5f, cSymbol);
+				drawLine(roundVec2(p0)+vec2(0,0.5f), roundVec2(p1)+vec2(0,0.5f), cButton0);
 			}
 
 			{
 				Rect r = sd->rMaximize;
 				r = rectExpand(r, vec2(-off*2));
-				r = rect(roundFloat(r.left), roundFloat(r.bottom), roundFloat(r.right), roundFloat(r.top));
-				drawRectOutline(r, cSymbol);
+				r = rectRound(r);
+				drawRectOutline(r, cButton1);
 			}
 
 			{
 				Rect r = sd->rClose;
-				drawCross(rectCen(r), rectW(r)/2 - off, 1, vec2(1,0), cSymbol);
+				// drawCross(roundVec2(rectCen(r)) + vec2(0.5f,0.5f), rectW(r)/2 - off, 1, vec2(1,0), cButton2);
+				drawCross(roundVec2(rectCen(r)), rectW(r) - off*2, 1.5f, cButton2);
 			}
-
-			glLineWidth(1);
 		}
 
 		Vec2 tp = vec2(ws->titleRect.left + textPadding, rectCen(ws->titleRect).y);
@@ -750,6 +774,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	if(true)
 	{
+		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
+
 		glLoadIdentity();
 		Vec2i res = ws->clientRes;
 		setClientViewport(ws, rect(0,0,res.w,res.h));
@@ -757,11 +783,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		scissorState(true);
 		setClientScissor(ws, rect(0,0,res.w,res.h));
-
-		glClearColor(0,0,0,1);
-		glClear(GL_COLOR_BUFFER_BIT);
-
-		// drawRect(rectCenDim(vec2(0,0), vec2(1000000)), vec4(1,1,1,1));
 	}
 
 	#if 1
@@ -877,19 +898,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			float speed = 40.0f*ad->dt;
 
-			if(input->keysDown[KEYCODE_SHIFT]) {
-				speed *= 2;
-				// if(input->keysDown[KEYCODE_CTRL]) speed *= 2;
-			}
+			if(input->keysDown[KEYCODE_SHIFT]) speed *= 2;
 
 			Vec3 vel = vec3(0,0,0);
 			if(input->keysDown[KEYCODE_CTRL]) o.dir = normVec3(cross(vec3(0,0,1), o.right));
-			if(input->keysDown[KEYCODE_W]) vel += o.dir;
-			if(input->keysDown[KEYCODE_S]) vel += -o.dir;
-			if(input->keysDown[KEYCODE_A]) vel += -o.right;
-			if(input->keysDown[KEYCODE_D]) vel += o.right;
-			if(input->keysDown[KEYCODE_E]) vel += vec3(0,0,1);
-			if(input->keysDown[KEYCODE_Q]) vel += vec3(0,0,-1);
+			if(keyDown(gui, input, KEYCODE_W)) vel += o.dir;
+			if(keyDown(gui, input, KEYCODE_S)) vel += -o.dir;
+			if(keyDown(gui, input, KEYCODE_A)) vel += -o.right;
+			if(keyDown(gui, input, KEYCODE_D)) vel += o.right;
+			if(keyDown(gui, input, KEYCODE_E)) vel += vec3(0,0,1);
+			if(keyDown(gui, input, KEYCODE_Q)) vel += vec3(0,0,-1);
 
 			if(vel != vec3(0,0,0)) cam->pos += normVec3(vel) * speed;
 		}
@@ -914,7 +932,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			#if 0
 
-			if(init || input->keysPressed[KEYCODE_T]) {
+			if(init || keyPressed(gui, input, KEYCODE_T) {
 
 				world->shapeCount = 0;
 				if(world->shapes) free(world->shapes);
@@ -1001,7 +1019,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			#endif
 
 			// if(init || reload) {
-			if(init || input->keysPressed[KEYCODE_R]) {
+			if(init || keyPressed(gui, input, KEYCODE_R)) {
 				world->defaultEmitColor = vec3(1,1,1);
 
 				world->ambientRatio = 0.2f;
@@ -1100,14 +1118,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		}
 
-		if(input->keysPressed[KEYCODE_SPACE] && !ad->drawSceneWired) {
+		if(keyPressed(gui, input, KEYCODE_SPACE) && !ad->drawSceneWired) {
 			for(int i = 0; i < ad->threadCount; i++) ad->threadData[i].stopProcessing = true;
 			ad->waitingForThreadStop = true;
 		}
 
 		// if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
 		// if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating || reload) && (ad->activeProcessing == false)) {
-		if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating) && (!ad->activeProcessing && ad->drawSceneWired)) {
+		if((keyPressed(gui, input, KEYCODE_R) || ad->keepUpdating) && (!ad->activeProcessing && ad->drawSceneWired)) {
 		// if(false) {
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
@@ -1272,26 +1290,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
 		}
 
-		// Screenshot.
-		#if 0
-		if(input->keysPressed[KEYCODE_RETURN] && !ad->activeProcessing) {
-			Vec2i texDim = ad->settings.texDim;
-			int size = texDim.w * texDim.h;
-			char* intBuffer = mallocArray(char, size*3);
-
-			Vec3* floatBuffer = ad->buffer;
-			for(int i = 0; i < size; i++) {
-				intBuffer[i*3 + 0] = colorFloatToInt(floatBuffer[i].r);
-				intBuffer[i*3 + 1] = colorFloatToInt(floatBuffer[i].g);
-				intBuffer[i*3 + 2] = colorFloatToInt(floatBuffer[i].b);
-			}
-
-			stbi_write_png("test.png", texDim.w, texDim.h, 3, intBuffer, 0);
-
-			free(intBuffer);
-		}
-		#endif
-
 		// if(input->keysPressed[KEYCODE_1]) ad->texFastMode = 0;
 		// if(input->keysPressed[KEYCODE_2]) ad->texFastMode = 1;
 		// if(input->keysPressed[KEYCODE_3]) ad->texFastMode = 2;
@@ -1347,8 +1345,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->drawSceneWired = true;
 		}
 
-		if(input->keysPressed[KEYCODE_F]) ad->fitToScreen = !ad->fitToScreen;
-
+		if(keyPressed(gui, input, KEYCODE_F)) ad->fitToScreen = !ad->fitToScreen;
 	}
 
 
@@ -2107,24 +2104,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	#if 1
 	{
-		// // Rect sr = getClientRect(ws);
-
-		// // glLoadIdentity();
-		// // glOrtho(0, rectW(sr), -rectH(sr), 0, -10,10);
-
-		// Rect wr = getWindowRect(ws);
-		// Rect cr = getClientRect(ws);
-		// glViewport(cr.left,cr.bottom - wr.bottom,rectW(cr),rectH(cr));
-
-		// // glClear(GL_COLOR_BUFFER_BIT);
-		// drawRect(rectCenDim(0,0,10000,10000), vec4(0,1,0,1));
-
-		// glViewport(0, 0, ws->currentRes.w, ws->currentRes.h);
 		setClientViewport(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
 
-
 		NewGui* gui = &ad->gui;
-		newGuiBegin(gui, &ad->input, ws);
 
 		{
 			Font* font = getFont("LiberationSans-Regular.ttf", -15, "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf");
@@ -2134,7 +2116,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Vec4 cBackground = vec4(0.3f,1);
 			Vec4 cEdit = vec4(0.2f,1);
 			Vec4 cButton = vec4(0.4f,1);
-			Vec4 cOutline = vec4(0.7f,1);
+			Vec4 cOutline = vec4(0.5f,1);
 
 			// Bright.
 			// Vec4 cText = vec4(0,1);

@@ -681,8 +681,6 @@ void CALLBACK updateInput(SystemData* sd) {
 	    	}
 	    	*input = {};
 
-	    	// input->mouse
-
 	    	sd->killedFocus = false;
 	    	sd->setFocus = false;
 	    }
@@ -737,31 +735,9 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 
 	ws->currentRes = res;
 	ws->fullscreen = false;
-	// ws->fullRes.x = GetSystemMetrics(SM_CXSCREEN);
-	// ws->fullRes.y = GetSystemMetrics(SM_CYSCREEN);
 	ws->aspectRatio = (float)res.w / (float)res.h;
 
 	ws->style = style;
-	// ws->style = WS_OVERLAPPED;
-	// ws->style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_BORDER;
-	// ws->style = WS_OVERLAPPEDWINDOW;
-
-	// if(resizable) ws->style |= WS_THICKFRAME;
-	// if(maximizable) ws->style |= WS_MAXIMIZEBOX;
-	// if(visible) ws->style |= WS_VISIBLE;
-
-	// ws->style |= WS_POPUP;
-	// ws->style = WS_POPUP | WS_BORDER | WS_SYSMENU;
-
-	// ws->style = WS_POPUP | WS_BORDER;
-	// ws->style = WS_POPUPWINDOW;
-
-		// ws->style = (WS_POPUP | WS_BORDER);
-
-	// ws->style = WS_POPUP;
-	// ws->style = WS_BORDER;
-
-	// ws->style = WS_POPUP | WS_VISIBLE | WS_CAPTION;
 
 	RECT cr = {0, 0, res.w, res.h};
 	AdjustWindowRectEx(&cr, ws->style, 0, 0);
@@ -782,9 +758,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     windowClass.lpfnWndProc = mainWindowCallBack;
     windowClass.hInstance = systemData->instance;
     windowClass.lpszClassName = "App";
-    // windowClass.hCursor = LoadCursor(0, IDC_ARROW);
-    // windowClass.hbrBackground = (HBRUSH)(CreateSolidBrush(RGB(255,0,0)));
-    // windowClass.hbrBackground = 0;
 
     if(!RegisterClass(&windowClass)) {
         DWORD errorCode = GetLastError();
@@ -801,13 +774,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 
 	SetFocus(systemData->windowHandle);
 	systemData->windowIsFocused = true;
-
-	// DWM_BLURBEHIND bb = {0};
-	// HRGN hRgn = CreateRectRgn(0, 0, -1, -1);
-	// bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
-	// bb.hRgnBlur = hRgn;
-	// bb.fEnable = TRUE;
-	// DwmEnableBlurBehindWindow(systemData->windowHandle, &bb);
 
     PIXELFORMATDESCRIPTOR pixelFormatDescriptor =
     {
@@ -860,8 +826,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     bool r = RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
     assert(r);
 
-	// SetCursor(LoadCursor(0, IDC_ARROW));
-
     systemData->mainFiber = ConvertThreadToFiber(0);
     SetWindowLongPtr(systemData->windowHandle, GWLP_USERDATA, (LONG_PTR)systemData);
     systemData->messageFiber = CreateFiber(0, (PFIBER_START_ROUTINE)updateInput, systemData);
@@ -870,14 +834,11 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     GetSystemInfo(&sysinfo);
     systemData->coreCount = sysinfo.dwNumberOfProcessors;
 
-    // SetWindowLong(systemData->windowHandle, GWL_EXSTYLE, GetWindowLong(systemData->windowHandle, GWL_EXSTYLE | WS_EX_TRANSPARENT));
-
-    // SetWindowLong(systemData->windowHandle, GWL_EXSTYLE, GetWindowLong(systemData->windowHandle, GWL_EXSTYLE) | WS_EX_LAYERED);
-    // SetLayeredWindowAttributes(systemData->windowHandle, RGB(0,0,0), 0, LWA_COLORKEY);
-
-    // SetLayeredWindowAttributes(systemData->windowHandle, RGB(255,0,0), 0, LWA_COLORKEY);
-
     ws->styleBorderSize = GetSystemMetrics(SM_CXSIZEFRAME);
+}
+
+void makeWindowTopmost(SystemData* sd) {
+    SetWindowPos(sd->windowHandle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 }
 
 void showWindow(HWND windowHandle) {
@@ -1003,10 +964,12 @@ DWORD getWindowStyle(HWND hwnd) {
 void updateResolution(HWND windowHandle, SystemData* sd, WindowSettings* ws) {
 	getWindowProperties(windowHandle, &ws->currentRes.x, &ws->currentRes.y,0,0,0,0);
 
+	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
 	if(sd->maximized) {
 		ws->currentRes.w -= ws->styleBorderSize*2;
 		ws->currentRes.h -= ws->styleBorderSize*2;
 	}
+	#endif ENABLE_CUSTOM_WINDOW_FRAME
 
 	ws->aspectRatio = ws->currentRes.x / (float)ws->currentRes.y;
 }

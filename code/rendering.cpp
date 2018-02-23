@@ -38,7 +38,7 @@ char* fillString(char* text, ...) {
 			int sLen = strLen(valueBuffer);
 			memCpy(buffer + bi, valueBuffer, sLen);
 
-			ti += 2;
+		ti += 2;
 			bi += sLen;
 			getTString(sLen);
 		} else if(text[ti] == '%' && text[ti+1] == 'i') {
@@ -824,13 +824,19 @@ void drawRectOutline(Rect r, Vec4 color, int offset = -1) {
 
 	float z = globalGraphicsState->zOrder;
 
-	drawLineStripHeader(color);
+	// More complicated to get the corners right 
+	// or they won't be filled correctly.
+
+	drawLinesHeader(color);
 	rectExpand(&r, offset);
-	pushVec(rectBL(r), z);
-	pushVec(rectTL(r), z);
-	pushVec(rectTR(r), z);
-	pushVec(rectBR(r), z);
-	pushVec(rectBL(r), z);
+	pushVec(rectBL(r)+vec2(0, 0.5f), z);
+	pushVec(rectTL(r)+vec2(0, 0.5f), z);
+	pushVec(rectTL(r)+vec2(0.5f, 0), z);
+	pushVec(rectTR(r)+vec2(0.5f, 0), z);
+	pushVec(rectTR(r)+vec2(0,-0.5f), z);
+	pushVec(rectBR(r)+vec2(0,-0.5f), z);
+	pushVec(rectBR(r)+vec2(-0.5f,0), z);
+	pushVec(rectBL(r)+vec2(-0.5f,0), z);
 	glEnd();
 }
 
@@ -998,7 +1004,7 @@ void drawRectProgressHollow(Rect r, float p, Vec4 c0, Vec4 oc) {
 
 	drawLine(rectBR(leftR), rectTR(leftR), oc);
 
-	glLineWidth(0.5f);
+	glLineWidth(1);
 	drawRectOutline(r, oc);
 }
 
@@ -1080,22 +1086,20 @@ void drawTriangleFan(Vec3 pos, Vec3 start, float angle, Vec3 up, Vec4 color) {
 	glEnable(GL_CULL_FACE);
 }
 
-void drawCross(Vec2 p, float size, float size2, Vec2 dir, Vec4 color) {
+void drawCross(Vec2 p, float size, float size2, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	float z = globalGraphicsState->zOrder;
 
-	size2 = size2 / 2 * 1/0.707f;
-
-	dir = normVec2(dir);
-
 	Vec4 c = COLOR_SRGB(color);
 	glColor4f(c.r, c.g, c.b, c.a);
 
-	Vec2 tr = p + vec2(1,1)*size;
-	Vec2 br = p + vec2(1,-1)*size;
-	Vec2 bl = p + vec2(-1,-1)*size;
-	Vec2 tl = p + vec2(-1,1)*size;
+	size2 = size2 / 2;
+
+	Vec2 tr = p + vec2(1,1) * size*0.5f;
+	Vec2 br = p + vec2(1,-1) * size*0.5f;
+	Vec2 bl = p + vec2(-1,-1) * size*0.5f;
+	Vec2 tl = p + vec2(-1,1) * size*0.5f;
 
 	glBegin(GL_TRIANGLE_FAN);
 		pushVec(p, z);
@@ -2095,11 +2099,9 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 	// Render.
 	//
 
-	{
-		scissorState(false);
-		
+	{		
 		Vec2i frameBufferRes = getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->dim;
-		Vec2i res = ws->currentRes;
+		Vec2i res = ws->windowRes;
 		Rect frameBufferUV = rect(0,(float)res.h/frameBufferRes.h,(float)res.w/frameBufferRes.w,0);
 
 		{
@@ -2114,8 +2116,12 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glLoadIdentity();
 
-			glClearColor(0,0,0,0);
-			glClear(GL_COLOR_BUFFER_BIT);
+			scissorState(false);
+			glDisable(GL_BLEND);
+			glDisable(GL_DEPTH_TEST);
+
+			// glClearColor(1,0,1,1);
+			// glClear(GL_COLOR_BUFFER_BIT);
 
 			Vec2i res = ws->windowRes;
 			setWindowViewport(ws, rect(0,0,res.w,res.h));

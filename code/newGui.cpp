@@ -1253,7 +1253,7 @@ void drawBox(Rect r, Rect scissor, BoxSettings settings) {
 	if(settings.color.a != 0) {
 		drawRectRounded(r, settings.color, settings.roundedCorner);
 	}		
-	glLineWidth(0.5f);
+	glLineWidth(1);
 	if(settings.borderColor.a != 0) {
 		drawRectRoundedOutlined(r, settings.color, settings.borderColor, settings.roundedCorner);
 	}
@@ -1636,7 +1636,7 @@ void newGuiQuickScroll(NewGui* gui, Rect r, float height, float* scrollValue, Sc
 	drawRect(scrollRegion, set.boxSettings.color);
 	if(set.scrollBarColor.a != 0) drawRect(scrollBarRegion, set.scrollBarColor);
 	if(set.boxSettings.borderColor.a != 0) {
-		glLineWidth(0.5f);
+		glLineWidth(1);
 		drawRectOutline(scrollRegion, set.boxSettings.borderColor);
 	}
 
