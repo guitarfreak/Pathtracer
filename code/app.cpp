@@ -33,6 +33,8 @@
 	- ui click activates tracer ui.
 	
 	- Detect windows text size.
+	
+	- Menu.
 
 	Done Today: 
 
@@ -1369,6 +1371,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		// Selection.
+
 		if(input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_INACTIVE) {
 			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
 
@@ -2108,6 +2111,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		NewGui* gui = &ad->gui;
 
+		if(ad->entityUI.selectionState == ENTITYUI_ACTIVE) gui->hotId[Gui_Focus_MLeft] = 0;
+
 		{
 			Font* font = getFont("LiberationSans-Regular.ttf", -15, "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf");
 			
@@ -2253,11 +2258,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickSlider(gui, quickRowNext(&qr), &world->camera.fov, 20, 150);
 
 
-					eh = font->height;
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
 					newGuiQuickTextBox(gui, r, "<b>Statistics<b>", vec2i(0,0), &headerSettings);
 
+					eh = font->height;
 					char* stats[] = {
 						"Pixel count", fillString("%i.", settings->texDim.x * settings->texDim.h),
 						"Samples per pixel", fillString("%i.", ad->settings.sampleCount), 

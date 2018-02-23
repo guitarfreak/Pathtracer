@@ -1397,7 +1397,7 @@ bool _newGuiQuickButton(NewGui* gui, Rect r, char* text, Vec2i align, TextBoxSet
 	set.boxSettings.color += highlightOnActive?newGuiColorModB(gui):newGuiColorMod(gui);
 	drawTextBox(r, text, align, gui->scissor, set);
 
-	if(pointInRectEx(gui->input->mousePosNegative, intersection)) newGuiSetCursor(gui, IDC_HAND);
+	if(newGuiIsHot(gui)) newGuiSetCursor(gui, IDC_HAND);
 
 	return active;
 }
@@ -1441,7 +1441,7 @@ bool newGuiQuickCheckBox(NewGui* gui, Rect r, bool* value, CheckBoxSettings* set
 		drawBox(rectExpand(cr, vec2(-rectW(cr)*(1 - set.sizeMod))), gui->scissor, boxSettings(set.color, set.boxSettings.roundedCorner/2));
 	}
 
-	if(pointInRectEx(gui->input->mousePosNegative, intersection)) newGuiSetCursor(gui, IDC_HAND);
+	if(newGuiIsHot(gui)) newGuiSetCursor(gui, IDC_HAND);
 
 	return active;
 }
@@ -1470,7 +1470,7 @@ bool newGuiQuickTextEditAllVars(NewGui* gui, Rect r, void* data, int varType, in
 	else drawTextEditBox(*floatData, r, event > 0, gui->scissor, gui->editVars, set);
 
 	// if(newGuiIsWasHotOrActive(gui)) newGuiSetCursor(gui, IDC_IBEAM);
-	if(pointInRectEx(gui->input->mousePosNegative, intersect)) newGuiSetCursor(gui, IDC_IBEAM);
+	if(newGuiIsHot(gui) || (newGuiIsActive(gui) && pointInRectEx(gui->input->mousePosNegative, intersect))) newGuiSetCursor(gui, IDC_IBEAM);
 
 	if(event == 3) return true;
 
