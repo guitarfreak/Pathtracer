@@ -423,6 +423,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		makeWindowTopmost(systemData);
 
+		gs->useSRGB = true;
+
 		//
 		// Setup Textures.
 		//
@@ -439,7 +441,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		folderSearchStart(&fd, App_Image_Folder);
 		while(folderSearchNextFile(&fd)) {
 
-			if(strLen(fd.fileName) <= 2) continue; // Skip ..
+			if(strLen(fd.fileName) <= 2) continue; // Skip ".."
 
 			Texture tex;
 			char* filePath = fillString("%s%s", App_Image_Folder, fd.fileName);
@@ -483,11 +485,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 				initFrameBuffer(fb);
 			}
 
-			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0, ad->msaaSamples);
-			// attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, ad->msaaSamples);
+			// attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0, ad->msaaSamples);
+			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, ad->msaaSamples);
 			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_DEPTH, GL_DEPTH_COMPONENT32F, 0, 0, ad->msaaSamples);
-			attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0);
-			// attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0);
+			// attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0);
+			attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0);
 
 			attachToFrameBuffer(FRAMEBUFFER_ScreenShot, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8, 0, 0);
 
@@ -503,7 +505,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, fRes.w, fRes.h);
 		}
 
-	//
 
 
 
@@ -705,9 +706,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft  + vec3(0, -1, -0.1f);
 		// Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.1f);
 
-		// Vec3 cTitleBarFocusedLeft     = vec3(0.00f,0.0f,0.15f);
-		Vec3 cTitleBarFocusedLeft     = vec3(0.62f,0.16f,0.2f);
-		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.00f,0.0f,0.1f);
+		Vec3 cTitleBarFocusedLeft     = vec3(0.62f,0.2f,0.15f);
+		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.00f,0.0f,0.15f);
 		Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft;
 		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight;
 
@@ -743,8 +743,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glBlendEquation(GL_FUNC_ADD);
 
-		// drawRectNewColoredW(ws->titleRect, cTitleBarLeft, cTitleBarRight);
-		drawRect(ws->titleRect, cTitleBarLeft, rect(0,1,1,0), getTexture(TEXTURE_GRADIENT)->id);
+		setSRGB(false);
+		drawRectNewColoredW(ws->titleRect, cTitleBarLeft, cTitleBarRight);
+		setSRGB(true);
 
 		{
 			glLineWidth(1);
@@ -2369,36 +2370,94 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
+	if(false)
+	{
+		// glLoadIdentity();
+		// glOrtho(0,res.w,-res.h,0, -1, 1);
+
+		// glEnable(GL_FRAMEBUFFER_SRGB);
+
+		Vec2i res = ws->clientRes;
+		Rect r = rectTLDim(0,0,res.w, res.h);
+		r.bottom += 200;
+		r.top -= 200;
+		Vec4 c = vec4(0.5f,1);
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+		// float z = globalGraphicsState->zOrder;
+		// Vec4 c = COLOR_SRGB(color);
+		// Vec4 c = color;
+		glColor4f(c.r, c.g, c.b, c.a);
+		glBegin(GL_QUADS);
+			glColor4f(0,0,0,1); glVertex3f(r.left, r.bottom, 0);
+			glColor4f(0,0,0,1); glVertex3f(r.left, r.top, 0);
+			glColor4f(1,1,1,1); glVertex3f(r.right, r.top, 0);
+			glColor4f(1,1,1,1); glVertex3f(r.right, r.bottom, 0);
+		glEnd();
+
+		// drawRect(rectTLDim(0,0,res.w, res.h), vec4(0.5f,1));
+
+		// glDisable(GL_FRAMEBUFFER_SRGB);
+	}
+
 	#if 0
 	{
 		// Gamma test.
 
 		Rect cr = ws->clientRect;
 		Vec2 p = vec2(0,0);
-		float h = rectH(cr)/7;
+		float h = rectH(cr)/10;
 		Rect r;
 
 		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRect(r, vec4(0.2f,1), rect(0,1,1,0), getTexture(TEXTURE_GRADIENT)->id);
-		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		// drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
-		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		// drawRectNewColoredW(r , vec4(1,0,0,1), vec4(0,1,0,1));
+		drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
+
+		setSRGB(false);
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
+		setSRGB(true);
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRect(r, vec4(0.5f,1));
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		setSRGB(false);
+		drawRect(r, vec4(0.5f,1));
+		setSRGB(true);
+
 
 		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		// drawRectNewColoredW(r, vec4(1,0,0,1), vec4(1,0,0,1));
-		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		// drawRectNewColoredW(r, vec4(1,1,1,1), vec4(1,1,1,1));
-		// drawRectNewColoredW(r, vec4(1,0,0,0.5f), vec4(1,0,0,0.5f));
+		// // drawRectNewColoredW(r , vec4(0,1), vec4(0.5f,1));
+		// drawRect(r, vec4(1,1), rect(0,0,1,1), getTexture(TEXTURE_NATURE)->id);
 
-		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+
+		glDisable(GL_FRAMEBUFFER_SRGB);
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r , vec4(1,0.5f,0,1), vec4(0,1,0,1));
+		glEnable(GL_FRAMEBUFFER_SRGB);
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r , vec4(1,0,0,1), vec4(0,1,0,1));
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r, vec4(1,0,0,1), vec4(1,0,0,1));
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r, vec4(1,1,1,1), vec4(1,1,1,1));
+		drawRectNewColoredW(r, vec4(1,0,0,0.5f), vec4(1,0,0,0.5f));
+
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
 		// drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
-		// float a = 0.75f;
-		// drawRectNewColoredW(r, vec4(0,a), vec4(0,a));
+		drawRectNewColoredW(r, vec4(0,1), vec4(0,0));
 
-		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		// drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
-		// drawRect(r, vec4(1,1), rect(0,1,1,0), getTexture(TEXTURE_ALPHA_GRADIENT)->id);
+		glDisable(GL_FRAMEBUFFER_SRGB);
+		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		drawRectNewColoredW(r, vec4(0,1), vec4(0,0));
+		glEnable(GL_FRAMEBUFFER_SRGB);
+
+		glEnable(GL_FRAMEBUFFER_SRGB);
+
+		// r = cr;
+		// // drawRectNewColoredW(r , vec4(0,1), vec4(0.5f,1));
+		// drawRect(r, vec4(1,1), rect(0,0,1,1), getTexture(TEXTURE_NATURE)->id);
 	}
 	#endif 
 

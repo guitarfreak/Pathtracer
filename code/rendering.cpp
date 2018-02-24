@@ -416,6 +416,8 @@ uint checkStatusFrameBuffer(int id) {
 //
 
 struct GraphicsState {
+	bool useSRGB;
+
 	Texture textures[32]; //TEXTURE_SIZE
 	int textureCount;
 	Texture textures3d[2];
@@ -435,6 +437,13 @@ struct GraphicsState {
 	float zOrder;
 	Vec2i screenRes;
 };
+
+void setSRGB(bool enable = true) {
+	if(enable) glEnable(GL_FRAMEBUFFER_SRGB);
+	else glDisable(GL_FRAMEBUFFER_SRGB);
+
+	globalGraphicsState->useSRGB = enable;
+}
 
 Texture* getTexture(int textureId) {
 	Texture* t = globalGraphicsState->textures + textureId;
@@ -806,9 +815,8 @@ void drawRect(Rect r, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	float z = globalGraphicsState->zOrder;
-
 	Vec4 c = COLOR_SRGB(color);
-	// Vec4 c = color;
+
 	glColor4f(c.r, c.g, c.b, c.a);
 	glBegin(GL_QUADS);
 		glVertex3f(r.left, r.bottom, z);
@@ -2091,6 +2099,8 @@ void openglDefaultSetup() {
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);
+
+	glEnable(GL_FRAMEBUFFER_SRGB);
 }
 
 
@@ -2110,10 +2120,6 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 			blitFrameBuffers(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_2dNoMsaa, res, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 		}
 
-		#if USE_SRGB 
-		glEnable(GL_FRAMEBUFFER_SRGB);
-		#endif 
-
 		{
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			glLoadIdentity();
@@ -2131,10 +2137,6 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 			glOrtho(0,1,1,0, -1, 1);
 			drawRect(rect(0, 1, 1, 0), frameBufferUV, getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
 		}
-
-		#if USE_SRGB
-		glDisable(GL_FRAMEBUFFER_SRGB);
-		#endif
 	}
 
 	//

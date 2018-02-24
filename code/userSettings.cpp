@@ -3,11 +3,13 @@
 
 #if USE_SRGB == 1
 #define INTERNAL_TEXTURE_FORMAT GL_SRGB8_ALPHA8
-#define COLOR_SRGB(color) colorSRGB(color)
 #else 
 #define INTERNAL_TEXTURE_FORMAT GL_RGBA8
-#define COLOR_SRGB(color) color
 #endif
+
+#define COLOR_SRGB(color) \
+	(globalGraphicsState->useSRGB ? colorSRGB(color) : color);
+
 
 #define APP_FONT_COUNT 4
 
@@ -38,8 +40,6 @@ enum TextureId {
 	// TEXTURE_TEST,
 	// TEXTURE_WHITE = 0,
 	TEXTURE_ROUNDED_SQUARE = 0,
-	TEXTURE_GRADIENT,
-	TEXTURE_ALPHA_GRADIENT,
 	TEXTURE_SIZE,
 };
 
