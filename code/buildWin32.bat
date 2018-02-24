@@ -36,6 +36,8 @@ if "%~2"=="-release" (
 	set MODE_DEFINE=-DRELEASE_BUILD
 )
 
+rem -d2cgsummary
+rem -Bt
 set COMPILER_OPTIONS= -MD %BUILD_MODE% -nologo -Oi -FC -wd4838 -wd4005 -fp:fast -fp:except- -Gm- -GR- -EHa- -Z7
 set LINKER_OPTIONS= -link -SUBSYSTEM:WINDOWS -OUT:%APP_NAME%.exe -incremental:no -opt:ref
 

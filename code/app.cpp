@@ -19,14 +19,8 @@
 	- Cleanup.
 
 	- Panel.
-	- Investigae slow compile times with -d2cgsummary flag.
 	- Shortest distance to camera for widgets.
-
-	- Check for monitor framerate and Sleep accordingly.
-	- Cap framerate when not in vsync.
-
 	- Detect windows text size and test ui with different sizes.
-
 	- Menu.
 
 	Done Today: 
@@ -48,7 +42,7 @@
 #include <gl\gl.h>
 
 #define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
+// #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
 #include "external\stb_image.h"
 
@@ -86,6 +80,86 @@ MemoryBlock* globalMemory;
 
 #include "raycast.cpp"
 
+
+
+
+// #include <iostream>
+// #include <cstdio>
+// #include <chrono>
+// #include <thread>
+
+// std::chrono::system_clock::time_point a = std::chrono::system_clock::now();
+// std::chrono::system_clock::time_point b = std::chrono::system_clock::now();
+
+// int main()
+// {
+//     while (true)
+//     {
+//         // Maintain designated frequency of 5 Hz (200 ms per frame)
+//         a = std::chrono::system_clock::now();
+//         std::chrono::duration<double, std::milli> work_time = a - b;
+
+//         if (work_time.count() < 200.0)
+//         {
+//             std::chrono::duration<double, std::milli> delta_ms(200.0 - work_time.count());
+//             auto delta_ms_duration = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
+//             std::this_thread::sleep_for(std::chrono::milliseconds(delta_ms_duration.count()));
+//         }
+
+//         b = std::chrono::system_clock::now();
+//         std::chrono::duration<double, std::milli> sleep_time = b - a;
+
+//         // Your code here
+
+//         printf("Time: %f \n", (work_time + sleep_time).count());
+//     }
+// }
+
+
+
+
+
+
+
+// #include <Mmsystem.h>
+// #include <windows.h>    /* WinAPI */
+
+// /* Windows sleep in 100ns units */
+// BOOLEAN nanosleep(LONGLONG ns){
+//     /* Declarations */
+//     HANDLE timer;   /* Timer handle */
+//     LARGE_INTEGER li;   /* Time defintion */
+//     /* Create timer */
+//     if(!(timer = CreateWaitableTimer(NULL, TRUE, NULL)))
+//         return FALSE;
+//      Set timer properties 
+//     li.QuadPart = -(ns*10);
+//     if(!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)){
+//         CloseHandle(timer);
+//         return FALSE;
+//     }
+//     /* Start & wait for timer */
+//     WaitForSingleObject(timer, INFINITE);
+//     /* Clean resources */
+//     CloseHandle(timer);
+//     /* Slept without problems */
+//     return TRUE;
+// }
+
+
+
+// void usleep(__int64 usec) 
+// { 
+//     HANDLE timer; 
+//     LARGE_INTEGER ft; 
+
+//     ft.QuadPart = -(10*usec); // Convert to 100 nanosecond interval, negative value indicates relative time
+
+//     timer = CreateWaitableTimer(NULL, TRUE, NULL); 
+//     SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0); 
+//     WaitForSingleObject(timer, INFINITE); 
+//     CloseHandle(timer); 
+// }
 
 
 
@@ -290,7 +364,7 @@ struct AppData {
 	f64 time;
 	int frameCount;
 	i64 swapTime;
-	
+
 	f64 fpsTime;
 	int fpsCounter;
 	float avgFps;
@@ -409,9 +483,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(true) {
 			wglSwapIntervalEXT(1);
 			ws->vsync = true;
+			ws->frameRate = ws->refreshRate;
 		} else {
 			wglSwapIntervalEXT(0);
 			ws->vsync = false;
+			ws->frameRate = 200;
 		}
 		int fps = wglGetSwapIntervalEXT();
 
@@ -547,11 +623,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->entityUI.snapGridSize = 1;
 		ad->entityUI.snapGridDim = 100;
 
-
 		strCpy(ad->screenShotName, "screenshot");
 	}
-
-
 
 	// @AppStart.
 
@@ -727,7 +800,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec4 cButtonOutline = cBorder;
 
-		Vec4 cText = vec4(0.8f,1);
+		Vec4 cText = vec4(0.9f,1);
 		if(!ws->windowHasFocus) cText = vec4(0.5f,1);
 
 		Vec4 cTextShadow = vec4(0,1);
@@ -1754,7 +1827,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 
 						float l = mapRange(percent, timings[index], timings[index+1], 0, 1);
-						for(int i = 0; i < 3; i++) color.e[i] = lerp(l, faceColors[index].e[i], faceColors[index+1].e[i]);
+						for(int i = 0; i < 3; i++) {
+							float ce = lerp(l, faceColors[index].e[i], faceColors[index+1].e[i]);
+							color.e[i] = linearToGamma(ce);
+						}
 					}
 
 					c = COLOR_SRGB(color);
@@ -1781,7 +1857,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					glLineWidth(1);
 
 					// glEnable(GL_DEPTH_TEST);
-
 				}
 			}
 
@@ -2369,36 +2444,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		newGuiEnd(gui);
 	}
 	#endif
-
-	if(false)
-	{
-		// glLoadIdentity();
-		// glOrtho(0,res.w,-res.h,0, -1, 1);
-
-		// glEnable(GL_FRAMEBUFFER_SRGB);
-
-		Vec2i res = ws->clientRes;
-		Rect r = rectTLDim(0,0,res.w, res.h);
-		r.bottom += 200;
-		r.top -= 200;
-		Vec4 c = vec4(0.5f,1);
-
-		glBindTexture(GL_TEXTURE_2D, 0);
-		// float z = globalGraphicsState->zOrder;
-		// Vec4 c = COLOR_SRGB(color);
-		// Vec4 c = color;
-		glColor4f(c.r, c.g, c.b, c.a);
-		glBegin(GL_QUADS);
-			glColor4f(0,0,0,1); glVertex3f(r.left, r.bottom, 0);
-			glColor4f(0,0,0,1); glVertex3f(r.left, r.top, 0);
-			glColor4f(1,1,1,1); glVertex3f(r.right, r.top, 0);
-			glColor4f(1,1,1,1); glVertex3f(r.right, r.bottom, 0);
-		glEnd();
-
-		// drawRect(rectTLDim(0,0,res.w, res.h), vec4(0.5f,1));
-
-		// glDisable(GL_FRAMEBUFFER_SRGB);
-	}
 
 	#if 0
 	{

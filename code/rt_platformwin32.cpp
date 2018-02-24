@@ -275,6 +275,11 @@ struct WindowSettings {
 	MonitorData monitors[3];
 	int monitorCount;
 	Vec2i biggestMonitorSize;
+	int refreshRate;
+
+	bool vsync;
+	int frameRate;
+
 
 	Vec2i currentRes;
 
@@ -287,8 +292,6 @@ struct WindowSettings {
 
 	Rect windowRectBL; // vec2(0,0) is bottom left
 	Rect clientRectBL; // vec2(0,0) is bottom left
-
-	bool vsync;
 
 	float aspectRatio;	
 
@@ -733,6 +736,11 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 		ws->biggestMonitorSize.w = maxInt(ws->biggestMonitorSize.w, rectW(r));
 		ws->biggestMonitorSize.h = maxInt(ws->biggestMonitorSize.h, rectH(r));
 	}
+
+	DEVMODE devMode;
+	EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &devMode);
+	ws->refreshRate = devMode.dmDisplayFrequency;
+
 
 	ws->currentRes = res;
 	ws->fullscreen = false;

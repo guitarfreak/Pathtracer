@@ -7,7 +7,6 @@
 #include "rt_misc_win32.cpp"
 
 #include <iacaMarks.h>
-#include "rt_math.cpp"
 
 #define OPEN_CONSOLE 1
 

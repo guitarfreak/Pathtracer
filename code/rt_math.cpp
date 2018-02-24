@@ -3424,6 +3424,16 @@ int blueNoise(Rect region, float radius, Vec2** noiseSamples) {
 	return sampleCount;
 }
 
+inline float linearToGamma(float a) {
+	return powf(a, 1/2.2f);
+}
+
+inline float gammaToLinear(float a) {
+	return powf(a, 2.2f);
+}
+
+// These should be called srgbToLinearSpace or something.
+// Also these are regular gamma and not srgb.
 Vec4 colorSRGB(Vec4 color) {
 	color.r = powf(color.r, 2.2f);
 	color.g = powf(color.g, 2.2f);

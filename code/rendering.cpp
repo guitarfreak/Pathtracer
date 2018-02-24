@@ -498,7 +498,7 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 	
 	// FT_LOAD_DEFAULT | FT_LOAD_NO_HINTING | FT_LOAD_NO_AUTOHINT | FT_LOAD_FORCE_AUTOHINT
 	// FT_LOAD_TARGET_NORMAL | FT_LOAD_TARGET_LIGHT | FT_LOAD_TARGET_MONO
-	int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_MONO;
+	int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_NORMAL;
 
 	// FT_RENDER_MODE_NORMAL, FT_RENDER_MODE_LIGHT, FT_RENDER_MODE_MONO, FT_RENDER_MODE_LCD, FT_RENDER_MODE_LCD_V,
 	FT_Render_Mode renderFlags = FT_RENDER_MODE_NORMAL;
@@ -1812,6 +1812,8 @@ void drawText(char* text, Vec2 startPos, Vec2i align, int wrapWidth, TextSetting
 
 	startPos = testgetTextStartPos(text, font, startPos, align, wrapWidth);
 
+	setSRGB(false);
+
 	Vec4 c = COLOR_SRGB(settings.color);
 	Vec4 sc = COLOR_SRGB(settings.shadowColor);
 
@@ -1864,6 +1866,8 @@ void drawText(char* text, Vec2 startPos, Vec2i align, int wrapWidth, TextSetting
 	}
 	
 	glEnd();
+
+	setSRGB();
 }
 void drawText(char* text, Vec2 startPos, TextSettings settings) {
 	return drawText(text, startPos, vec2i(-1,1), 0, settings);
@@ -2149,11 +2153,43 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 		// Sleep until monitor refresh.
 		if(!init && ws->vsync && !sd->vsyncTempTurnOff) {
 			double frameTime = timerUpdate(*swapTime);
-			double sleepTime = ((double)1/60) - frameTime;
-			if(sleepTime < 0) sleepTime = ((double)1/30) - frameTime;
+			double fullFrameTime = ((double)1/ws->frameRate);
+
+			// If we missed a frame we have to sleep longer.
+			// For example: going from 60hz to 30hz.
+			while(frameTime > fullFrameTime) fullFrameTime *= 2;
+
+			double sleepTime = fullFrameTime - frameTime;
 
 			int sleepTimeMS = sleepTime*1000;
-			if(sleepTimeMS > 1) Sleep(sleepTimeMS);
+			if(sleepTimeMS > 0) Sleep(sleepTimeMS);
+		}
+
+		// Cap max framerate if vsync disabled.
+		if(!init && !ws->vsync) {
+			double frameTime = timerUpdate(*swapTime);
+			double maxFrameTime = ((double)1/ws->frameRate);
+
+			if(frameTime < maxFrameTime) {
+				double fullSleepTime = maxFrameTime - frameTime;
+
+				i64 timeStamp = timerInit();
+
+				int sleepTimeMS = fullSleepTime*1000;
+				Sleep(sleepTimeMS);
+
+				f64 sleptTime = timerUpdate(timeStamp, &timeStamp);
+
+				double restTime = fullSleepTime - sleptTime;
+
+				// Not Good.
+				while(restTime > 0) {
+					int temp = 0;
+					for(int i = 0; i < 100; i++) temp *= temp;
+					f64 dt = timerUpdate(timeStamp, &timeStamp);
+					restTime -= dt;
+				}
+			}
 		}
 
 		if(init) {
