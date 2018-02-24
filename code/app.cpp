@@ -17,9 +17,6 @@
 	- Multiple selection.
 	- Revert.
 	- Cleanup.
-	- Cursor type flicker.
-	- Combobox.
-	- Block main keys when text editing.
 
 	- Panel.
 	- Investigae slow compile times with -d2cgsummary flag.
@@ -28,12 +25,7 @@
 	- Check for monitor framerate and Sleep accordingly.
 	- Cap framerate when not in vsync.
 
-	- Collision textedit and keyboard hotkeys.
-	- tracer ui active sets ui hot when dragged over.
-	- ui click activates tracer ui.
-	
 	- Detect windows text size and test ui with different sizes.
-	- Mouse wheel entity ui.
 
 	- Menu.
 
@@ -197,6 +189,14 @@ int mouseWheel(NewGui* gui, Input* input) {
 	else return input->mouseWheel; 
 }
 
+int mouseButtonPressedLeft(NewGui* gui, Input* input) {
+	if(gui->hotId[Gui_Focus_MLeft] != 0 || gui->activeId != 0) return false;
+	else return input->mouseButtonPressed[0]; 
+}
+
+bool guiHotMouseClick(NewGui* gui) {
+	return gui->hotId[Gui_Focus_MLeft] != 0;
+}
 
 
 Vec3 mouseRayCast(Rect tr, Vec2 mp, Camera* cam) {
@@ -243,6 +243,9 @@ struct EntityUI {
 
 	int selectionMode;
 	int selectionState;
+	bool gotActive;
+
+	bool guiHasFocus;
 
 	float selectionAnimState;
 	bool localMode;
@@ -1139,7 +1142,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
 		// if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating || reload) && (ad->activeProcessing == false)) {
-		if((keyPressed(gui, input, KEYCODE_R) || ad->keepUpdating) && (!ad->activeProcessing && ad->drawSceneWired)) {
+		if((keyPressed(gui, input, KEYCODE_SPACE) || ad->keepUpdating) && (!ad->activeProcessing && ad->drawSceneWired)) {
 		// if(false) {
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
@@ -1368,6 +1371,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		EntityUI* eui = &ad->entityUI;
 
+		eui->guiHasFocus = guiHotMouseClick(gui);
+
 		if(mouseWheel(gui, input) && eui->selectionState != ENTITYUI_ACTIVE) {
 			ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+ mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
 		}
@@ -1384,7 +1389,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Selection.
 
-		if(input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_INACTIVE) {
+		if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
 
 			int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
@@ -1398,11 +1403,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 			eui->selectionState = ENTITYUI_INACTIVE;
 		}
 
-		if((input->mouseButtonPressed[0] && eui->selectionState == ENTITYUI_HOT) || 
-		   (input->mouseButtonDown[0] && eui->selectionState == ENTITYUI_ACTIVE)) {
 
-			// Init.
-			if(eui->selectionState == ENTITYUI_HOT) eui->selectionState = ENTITYUI_ACTIVE;
+		eui->gotActive = false;
+
+		if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_HOT) {
+			eui->selectionState = ENTITYUI_ACTIVE;
+			eui->gotActive = true;
+		}
+
+
+		if(eui->selectionState == ENTITYUI_ACTIVE) {
 
 			Object* obj = ad->world.objects + (eui->selectedObject-1);
 			Camera* cam = &ad->world.camera;
@@ -1421,7 +1431,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
 
 						// Init.
-						if(input->mouseButtonPressed[0]) {
+						if(eui->gotActive) {
 							eui->objectDistanceVector = obj->pos - linePointOnAxis;
 							eui->startPos = obj->pos;
 						}
@@ -1437,7 +1447,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(distance != -1) {
 
 						// Init.
-						if(input->mouseButtonPressed[0]) {
+						if(eui->gotActive) {
 							eui->objectDistanceVector = obj->pos - planeIntersection;
 							eui->startPos = obj->pos;
 						}
@@ -1453,7 +1463,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(distance != -1) {
 
 						// Init.
-						if(input->mouseButtonPressed[0]) {
+						if(eui->gotActive) {
 							eui->objectDistanceVector = eui->centerOffset;
 							eui->startPos = obj->pos;
 						}
@@ -1485,7 +1495,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(dist != -1) {
 					float distToObj = lenVec3(intersection - obj->pos);
 
-					if(input->mouseButtonPressed[0]) {
+					if(eui->gotActive) {
 						eui->startRot = obj->rot;
 						eui->objectDistanceVector = normVec3(intersection - obj->pos);
 					}
@@ -1522,8 +1532,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					Geometry* geom = &obj->geometry;
 
-					// Init.
-					if(input->mouseButtonPressed[0]) {
+					if(eui->gotActive) {
 						eui->objectDistanceVector = obj->pos - linePointOnAxis;
 
 						eui->startDim = geometryGetDim(geom).e[eui->axisIndex-1];
@@ -1830,31 +1839,27 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						glDisable(GL_DEPTH_TEST);
 
+
 						// Move axis.
 
 						int axisIndex = 0;
 						for(int i = 0; i < 3; i++) {
-
-							Vec3 pp = obj->pos + axis[i]*d.h*0.5f;
-							Vec3 pn = cross( cross(axis[i], n), axis[i]); // Getting right angle with two cross products.
-							pn = normVec3(pn);
-							Vec3 pu = axis[i];
-
 							float a = uiAlpha;
-							if(!(eui->translateMode == TRANSLATE_MODE_CENTER && eui->selectionState == ENTITYUI_HOT)) {
+							if(eui->selectionState != ENTITYUI_ACTIVE) {
+								Vec3 pp = obj->pos + axis[i]*d.h*0.5f;
+								// Getting right angle with two cross products.
+								Vec3 pn = normVec3(cross( cross(axis[i], n), axis[i])); 
 
-								if(eui->selectionState != ENTITYUI_ACTIVE) {
+								Vec3 intersection;
+								float dist = linePlaneIntersection(cam->pos, rayDir, pp, pn, axis[i], d, &intersection);
+								if(dist != -1) {
+									axisIndex = i+1;
 
-									Vec3 intersection;
-									float dist = linePlaneIntersection(cam->pos, rayDir, pp, pn, pu, d, &intersection);
-									if(dist != -1) {
-										a = 1;
-										axisIndex = i+1;
-									}
-								} else {
-									if(eui->translateMode == TRANSLATE_MODE_AXIS)
-										if(i == eui->axisIndex-1) a = 1;
+									if(!eui->guiHasFocus) a = 1;
 								}
+							} else {
+								if(eui->translateMode == TRANSLATE_MODE_AXIS)
+									if(i == eui->axisIndex-1) a = 1;
 							}
 
 							drawArrow(obj->pos, obj->pos + axis[i]*d.h, n, d.w, vec4(c[i],a));
@@ -1878,8 +1883,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 								Vec3 intersection;
 								float dist = linePlaneIntersection(cam->pos, rayDir, p, axis[i], axis[(i+1)%3], vec2(dim), &intersection);
 								if(dist != -1) {
-									a = 1;
 									planeIndex = i+1;
+
+									if(!eui->guiHasFocus) a = 1;
 								}
 							} else {
 								if(eui->translateMode == TRANSLATE_MODE_PLANE)
@@ -1901,9 +1907,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 								bool result = boxRaycastRotated(cam->pos, rayDir, obj->pos, vec3(translationCenterBoxSize), obj->rot, &intersection);
 								if(result) {
 									eui->centerOffset = intersection - obj->pos;
-									color.rgb += vec3(translationCenterBoxColorMod);
 									centerIndex = 1;
+
+									if(!eui->guiHasFocus)
+										color.rgb += vec3(translationCenterBoxColorMod);
 								}
+							} else {
+								if(eui->translateMode == TRANSLATE_MODE_CENTER)
+									color.rgb += vec3(translationCenterBoxColorMod);
 							}
 
 							if(eui->localMode) {
@@ -2022,7 +2033,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 
 						// Paint over hot/active ring.
-						if(axisIndex) {
+						if(axisIndex && (!eui->guiHasFocus || eui->selectionState == ENTITYUI_ACTIVE)) {
 							int i = axisIndex-1;
 							drawRing(obj->pos, axis[i], boundRadius, thickness, vec4(c[i],1));
 
@@ -2071,8 +2082,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 								if(result) {
 									hotAxisIndex = i+1;
 									hotAxis = normVec3(p - obj->pos);
-									color += vec3(0.2f);
 									eui->centerOffset = intersection - p;
+
+									if(!eui->guiHasFocus)
+										color += vec3(0.2f);
 								}
 							} else {
 								if(eui->axisIndex-1 == i) color += vec3(0.2f);
@@ -2181,7 +2194,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Vec2 panelDim = vec2(200,ad->panelHeight);
 			Rect pr = rectTLDim(vec2(panelOffset,-panelOffset), panelDim);
 
+			newGuiSetHotAllMouseOver(gui, pr, gui->zLevel);
 			newGuiQuickBox(gui, pr);
+
 
 			if(init) newGuiScissorPush(gui, rect(0,0,0,0));
 			{
