@@ -249,6 +249,8 @@ struct SystemData {
 	bool windowIsFocused;
 
 	bool mouseInClient;
+
+	int ncTestRegion;
 };
 
 void systemDataInit(SystemData* sd, HINSTANCE instance) {
@@ -424,24 +426,24 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         		float cg = sd->cornerGrabSize;
 
         		     if(x < r.left     && y < r.bottom+cg ||
-        		        x < r.left+cg  && y < r.bottom) return HTBOTTOMLEFT;
+        		        x < r.left+cg  && y < r.bottom) return sd->ncTestRegion = HTBOTTOMLEFT;
         		else if(x > r.right    && y < r.bottom+cg ||
-        		        x > r.right-cg && y < r.bottom) return HTBOTTOMRIGHT;
+        		        x > r.right-cg && y < r.bottom) return sd->ncTestRegion = HTBOTTOMRIGHT;
         		else if(x < r.left     && y > r.top-cg ||
-        		        x < r.left+cg  && y > r.top) return HTTOPLEFT;
+        		        x < r.left+cg  && y > r.top) return sd->ncTestRegion = HTTOPLEFT;
         		else if(x > r.right    && y > r.top-cg ||
-        		        x > r.right-cg && y > r.top) return HTTOPRIGHT;
-        		else if(y < r.bottom)  return HTBOTTOM;
-        		else if(x > r.right)   return HTRIGHT;
-        		else if(y > r.top)     return HTTOP;
-        		else if(x < r.left)    return HTLEFT;
+        		        x > r.right-cg && y > r.top) return sd->ncTestRegion = HTTOPRIGHT;
+        		else if(y < r.bottom)  return sd->ncTestRegion = HTBOTTOM;
+        		else if(x > r.right)   return sd->ncTestRegion = HTRIGHT;
+        		else if(y > r.top)     return sd->ncTestRegion = HTTOP;
+        		else if(x < r.left)    return sd->ncTestRegion = HTLEFT;
         	}
 
         	// BottomRight corner grab.
         	{
         		Vec2 cornerPoint = vec2(r.right,r.bottom) - vec2(sd->cornerGrabSize,0);
         		int result = dot(vec2(x,y) - cornerPoint, normVec2(vec2(1,-1)));
-        		if(result > 0) return HTBOTTOMRIGHT;
+        		if(result > 0) return sd->ncTestRegion = HTBOTTOMRIGHT;
         	}
 
         	Vec2 off = vec2(0,0);
@@ -450,15 +452,15 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	}
 
         	Vec2 p = vec2(x,y);
-        	if(pointInRect(p+off, sd->rMinimize)) return HTMINBUTTON;
-        	if(pointInRect(p+off, sd->rMaximize)) return HTMAXBUTTON;
-        	if(pointInRect(p+off, sd->rClose)) return HTCLOSE;
+        	if(pointInRect(p+off, sd->rMinimize)) return sd->ncTestRegion = HTMINBUTTON;
+        	if(pointInRect(p+off, sd->rMaximize)) return sd->ncTestRegion = HTMAXBUTTON;
+        	if(pointInRect(p+off, sd->rClose)) return sd->ncTestRegion = HTCLOSE;
 
-        	if(p.y+off.y > -t-sd->visualBorderSize) return HTCAPTION;
+        	if(p.y+off.y > -t-sd->visualBorderSize) return sd->ncTestRegion = HTCAPTION;
 
         	sd->mouseInClient = true;
 
-        	return HTCLIENT;
+        	return sd->ncTestRegion = HTCLIENT;
         } break;
 
         case WM_NCPAINT: {
@@ -569,7 +571,6 @@ void CALLBACK updateInput(SystemData* sd) {
         #endif
 
 	    MSG message;
-	    // while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
 	    while(PeekMessage(&message, windowHandle, 0, 0, PM_REMOVE)) {
 	        switch(message.message) {
 		        case WM_LBUTTONDBLCLK: {

@@ -690,6 +690,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		SystemData* sd = systemData;
 
+		if(!systemData->mouseInClient && !mouseInClientArea(windowHandle)) systemData->ncTestRegion = 0;
+
 		sd->normalTitleHeight = 22;
 		sd->normalBorderSize = 5;
 		sd->normalVisualBorderSize = 1;
@@ -703,7 +705,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft  + vec3(0, -1, -0.1f);
 		// Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.1f);
 
-		Vec3 cTitleBarFocusedLeft     = vec3(0.00f,0.0f,0.15f);
+		// Vec3 cTitleBarFocusedLeft     = vec3(0.00f,0.0f,0.15f);
+		Vec3 cTitleBarFocusedLeft     = vec3(0.62f,0.16f,0.2f);
 		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.00f,0.0f,0.1f);
 		Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft;
 		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight;
@@ -724,7 +727,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec4 cButtonOutline = cBorder;
 
-		Vec4 cText = vec4(1.0f,1);
+		Vec4 cText = vec4(0.8f,1);
 		if(!ws->windowHasFocus) cText = vec4(0.5f,1);
 
 		Vec4 cTextShadow = vec4(0,1);
@@ -740,7 +743,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glBlendEquation(GL_FUNC_ADD);
 
-		drawRectNewColoredW(ws->titleRect, cTitleBarLeft, cTitleBarRight);
+		// drawRectNewColoredW(ws->titleRect, cTitleBarLeft, cTitleBarRight);
+		drawRect(ws->titleRect, cTitleBarLeft, rect(0,1,1,0), getTexture(TEXTURE_GRADIENT)->id);
 
 		{
 			glLineWidth(1);
@@ -750,9 +754,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glLineWidth(1);
 		}
 
-		if(pointInRectEx(input->mousePosWindow, sd->rMinimize)) cButton0.rgb += vec3(0.4f);
-		if(pointInRectEx(input->mousePosWindow, sd->rMaximize)) cButton1.rgb += vec3(0.4f);
-		if(pointInRectEx(input->mousePosWindow, sd->rClose))    cButton2.rgb += vec3(0.4f);
+		if(sd->ncTestRegion == HTMINBUTTON) cButton0.rgb += vec3(0.4f);
+		if(sd->ncTestRegion == HTMAXBUTTON) cButton1.rgb += vec3(0.4f);
+		if(sd->ncTestRegion == HTCLOSE)     cButton2.rgb += vec3(0.4f);
 
 		{
 			glLineWidth(1);
