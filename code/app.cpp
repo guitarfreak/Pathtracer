@@ -244,6 +244,7 @@ struct EntityUI {
 	int selectionMode;
 	int selectionState;
 	bool gotActive;
+	int hotId;
 
 	bool guiHasFocus;
 
@@ -1839,13 +1840,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						glDisable(GL_DEPTH_TEST);
 
+						int contenderId = 0;
+						int widgetId = 0;
 
 						// Move axis.
 
 						int axisIndex = 0;
 						for(int i = 0; i < 3; i++) {
+							widgetId++;
+
 							float a = uiAlpha;
-							if(eui->selectionState != ENTITYUI_ACTIVE) {
+							{
 								Vec3 pp = obj->pos + axis[i]*d.h*0.5f;
 								// Getting right angle with two cross products.
 								Vec3 pn = normVec3(cross( cross(axis[i], n), axis[i])); 
@@ -1855,9 +1860,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 								if(dist != -1) {
 									axisIndex = i+1;
 
-									if(!eui->guiHasFocus) a = 1;
+									contenderId = widgetId;
+									if(!eui->guiHasFocus && eui->hotId == contenderId) a = 1;
 								}
-							} else {
+							} 
+
+							if(eui->selectionState == ENTITYUI_ACTIVE) {
 								if(eui->translateMode == TRANSLATE_MODE_AXIS)
 									if(i == eui->axisIndex-1) a = 1;
 							}
@@ -1869,6 +1877,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						int planeIndex = 0;
 						for(int i = 0; i < 3; i++) {
+							widgetId++;
+
 							// Whatever.
 							float dim = translationPlaneSize;
 							Vec3 edgePoint = obj->pos + axis[(i+1)%3]*d.h + axis[(i+2)%3]*d.h;
@@ -1878,16 +1888,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 p = edgePoint - diag*(squareDiag/2);
 
 							float a = uiAlpha;
-							if(eui->selectionState != ENTITYUI_ACTIVE) {
-							
+							{
 								Vec3 intersection;
 								float dist = linePlaneIntersection(cam->pos, rayDir, p, axis[i], axis[(i+1)%3], vec2(dim), &intersection);
 								if(dist != -1) {
 									planeIndex = i+1;
 
-									if(!eui->guiHasFocus) a = 1;
+									contenderId = widgetId;
+									if(!eui->guiHasFocus && eui->hotId == contenderId) a = 1;
 								}
-							} else {
+							} 
+
+							if(eui->selectionState == ENTITYUI_ACTIVE) {
 								if(eui->translateMode == TRANSLATE_MODE_PLANE)
 									if(axis[i] == eui->axis) a = 1;
 							}
@@ -1899,22 +1911,27 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						int centerIndex = 0;
 						{
-							Vec4 color = translationCenterBoxColor;
+							widgetId++;
 
-							if(eui->selectionState != ENTITYUI_ACTIVE) {
-							
+							Vec4 color = translationCenterBoxColor;
+							Vec3 addedColor = color.rgb + vec3(translationCenterBoxColorMod);
+
+							{
 								Vec3 intersection;
 								bool result = boxRaycastRotated(cam->pos, rayDir, obj->pos, vec3(translationCenterBoxSize), obj->rot, &intersection);
 								if(result) {
 									eui->centerOffset = intersection - obj->pos;
 									centerIndex = 1;
 
-									if(!eui->guiHasFocus)
-										color.rgb += vec3(translationCenterBoxColorMod);
+									contenderId = widgetId;
+									if(!eui->guiHasFocus && eui->hotId == contenderId)
+										color.rgb = addedColor;
 								}
-							} else {
+							} 
+
+							if(eui->selectionState == ENTITYUI_ACTIVE) {
 								if(eui->translateMode == TRANSLATE_MODE_CENTER)
-									color.rgb += vec3(translationCenterBoxColorMod);
+									color.rgb = addedColor;
 							}
 
 							if(eui->localMode) {
@@ -1982,6 +1999,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 								eui->selectionState = ENTITYUI_INACTIVE;
 							}
 						}
+
+						eui->hotId = contenderId;
 					}
 
 					if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
@@ -2356,26 +2375,26 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Rect r;
 
 		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRect(r, vec4(1,1), rect(0,1,1,0), getTexture(TEXTURE_GRADIENT)->id);
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r , vec4(1,0,0,1), vec4(0,1,0,1));
+		drawRect(r, vec4(0.2f,1), rect(0,1,1,0), getTexture(TEXTURE_GRADIENT)->id);
+		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		// drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
+		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		// drawRectNewColoredW(r , vec4(1,0,0,1), vec4(0,1,0,1));
 
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r, vec4(1,0,0,1), vec4(1,0,0,1));
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r, vec4(1,1,1,1), vec4(1,1,1,1));
-		drawRectNewColoredW(r, vec4(1,0,0,0.5f), vec4(1,0,0,0.5f));
+		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		// drawRectNewColoredW(r, vec4(1,0,0,1), vec4(1,0,0,1));
+		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		// drawRectNewColoredW(r, vec4(1,1,1,1), vec4(1,1,1,1));
+		// drawRectNewColoredW(r, vec4(1,0,0,0.5f), vec4(1,0,0,0.5f));
 
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
-		float a = 0.75f;
-		drawRectNewColoredW(r, vec4(0,a), vec4(0,a));
+		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		// drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
+		// float a = 0.75f;
+		// drawRectNewColoredW(r, vec4(0,a), vec4(0,a));
 
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
-		drawRect(r, vec4(1,1), rect(0,1,1,0), getTexture(TEXTURE_ALPHA_GRADIENT)->id);
+		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
+		// drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
+		// drawRect(r, vec4(1,1), rect(0,1,1,0), getTexture(TEXTURE_ALPHA_GRADIENT)->id);
 	}
 	#endif 
 
