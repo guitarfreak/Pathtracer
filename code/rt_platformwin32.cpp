@@ -670,6 +670,7 @@ void CALLBACK updateInput(SystemData* sd) {
 	            case WM_CLOSE: 
 	            case WM_QUIT: 
 	            	input->closeWindow = true;
+	            	printf("Close!\n");
 	            	break;
 
 	            default: {
@@ -679,15 +680,30 @@ void CALLBACK updateInput(SystemData* sd) {
 	        }
 	    }
 
+	    for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) {
+	    	if(input->mouseButtonPressed[i] && input->mouseButtonReleased[i]) {
+	    		input->mouseButtonPressed[i] = false;
+	    	}
+	    }
+
+	    // In case we clear because of focus.
+	    bool closeWindowTemp = input->closeWindow;
+
 	    if(sd->killedFocus || sd->setFocus) {
 	    	for(int i = 0; i < KEYCODE_COUNT; i++) {
 	    		input->keysDown[i] = false;
 	    	}
 	    	*input = {};
 
+	    	for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) {
+		    	input->mouseButtonReleased[i] = true;
+	    	}
+
 	    	sd->killedFocus = false;
 	    	sd->setFocus = false;
 	    }
+
+	    input->closeWindow = closeWindowTemp;
 
 	    input->mousePos = getMousePos(windowHandle, false);
 	    input->mousePosNegative = getMousePos(windowHandle, true);

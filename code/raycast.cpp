@@ -11,11 +11,15 @@ enum {
 	GEOM_TYPE_COUNT,
 };
 
-struct Material {
-	float diffuseRatio;
-	float specularRatio;
+char* geometryTypeStrings[] = {
+	"GEOM_TYPE_SPHERE",
+	"GEOM_TYPE_BOX",
+};
 
-	float shininess;
+struct Material {
+	// float diffuseRatio;
+	// float specularRatio;
+	// float shininess;
 
 	Vec3 emitColor;
 	float reflectionMod;
@@ -141,6 +145,9 @@ void geometryBoundingSphere(Geometry* g) {
 	g->boundingSphereRadius = r;
 }
 
+
+
+
 struct OrientationVectors {
 	Vec3 dir;
 	Vec3 up;
@@ -191,6 +198,45 @@ OrientationVectors getVectorsFromRotation(Vec3 rot) {
 
 	return o;
 }
+
+
+
+Object defaultObject() {
+	Material m = {};
+	m.emitColor = vec3(0,0,0);
+	m.reflectionMod = 0.5f;
+
+	Object obj = {};
+	obj.pos = vec3(0,0,0);
+	obj.rot = quat();
+	obj.color = vec3(0.5f,0.5f,0.5f);
+	obj.material = m;
+	obj.geometry.type = GEOM_TYPE_SPHERE;
+	obj.geometry.r = 5;
+
+	geometryBoundingSphere(&obj.geometry);
+	
+	return obj;
+}
+
+void deleteObject(Object* objects, int* objectCount, int* selected) {
+	objects[(*selected)-1] = objects[(*objectCount)-1];
+	(*objectCount)--;
+
+	if((*objectCount) > 0) {
+		(*selected) = mod((*selected)-1, (*objectCount));
+		(*selected)++;
+	} else {
+		(*selected) = 0;
+	}
+}
+
+void insertObject(Object obj, Object* objects, int* objectCount, Camera* cam) {
+	float spawnDistance = 30;
+	obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
+	objects[(*objectCount)++] = obj;
+}
+
 
 
 enum SampleMode {

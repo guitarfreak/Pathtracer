@@ -529,10 +529,8 @@ struct NewGui {
 	TextEditSettings editSettings;
 	SliderSettings sliderSettings;
 	ScrollRegionSettings scrollSettings;
-
 	BoxSettings popupSettings;
 	TextBoxSettings comboBoxSettings;
-
 	CheckBoxSettings checkBoxSettings;
 
 	int zLevel;

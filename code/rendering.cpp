@@ -436,6 +436,7 @@ struct GraphicsState {
 
 	float zOrder;
 	Vec2i screenRes;
+	Vec2 clientRectOffset;
 };
 
 void setSRGB(bool enable = true) {
@@ -508,6 +509,7 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 	#define setupRange(a,b) vec2i(a, b - a + 1)
 	font.glyphRanges[font.glyphRangeCount++] = setupRange(0x20, 0x7F);
 	font.glyphRanges[font.glyphRangeCount++] = setupRange(0xA1, 0xFF);
+	font.glyphRanges[font.glyphRangeCount++] = setupRange(0x25BA, 0x25C4);
 	#undef setupRange
 
 	font.totalGlyphCount = 0;
@@ -691,12 +693,16 @@ void scissorTest(Rect r, float screenHeight) {
 	Rect sr = scissorRectScreenSpace(r, screenHeight);
 	if(rectW(sr) < 0 || rectH(sr) < 0) sr = rect(0,0,0,0);
 
+	sr = rectTrans(sr, globalGraphicsState->clientRectOffset);
+
 	scissorTest(sr);
 }
 
 void scissorTestScreen(Rect r) {
 	Rect sr = scissorRectScreenSpace(r, globalGraphicsState->screenRes.h);
 	if(rectW(sr) < 0 || rectH(sr) < 0) sr = rect(0,0,0,0);
+
+	sr = rectTrans(sr, globalGraphicsState->clientRectOffset);
 
 	scissorTest(sr);
 }
@@ -1316,7 +1322,7 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 	glTranslatef(pos.x, pos.y, pos.z);
 	glScalef(r, r, r);
 
-	int div = 4;
+	int div = 3;
 	glBegin(GL_TRIANGLES);
 	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div);
 	drawTriangleSubDiv(vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div);
@@ -1335,7 +1341,7 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 void drawSphereRaw() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	int div = 4;
+	int div = 3;
 	glBegin(GL_TRIANGLES);
 	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div);
 	drawTriangleSubDiv(vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div);
@@ -2109,7 +2115,7 @@ void openglDefaultSetup() {
 
 
 void setWindowViewport(WindowSettings* ws, Rect vp);
-void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapTime, bool init) {
+void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapTime, bool init, float panelAlpha) {
 	
 	//
 	// Render.
@@ -2140,6 +2146,13 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 
 			glOrtho(0,1,1,0, -1, 1);
 			drawRect(rect(0, 1, 1, 0), frameBufferUV, getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
+
+
+			// Panel.
+			glEnable(GL_BLEND);
+			blitFrameBuffers(FRAMEBUFFER_2dPanels, FRAMEBUFFER_2dNoMsaa, res, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+			drawRect(rect(0, 1, 1, 0), vec4(1,1,1,panelAlpha), frameBufferUV, getFrameBuffer(FRAMEBUFFER_2dNoMsaa)->colorSlot[0]->id);
+			glDisable(GL_BLEND);
 		}
 	}
 

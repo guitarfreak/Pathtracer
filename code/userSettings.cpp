@@ -26,6 +26,9 @@
 
 #define App_Save_File ".\\temp"
 
+#define Screenshot_Folder ".\\Screenshots"
+#define Scenes_Folder ".\\Scenes"
+
 #define Fallback_Font "arial.ttf"
 #define Fallback_Font_Italic "ariali.ttf"
 #define Fallback_Font_Bold "arialbd.ttf"
@@ -60,6 +63,8 @@ enum SamplerType {
 enum FrameBufferType {
 	FRAMEBUFFER_2dMsaa = 0,
 	FRAMEBUFFER_2dNoMsaa,
+
+	FRAMEBUFFER_2dPanels,
 
 	FRAMEBUFFER_ScreenShot,
 

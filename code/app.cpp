@@ -18,10 +18,10 @@
 	- Revert.
 	- Cleanup.
 
-	- Panel.
 	- Shortest distance to camera for widgets.
 	- Detect windows text size and test ui with different sizes.
 	- Menu.
+	- Detect if window outside monitor range and move it inside.
 
 	Done Today: 
 
@@ -313,6 +313,8 @@ enum EntityTranslateMode {
 };
 
 struct EntityUI {
+	Object objectCopy;
+
 	int selectedObject;
 
 	int selectionMode;
@@ -384,7 +386,11 @@ struct AppData {
 	// App.
 
 	NewGui gui;
-	float panelHeight;
+	float panelHeightLeft;
+	float panelHeightRight;
+
+	float panelAlpha;
+	float panelAlphaFadeState;
 
 	Font* font;
 
@@ -561,11 +567,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 				initFrameBuffer(fb);
 			}
 
-			// attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0, ad->msaaSamples);
-			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, ad->msaaSamples);
-			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_DEPTH, GL_DEPTH_COMPONENT32F, 0, 0, ad->msaaSamples);
-			// attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_RGBA16F, 0, 0);
+			int msaa = ad->msaaSamples;
+
+			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, msaa);
+			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_DEPTH, GL_DEPTH_COMPONENT32F, 0, 0, msaa);
 			attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0);
+			attachToFrameBuffer(FRAMEBUFFER_2dPanels, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, msaa);
 
 			attachToFrameBuffer(FRAMEBUFFER_ScreenShot, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8, 0, 0);
 
@@ -579,6 +586,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, fRes.w, fRes.h);
 			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, fRes.w, fRes.h);
+			setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dPanels, fRes.w, fRes.h);
 		}
 
 
@@ -624,6 +632,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->entityUI.snapGridDim = 100;
 
 		strCpy(ad->screenShotName, "screenshot");
+
+		ad->entityUI.objectCopy = defaultObject();
 	}
 
 	// @AppStart.
@@ -638,6 +648,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// gs->screenRes = ws->currentRes;
 		gs->screenRes = ws->clientRes;
+		gs->clientRectOffset = ws->clientRectBL.min;
 
 		// Bad news.
 		for(int i = 0; i < arrayCount(globalGraphicsState->fonts); i++) {
@@ -716,8 +727,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	if(ad->updateFrameBuffers) {
-		// gs->screenRes = ws->currentRes;
 		gs->screenRes = ws->clientRes;
+		gs->clientRectOffset = ws->clientRectBL.min;
 
 		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dMsaa, ws->currentRes.w, ws->currentRes.h);
 		// setDimForFrameBufferAttachmentsAndUpdate(FRAMEBUFFER_2dNoMsaa, ws->currentRes.w, ws->currentRes.h);
@@ -736,6 +747,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+		glClearColor(0,0,0,0);
+		bindFrameBuffer(FRAMEBUFFER_2dPanels);
+		glClear(GL_COLOR_BUFFER_BIT);
+
+
+		glClearColor(0,0,0,1);
+		bindFrameBuffer(FRAMEBUFFER_2dMsaa);
 
 		scissorState(false);
 	}
@@ -793,7 +812,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cTitleBarRight = vec4(hslToRgbFloat(cTitleBarFocusedRight),1);
 		}
 
-		float cButtons = 0.6f;
+		float cButtons = 0.7f;
 		Vec4 cButton0 = vec4(cButtons,1);
 		Vec4 cButton1 = vec4(cButtons,1);
 		Vec4 cButton2 = vec4(cButtons,1);
@@ -936,7 +955,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Mouse capture.
 		{
 			if(!ad->captureMouse) {
-				if(input->keysPressed[KEYCODE_F3] || input->mouseButtonPressed[1]) {
+				if((input->keysPressed[KEYCODE_F3] || input->mouseButtonPressed[1]) && ad->drawSceneWired) {
 					ad->captureMouse = true;
 
 					if(input->keysPressed[KEYCODE_F3]) ad->captureMouseKeepCenter = true;
@@ -1014,8 +1033,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(!texture->isCreated || (texDim != texture->dim)) {
 				if(texDim != texture->dim) deleteTexture(texture);
 
-				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
-				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
+				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
 
 				Texture* t = &ad->raycastTexture;
 				Vec3 black = vec3(0.2f);
@@ -1115,7 +1134,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			#endif
 
 			// if(init || reload) {
-			if(init || keyPressed(gui, input, KEYCODE_R)) {
+			// if(init || keyPressed(gui, input, KEYCODE_R)) {
+			if(init) {
 				world->defaultEmitColor = vec3(1,1,1);
 
 				world->ambientRatio = 0.2f;
@@ -1147,9 +1167,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 				reallocArraySave(Object, world->objects, 100);
 
 				Material materials[10] = {};
-				materials[0].diffuseRatio = 0.5f;
-				materials[0].specularRatio = 0.5f;
-				materials[0].shininess = 15;
+				materials[0].emitColor = vec3(0,0,0);
+				materials[0].reflectionMod = 0.5f;
+
+				// materials[0].diffuseRatio = 0.5f;
+				// materials[0].specularRatio = 0.5f;
+				// materials[0].shininess = 15;
 
 				Object obj;
 
@@ -1221,7 +1244,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
 		// if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating || reload) && (ad->activeProcessing == false)) {
-		if((keyPressed(gui, input, KEYCODE_SPACE) || ad->keepUpdating) && (!ad->activeProcessing && ad->drawSceneWired)) {
+		if((keyPressed(gui, input, KEYCODE_SPACE) || ad->keepUpdating) && 
+		   (!ad->activeProcessing && ad->drawSceneWired)
+		   && !ad->fpsMode) {
 		// if(false) {
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
@@ -1384,6 +1409,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing)) {
 			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
+			glGenerateTextureMipmap(ad->raycastTexture.id);
 		}
 
 		// if(input->keysPressed[KEYCODE_1]) ad->texFastMode = 0;
@@ -1420,7 +1446,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(!ad->drawSceneWired) {
 				glDepthMask(false);
-				drawRect(tr, rect(0,0,1,1), ad->raycastTexture.id);
+				drawRect(tr, vec4(1,1,1,1), rect(0,0,1,1), ad->raycastTexture.id);
 				glDepthMask(true);
 			}
 
@@ -1448,59 +1474,190 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		// @EntityUI code
 
+		World* world = &ad->world;
 		EntityUI* eui = &ad->entityUI;
+		Camera* cam = &ad->world.camera;
 
 		eui->guiHasFocus = guiHotMouseClick(gui);
 
-		if(mouseWheel(gui, input) && eui->selectionState != ENTITYUI_ACTIVE) {
-			ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+ mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
+		if(!ad->drawSceneWired) {
+			eui->selectedObject = 0;
 		}
 
-		if(input->mouseButtonPressed[2] && eui->selectionState != ENTITYUI_ACTIVE) {
-			eui->localMode = !eui->localMode;
-		}
+		if(ad->drawSceneWired) {
+			if(mouseWheel(gui, input) && eui->selectionState != ENTITYUI_ACTIVE) {
+				ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+ mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
+			}
 
-		if(input->keysDown[KEYCODE_SHIFT]) {
-			eui->snappingEnabled = true;
-		} else {
-			eui->snappingEnabled = false;
-		}
+			if(input->mouseButtonPressed[2] && eui->selectionState != ENTITYUI_ACTIVE) {
+				eui->localMode = !eui->localMode;
+			}
 
-		// Selection.
+			if(input->keysDown[KEYCODE_SHIFT]) {
+				eui->snappingEnabled = true;
+			} else {
+				eui->snappingEnabled = false;
+			}
 
-		if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
-			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+			// Selection.
 
-			int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
-			if(objectIndex != -1) {
-				eui->selectedObject = objectIndex+1;
-				eui->selectionAnimState = 0;
-			} else eui->selectedObject = 0;
-		}
+			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
+				Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
 
-		if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
-			eui->selectionState = ENTITYUI_INACTIVE;
-		}
+				int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
+				if(objectIndex != -1) {
+					eui->selectedObject = objectIndex+1;
+					eui->selectionAnimState = 0;
+				} else eui->selectedObject = 0;
+			}
+
+			if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
+				eui->selectionState = ENTITYUI_INACTIVE;
+			}
+
+			// Delete.
+			if(eui->selectedObject) {
+				if(keyPressed(gui, input, KEYCODE_DEL)) {
+					deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
+				}
+			}
+
+			// Insert default.
+			if(keyPressed(gui, input, KEYCODE_RETURN)) {
+				insertObject(defaultObject(), world->objects, &world->objectCount, cam);
+			}
+
+			// Copy.
+			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_C)) {
+				eui->objectCopy = world->objects[eui->selectedObject-1];
+			}
+
+			// Insert.
+			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
+				insertObject(eui->objectCopy, world->objects, &world->objectCount, cam);
+			}
 
 
-		eui->gotActive = false;
-
-		if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_HOT) {
-			eui->selectionState = ENTITYUI_ACTIVE;
-			eui->gotActive = true;
-		}
 
 
-		if(eui->selectionState == ENTITYUI_ACTIVE) {
+			eui->gotActive = false;
 
-			Object* obj = ad->world.objects + (eui->selectedObject-1);
-			Camera* cam = &ad->world.camera;
-			Vec3 rayPos = cam->pos;
-			Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_HOT) {
+				eui->selectionState = ENTITYUI_ACTIVE;
+				eui->gotActive = true;
+			}
 
-			if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 
-				if(eui->translateMode == TRANSLATE_MODE_AXIS) {
+			if(eui->selectionState == ENTITYUI_ACTIVE) {
+
+				Object* obj = ad->world.objects + (eui->selectedObject-1);
+				Camera* cam = &ad->world.camera;
+				Vec3 rayPos = cam->pos;
+				Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+
+				if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
+
+					if(eui->translateMode == TRANSLATE_MODE_AXIS) {
+						Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
+						Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
+
+						Vec3 planeIntersection;
+						float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+						if(distance != -1) {
+							Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
+
+							// Init.
+							if(eui->gotActive) {
+								eui->objectDistanceVector = obj->pos - linePointOnAxis;
+								eui->startPos = obj->pos;
+							}
+
+							obj->pos = linePointOnAxis + eui->objectDistanceVector;
+						}
+
+					} else if(eui->translateMode == TRANSLATE_MODE_PLANE) {
+						Vec3 planeNormal = eui->axis;
+
+						Vec3 planeIntersection;
+						float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+						if(distance != -1) {
+
+							// Init.
+							if(eui->gotActive) {
+								eui->objectDistanceVector = obj->pos - planeIntersection;
+								eui->startPos = obj->pos;
+							}
+
+							obj->pos = planeIntersection + eui->objectDistanceVector;
+						}
+					} else if(eui->translateMode == TRANSLATE_MODE_CENTER) {
+						Vec3 pos = obj->pos + eui->centerOffset;
+						Vec3 pp = cam->pos + cam->ovecs.dir * eui->centerDistanceToCam + eui->centerOffset;
+
+						Vec3 planeIntersection;
+						float distance = linePlaneIntersection(rayPos, rayDir, pp, -cam->ovecs.dir, &planeIntersection);
+						if(distance != -1) {
+
+							// Init.
+							if(eui->gotActive) {
+								eui->objectDistanceVector = eui->centerOffset;
+								eui->startPos = obj->pos;
+							}
+
+							obj->pos = planeIntersection - eui->objectDistanceVector;
+						}
+					}
+
+					if(eui->snappingEnabled) {
+
+						// We always snap every axis to keep it simple.
+						for(int i = 0; i < 3; i++) {
+							Vec3 p = projectPointOnLine(eui->startPos, eui->axes[i], obj->pos);
+							float length = lenVec3(p - eui->startPos);
+							float snappedLength = roundMod(length, eui->snapGridSize);
+							float lengthDiff = length - snappedLength;
+
+							if(dot(p - eui->startPos, eui->axes[i]) > 0) lengthDiff *= -1;
+
+							obj->pos += eui->axes[i]*lengthDiff;
+						}
+					}
+				}
+
+				if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
+
+					Vec3 intersection;
+					float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, eui->axis, &intersection);
+					if(dist != -1) {
+						float distToObj = lenVec3(intersection - obj->pos);
+
+						if(eui->gotActive) {
+							eui->startRot = obj->rot;
+							eui->objectDistanceVector = normVec3(intersection - obj->pos);
+						}
+
+						Vec3 start = eui->objectDistanceVector;
+						Vec3 end = normVec3(intersection - obj->pos);
+
+						Vec3 a = cross(start, end);
+						float len = lenVec3(a);
+						if(dot(normVec3(a), eui->axis) < 0) len *= -1;
+						float angle = asin(len);
+						if(dot(start, end) < 0) {
+							if(angle > 0) angle = M_PI_2 + M_PI_2-angle;
+							else angle = -M_PI_2 - (M_PI_2-abs(angle));
+						}
+
+						if(eui->snappingEnabled) angle = roundMod(angle, M_PI_4);
+
+						obj->rot = quat(angle, eui->axis)*eui->startRot;
+
+						eui->currentRotationAngle = angle;
+					}
+				}
+
+				if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
+
 					Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
 					Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
 
@@ -1509,131 +1666,32 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(distance != -1) {
 						Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
 
-						// Init.
+						Geometry* geom = &obj->geometry;
+
 						if(eui->gotActive) {
 							eui->objectDistanceVector = obj->pos - linePointOnAxis;
-							eui->startPos = obj->pos;
+
+							eui->startDim = geometryGetDim(geom).e[eui->axisIndex-1];
 						}
 
-						obj->pos = linePointOnAxis + eui->objectDistanceVector;
-					}
+						float oldLength = lenVec3(eui->objectDistanceVector);
+						float newLength = lenVec3(obj->pos - linePointOnAxis);
 
-				} else if(eui->translateMode == TRANSLATE_MODE_PLANE) {
-					Vec3 planeNormal = eui->axis;
+						float currentAxisLength = eui->startDim + (newLength - oldLength)*2;
 
-					Vec3 planeIntersection;
-					float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
-					if(distance != -1) {
+						currentAxisLength = clampMin(currentAxisLength, 0);
+						if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
 
-						// Init.
-						if(eui->gotActive) {
-							eui->objectDistanceVector = obj->pos - planeIntersection;
-							eui->startPos = obj->pos;
+						if(eui->snappingEnabled) {
+							currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
 						}
 
-						obj->pos = planeIntersection + eui->objectDistanceVector;
-					}
-				} else if(eui->translateMode == TRANSLATE_MODE_CENTER) {
-					Vec3 pos = obj->pos + eui->centerOffset;
-					Vec3 pp = cam->pos + cam->ovecs.dir * eui->centerDistanceToCam + eui->centerOffset;
-
-					Vec3 planeIntersection;
-					float distance = linePlaneIntersection(rayPos, rayDir, pp, -cam->ovecs.dir, &planeIntersection);
-					if(distance != -1) {
-
-						// Init.
-						if(eui->gotActive) {
-							eui->objectDistanceVector = eui->centerOffset;
-							eui->startPos = obj->pos;
-						}
-
-						obj->pos = planeIntersection - eui->objectDistanceVector;
+						geometrySetDim(geom, currentAxisLength, eui->axisIndex-1);
+						geometryBoundingSphere(&obj->geometry);
 					}
 				}
 
-				if(eui->snappingEnabled) {
-
-					// We always snap every axis to keep it simple.
-					for(int i = 0; i < 3; i++) {
-						Vec3 p = projectPointOnLine(eui->startPos, eui->axes[i], obj->pos);
-						float length = lenVec3(p - eui->startPos);
-						float snappedLength = roundMod(length, eui->snapGridSize);
-						float lengthDiff = length - snappedLength;
-
-						if(dot(p - eui->startPos, eui->axes[i]) > 0) lengthDiff *= -1;
-
-						obj->pos += eui->axes[i]*lengthDiff;
-					}
-				}
 			}
-
-			if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
-
-				Vec3 intersection;
-				float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, eui->axis, &intersection);
-				if(dist != -1) {
-					float distToObj = lenVec3(intersection - obj->pos);
-
-					if(eui->gotActive) {
-						eui->startRot = obj->rot;
-						eui->objectDistanceVector = normVec3(intersection - obj->pos);
-					}
-
-					Vec3 start = eui->objectDistanceVector;
-					Vec3 end = normVec3(intersection - obj->pos);
-
-					Vec3 a = cross(start, end);
-					float len = lenVec3(a);
-					if(dot(normVec3(a), eui->axis) < 0) len *= -1;
-					float angle = asin(len);
-					if(dot(start, end) < 0) {
-						if(angle > 0) angle = M_PI_2 + M_PI_2-angle;
-						else angle = -M_PI_2 - (M_PI_2-abs(angle));
-					}
-
-					if(eui->snappingEnabled) angle = roundMod(angle, M_PI_4);
-
-					obj->rot = quat(angle, eui->axis)*eui->startRot;
-
-					eui->currentRotationAngle = angle;
-				}
-			}
-
-			if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
-
-				Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
-				Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
-
-				Vec3 planeIntersection;
-				float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
-				if(distance != -1) {
-					Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
-
-					Geometry* geom = &obj->geometry;
-
-					if(eui->gotActive) {
-						eui->objectDistanceVector = obj->pos - linePointOnAxis;
-
-						eui->startDim = geometryGetDim(geom).e[eui->axisIndex-1];
-					}
-
-					float oldLength = lenVec3(eui->objectDistanceVector);
-					float newLength = lenVec3(obj->pos - linePointOnAxis);
-
-					float currentAxisLength = eui->startDim + (newLength - oldLength)*2;
-
-					currentAxisLength = clampMin(currentAxisLength, 0);
-					if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
-
-					if(eui->snappingEnabled) {
-						currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
-					}
-
-					geometrySetDim(geom, currentAxisLength, eui->axisIndex-1);
-					geometryBoundingSphere(&obj->geometry);
-				}
-			}
-
 		}
 	}
 
@@ -2231,7 +2289,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	#if 1
 	{
+		// @Panel
+
+		bindFrameBuffer(FRAMEBUFFER_2dPanels);
 		setClientViewport(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
+		setClientScissor(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
+
+		// scissorState(false);
+
+		glEnable(GL_BLEND);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
 
 		NewGui* gui = &ad->gui;
 
@@ -2284,22 +2351,46 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gui->checkBoxSettings = checkBoxSettings(cbs, cButton, 0.5f);
 		}
 
+		float panelOffset = 0;
+		float panelMargin = 5;
+		Vec2 panelDim;
+
+		panelDim = vec2(200,ad->panelHeightLeft);
+		Rect rectPanelLeft = rectTLDim(vec2(panelOffset,-panelOffset), panelDim);
+
+		Vec2i res = ws->clientRes;
+		panelDim = vec2(200,ad->panelHeightRight);
+		Rect rectPanelRight = rectTRDim(vec2(res.w,0) + vec2(panelOffset,-panelOffset), panelDim);
+
+		// Panel fade animation.
+		{
+			bool inc = false;
+
+			if(ad->entityUI.selectionState == ENTITYUI_ACTIVE &&
+			   (pointInRect(input->mousePosNegative, rectPanelLeft) || 
+			   pointInRect(input->mousePosNegative, rectPanelRight))) {
+
+				inc = true;
+			}
+
+			float speed = 1.0f;
+
+			if(!inc) speed *= -2;
+			ad->panelAlphaFadeState += ad->dt * speed;
+
+			ad->panelAlphaFadeState = clamp(ad->panelAlphaFadeState, 0, 0.8f);
+			ad->panelAlpha = 1-pow(ad->panelAlphaFadeState,2);
+		}
+
 		// Left panel.
 		#if 1
 		{
-			float panelOffset = 0;
-			float panelMargin = 5;
-
-			Vec2 panelDim = vec2(200,ad->panelHeight);
-			Rect pr = rectTLDim(vec2(panelOffset,-panelOffset), panelDim);
-
-			newGuiSetHotAllMouseOver(gui, pr, gui->zLevel);
-			newGuiQuickBox(gui, pr);
-
+			newGuiSetHotAllMouseOver(gui, rectPanelLeft, gui->zLevel);
+			newGuiQuickBox(gui, rectPanelLeft);
 
 			if(init) newGuiScissorPush(gui, rect(0,0,0,0));
 			{
-				Rect pri = rectExpand(pr, -vec2(panelMargin*2));
+				Rect pri = rectExpand(rectPanelLeft, -vec2(panelMargin*2));
 
 				Font* font = gui->textSettings.font;
 
@@ -2377,12 +2468,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					quickRowNext(&qr);
 					newGuiQuickCheckBox(gui, quickRowNext(&qr), &ad->fitToScreen);
 
-					s = "Cam Fov";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickSlider(gui, quickRowNext(&qr), &world->camera.fov, 20, 150);
-
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
@@ -2434,9 +2519,277 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 					}
 
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					if(newGuiQuickButton(gui, r, "Open screenshot folder")) {
+						// Doesn't work.
+						
+						// shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
+						// system("start .\\");
+						// system("start "" .\\");
+					}
+
+
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					newGuiQuickTextBox(gui, r, "<b>Scene<b>", vec2i(0,0), &headerSettings);
+
+
+					{
+						World* world = &ad->world;
+						Camera* cam = &world->camera;
+						EntityUI* eui = &ad->entityUI;
+
+						s = "Cam pos";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->pos.x);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->pos.y);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->pos.z);
+
+						s = "Cam rot";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->rot.x);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->rot.y);
+
+						s = "Cam Fov";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->camera.fov, 20, 150);
+
+
+
+
+						s = "ObjectCount";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickText(gui, quickRowNext(&qr), fillString("%i", world->objectCount), vec2i(1,0));
+
+						{
+							float spawnDistance = 30;
+
+							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+							qr = quickRow(r, pad.x, 0.0f, 0.0f);
+
+							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Object")) {
+								insertObject(defaultObject(), world->objects, &world->objectCount, cam);
+							}
+
+							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copy")) {
+								insertObject(eui->objectCopy, world->objects, &world->objectCount, cam);
+							}
+						}
+
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, 0.0f,0.0f);
+
+						char* filePath = fillString("%s\\%s", Scenes_Folder, "scene1");
+
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "Save")) {
+							FILE* file = fopen(filePath, "wb");
+
+							if(file) {
+								fwrite(&world->camera, sizeof(Camera), 1, file);
+
+								fwrite(&world->objectCount, sizeof(world->objectCount), 1, file);
+								fwrite(world->objects, sizeof(Object)*world->objectCount, 1, file);
+							}
+
+							fclose(file);
+						}
+
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "Load")) {
+							FILE* file = fopen(filePath, "rb");
+
+							if(file) {
+								fread(&world->camera, sizeof(Camera), 1, file);
+
+								fread(&world->objectCount, sizeof(world->objectCount), 1, file);
+
+								reallocArraySave(Object, world->objects, world->objectCount);
+								fread(world->objects, sizeof(Object)*world->objectCount, 1, file);
+							}
+
+							fclose(file);
+						}
+					}
+
+
 				}
 
-				ad->panelHeight = pr.top - p.y - pad.y + panelMargin;
+				ad->panelHeightLeft = rectPanelLeft.top - p.y - pad.y + panelMargin;
+			}
+		}
+		#endif
+
+		// Right panel.
+		#if 1
+		{
+			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
+			newGuiQuickBox(gui, rectPanelRight);
+
+
+			if(init) newGuiScissorPush(gui, rect(0,0,0,0));
+			{
+				Rect pri = rectExpand(rectPanelRight, -vec2(panelMargin*2));
+
+				Font* font = gui->textSettings.font;
+
+				float elementHeight = font->height * 1.5f;
+				float elementWidth = rectW(pri);
+				Vec2 padding = vec2(panelMargin-1, panelMargin-1);
+
+				Vec2 p = rectTL(pri);
+				float eh = elementHeight;
+				float ew = elementWidth;
+				Vec2 pad = padding;
+
+				{
+					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, vec4(0, 1));
+					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings(vec4(0,0.4f,0.6f,0.5f)));
+
+					Rect r;
+					char* s;
+					char* t;
+					QuickRow qr;
+
+
+					RaytraceSettings* settings = &ad->settings;
+					World* world = &ad->world;
+					EntityUI* eui = &ad->entityUI;
+					Object* obj = ad->world.objects + (eui->selectedObject-1);
+					Geometry* geom = &obj->geometry;
+					Material* mat = &obj->material;
+
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					
+					float leftRightButtonWidth = eh * 1.2f;
+					if(eui->selectedObject) {
+						r = rectExpand(r, vec2(0,-eh*0.2f));
+						qr = quickRow(r, pad.x, leftRightButtonWidth, 0, leftRightButtonWidth);
+					} else {
+						r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+						qr = quickRow(r, pad.x, 0);
+					}
+
+					if(eui->selectedObject) {
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "◄")) {
+							eui->selectedObject = mod(eui->selectedObject-2, world->objectCount);
+							eui->selectedObject++;
+							printf("%i\n", eui->selectedObject);
+						}
+					}
+
+					newGuiQuickTextBox(gui, quickRowNext(&qr), "<b>Entities<b>", vec2i(0,0), &headerSettings);
+
+					if(eui->selectedObject) {
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "►")) {
+							eui->selectedObject = mod(eui->selectedObject, world->objectCount);
+							eui->selectedObject++;
+							printf("%i\n", eui->selectedObject);
+						}
+					}
+
+
+					if(eui->selectedObject) {
+
+						s = "Id";
+						t = fillString("%i", eui->selectedObject-1);
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, getTextDim(t, font).w);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickText(gui, quickRowNext(&qr), t, vec2i(-1,0));
+
+						s = "Position";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.x);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.y);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.z);
+
+						s = "Rotation";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						float cols[] = {getTextDim(s, font).w, 0,0,0,0};
+						qr = quickRow(r, pad.x, cols, arrayCount(cols));
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.w);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.x);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.y);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.z);
+
+						s = "Color";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.r);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.g);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.b);
+
+						s = "Type";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickComboBox(gui, quickRowNext(&qr), &geom->type, geometryTypeStrings, arrayCount(geometryTypeStrings));
+
+						s = "BoundingRadius";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickText(gui, quickRowNext(&qr), fillString("%f", geom->boundingSphereRadius), vec2i(-1,0));
+
+
+						if(geom->type == GEOM_TYPE_SPHERE) {
+							s = "Radius";
+							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+							qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+							newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->r);
+
+						} else if(geom->type == GEOM_TYPE_BOX) {
+							s = "Dimension";
+							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+							qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
+							newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->dim.x);
+							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->dim.y);
+							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->dim.z);
+						}
+
+						s = "EmitColor";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.r);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.g);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.b);
+
+						s = "Reflection";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->reflectionMod);
+
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, 0.0f, 0.0f);
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "Copy")) {
+							eui->objectCopy = world->objects[eui->selectedObject-1];
+						}
+
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
+							deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
+						}
+					}
+
+				}
+
+				ad->panelHeightRight = rectPanelRight.top - p.y - pad.y + panelMargin;
 			}
 		}
 		#endif
@@ -2506,7 +2859,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif 
 
-	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init);
+	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init, ad->panelAlpha);
 
 	if(*isRunning == false) saveAppSettings(systemData);
 }
