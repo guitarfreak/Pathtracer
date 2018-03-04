@@ -22,6 +22,7 @@
 	- Detect windows text size and test ui with different sizes.
 	- Menu.
 	- Detect if window outside monitor range and move it inside.
+	- 32 bit version.
 
 	Done Today: 
 
@@ -2375,7 +2376,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			float speed = 1.0f;
 
-			if(!inc) speed *= -2;
+			if(!inc) speed *= -2.5f;
 			ad->panelAlphaFadeState += ad->dt * speed;
 
 			ad->panelAlphaFadeState = clamp(ad->panelAlphaFadeState, 0, 0.8f);
@@ -2681,7 +2682,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "◄")) {
 							eui->selectedObject = mod(eui->selectedObject-2, world->objectCount);
 							eui->selectedObject++;
-							printf("%i\n", eui->selectedObject);
 						}
 					}
 
@@ -2691,7 +2691,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "►")) {
 							eui->selectedObject = mod(eui->selectedObject, world->objectCount);
 							eui->selectedObject++;
-							printf("%i\n", eui->selectedObject);
 						}
 					}
 

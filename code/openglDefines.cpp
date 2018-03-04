@@ -68,7 +68,7 @@ typedef ptrdiff_t GLintptr;
 
 
 #define makeGLFunction(returnType, name, ...) \
-	typedef returnType name##Function(__VA_ARGS__); \
+	typedef returnType WINAPI name##Function(__VA_ARGS__); \
 	name##Function* gl##name; 
 #define loadGLFunction(name) \
 	gl##name = (name##Function*)wglGetProcAddress("gl" #name);
@@ -168,12 +168,12 @@ typedef ptrdiff_t GLintptr;
 
 // typedef HGLRC wglCreateContextAttribsARBFunction(HDC hDC, HGLRC hshareContext, const int *attribList);
 // wglCreateContextAttribsARBFunction* wglCreateContextAttribsARB;
-typedef int wglGetSwapIntervalEXTFunction(void);
+typedef int WINAPI wglGetSwapIntervalEXTFunction(void);
 wglGetSwapIntervalEXTFunction* wglGetSwapIntervalEXT;
-typedef int wglSwapIntervalEXTFunction(int);
+typedef int WINAPI wglSwapIntervalEXTFunction(int);
 wglSwapIntervalEXTFunction* wglSwapIntervalEXT;
 
-typedef const char* wglGetExtensionsStringEXTFunction(void);
+typedef const char* WINAPI wglGetExtensionsStringEXTFunction(void);
 wglGetExtensionsStringEXTFunction* wglGetExtensionsStringEXT;
 
 

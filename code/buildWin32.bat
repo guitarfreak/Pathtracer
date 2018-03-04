@@ -3,8 +3,8 @@
 set scriptpath=%~d0%~p0
 cd %scriptpath%
 
-if not exist "..\buildWin32" mkdir ..\buildWin32
-pushd ..\buildWin32
+if not exist "..\buildWin64" mkdir ..\buildWin64
+pushd ..\buildWin64
 
 set APP_NAME=Raycaster
 
@@ -13,17 +13,17 @@ set LINC=
 
 set LINKER_LIBS= -DEFAULTLIB:Opengl32.lib -DEFAULTLIB:Shell32.lib -DEFAULTLIB:user32.lib -DEFAULTLIB:Gdi32.lib -DEFAULTLIB:Shlwapi.lib
 
-set                  PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\amd64;%PATH%
+set                  PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin;%PATH%
 set          INC=%INC% -I"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\include"
-set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\lib\amd64"
+set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\lib"
 set          INC=%INC% -I"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Include"
-set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Lib\x64"
+set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Lib"
 
 set INC=%INC% -I"C:\Standalone\iaca"
 
 set INC=%INC% -I"C:\Projects\Libs\freetype2.9\include"
-set LINC=%LINC% -LIBPATH:"C:\Projects\Libs\freetype2.9\win64"
-set LINKER_LIBS=%LINKER_LIBS% -DEFAULTLIB:freetype29.lib
+set LINC=%LINC% -LIBPATH:"C:\Projects\Libs\freetype2.9\win32"
+set LINKER_LIBS=%LINKER_LIBS% -DEFAULTLIB:freetype.lib
 
 
 
@@ -34,6 +34,10 @@ if "%~2"=="-release" (
 	rem -Zo
 	set BUILD_MODE=-O2
 	set MODE_DEFINE=-DRELEASE_BUILD
+)
+
+if "%~3"=="-ship" (
+	set MODE_DEFINE=%MODE_DEFINE% -DSHIPPING_MODE
 )
 
 rem -d2cgsummary

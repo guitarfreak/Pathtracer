@@ -7,6 +7,6 @@ del *.lib
 del *.obj
 
 cd ..
-call "C:\\Standalone\\rcedit.exe" "buildWin32\\QuickGui.exe" --set-icon icon.ico
+call "C:\\Standalone\\rcedit.exe" "buildWin32\\Raycaster.exe" --set-icon icon.ico
 
 rem PAUSE
