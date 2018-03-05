@@ -1211,15 +1211,18 @@ struct FolderSearchData {
 };
 
 bool folderSearchStart(FolderSearchData* fd, char* folder) {	
-	char* folderPath = mallocString(strLen(folder) + 1);
+	// Remember, for searching folder add "*" at the end of path
+	// like this: "C:\folder\*"
 
-	strClear(folderPath);
-	strAppend(folderPath, folder);
-	strAppend(folderPath, "*");
+	// char* folderPath = mallocString(strLen(folder) + 1);
 
-	fd->folderHandle = FindFirstFile(folderPath, &fd->findData);
+	// strClear(folderPath);
+	// strAppend(folderPath, folder);
+	// strAppend(folderPath, "*");
 
-	free(folderPath);
+	fd->folderHandle = FindFirstFile(folder, &fd->findData);
+
+	// free(folderPath);
 
 	if(fd->folderHandle != INVALID_HANDLE_VALUE) return true;
 	else return false;

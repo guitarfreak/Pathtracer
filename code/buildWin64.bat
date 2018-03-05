@@ -92,7 +92,7 @@ goto packShippingFolderEnd
 
 	rmdir ".\%BUILD_FOLDER%" /S /Q
 
-	call "C:\Program Files\7-Zip\7z.exe" a %RELEASE_FOLDER%.zip %RELEASE_FOLDER%
+	"C:\Program Files\7-Zip\7z.exe" a %RELEASE_FOLDER%.zip %RELEASE_FOLDER%
 
 :packShippingFolderEnd
 
@@ -106,6 +106,5 @@ GOTO parseParameters
 
 rem popd
 set LOCATION=
-
 
 rem exit -b

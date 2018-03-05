@@ -525,7 +525,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// }
 
 		FolderSearchData fd;
-		folderSearchStart(&fd, App_Image_Folder);
+		folderSearchStart(&fd, fillString("%s*", App_Image_Folder));
 		while(folderSearchNextFile(&fd)) {
 
 			if(strLen(fd.fileName) <= 2) continue; // Skip ".."
