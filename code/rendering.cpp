@@ -2113,9 +2113,8 @@ void openglDefaultSetup() {
 	glEnable(GL_FRAMEBUFFER_SRGB);
 }
 
-
 void setWindowViewport(WindowSettings* ws, Rect vp);
-void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapTime, bool init, float panelAlpha) {
+void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, Timer* swapTimer, bool init, float panelAlpha) {
 	
 	//
 	// Render.
@@ -2165,7 +2164,7 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 
 		// Sleep until monitor refresh.
 		if(!init && ws->vsync && !sd->vsyncTempTurnOff) {
-			double frameTime = timerUpdate(*swapTime);
+			double frameTime = timerStop(swapTimer);
 			double fullFrameTime = ((double)1/ws->frameRate);
 
 			// If we missed a frame we have to sleep longer.
@@ -2174,32 +2173,42 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
 
 			double sleepTime = fullFrameTime - frameTime;
 
-			int sleepTimeMS = sleepTime*1000;
+			int sleepTimeMS = sleepTime*1000.0 - 0.5;
+
+			// timerStart(swapTimer);
 			if(sleepTimeMS > 0) Sleep(sleepTimeMS);
+			// timerStop(swapTimer);
+
+			// printf("%f %f %f %i\n", fullFrameTime, frameTime, sleepTime, sleepTimeMS);
+			// sleepTimeMS += 1;
+			// printf("sleep %i: %i %f %f diff:%f\n", swapTimer->dt > sleepTimeMS/1000.0, sleepTimeMS, sleepTime, swapTimer->dt, sleepTimeMS/1000.0 - swapTimer->dt);
 		}
 
 		// Cap max framerate if vsync disabled.
 		if(!init && !ws->vsync) {
-			double frameTime = timerUpdate(*swapTime);
+			double frameTime = timerStop(swapTimer);
 			double maxFrameTime = ((double)1/ws->frameRate);
 
 			if(frameTime < maxFrameTime) {
 				double fullSleepTime = maxFrameTime - frameTime;
 
-				i64 timeStamp = timerInit();
+				timerStart(swapTimer);
 
-				int sleepTimeMS = fullSleepTime*1000;
+				int sleepTimeMS = fullSleepTime*1000 - 0.5;
 				Sleep(sleepTimeMS);
 
-				f64 sleptTime = timerUpdate(timeStamp, &timeStamp);
+				f64 sleptTime = timerStop(swapTimer);
 
 				double restTime = fullSleepTime - sleptTime;
 
 				// Not Good.
 				while(restTime > 0) {
+					timerStart(swapTimer);
+
 					int temp = 0;
 					for(int i = 0; i < 100; i++) temp *= temp;
-					f64 dt = timerUpdate(timeStamp, &timeStamp);
+
+					f64 dt = timerStop(swapTimer);
 					restTime -= dt;
 				}
 			}
@@ -2223,6 +2232,6 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, i64* swapT
         	}
 		}
 
-		*swapTime = timerInit();
+		timerStart(swapTimer);
 	}
 }

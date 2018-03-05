@@ -741,6 +741,8 @@ void CALLBACK updateInput(SystemData* sd) {
 	}
 }
 
+#include <Mmsystem.h>
+
 void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, Vec2i res, int style, int , int monitor = 0) {
 	systemData->windowsData = wData;
 
@@ -860,6 +862,26 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     systemData->coreCount = sysinfo.dwNumberOfProcessors;
 
     ws->styleBorderSize = GetSystemMetrics(SM_CXSIZEFRAME);
+
+
+    // Set icon.
+    {
+    	char* rs = MAKEINTRESOURCE(1);
+
+    	HANDLE hbicon = LoadImage(GetModuleHandle(0), rs, IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
+    	if(hbicon) SendMessage(systemData->windowHandle, WM_SETICON, ICON_BIG, (LPARAM)hbicon);
+
+    	HANDLE hsicon = LoadImage(GetModuleHandle(0), rs, IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
+    	if(hsicon) SendMessage(systemData->windowHandle, WM_SETICON, ICON_SMALL, (LPARAM)hsicon);
+    }
+
+    // Set minimal sleep timer resolution.
+    {
+    	TIMECAPS timecaps;
+    	timeGetDevCaps(&timecaps, sizeof(TIMECAPS));
+    	int error = timeBeginPeriod(timecaps.wPeriodMin);
+    	if(error != TIMERR_NOERROR) printf("Timer error.\n");
+    }
 }
 
 void makeWindowTopmost(SystemData* sd) {
@@ -1087,30 +1109,38 @@ inline __int64 getCycleStamp() {
 	return __rdtsc();
 }
 
-i64 timerInit() {
-	LARGE_INTEGER counter;
-	QueryPerformanceCounter(&counter);
 
-	return counter.QuadPart;
-}
+struct Timer {
+	double frequency;
+	LARGE_INTEGER timeStamp;
 
-// Returns time in milliseconds;
-f64 timerUpdate(i64 lastTimeStamp, i64* setTimeStamp = 0) {
-	LARGE_INTEGER counter;
+	double dt;
+};
+
+void timerInit(Timer* timer) {
 	LARGE_INTEGER frequency;
 	QueryPerformanceFrequency(&frequency); 
-	QueryPerformanceCounter(&counter);
 
-	i64 timeStamp = counter.QuadPart;
-	f64 dt = (timeStamp - lastTimeStamp);
-	dt *= 1000000;
-	dt /= frequency.QuadPart;
-	dt /= 1000000;
-	
-	if(setTimeStamp) *setTimeStamp = timeStamp;
-
-	return dt;
+	timer->frequency = (double)frequency.QuadPart;
 }
+
+void timerStart(Timer* timer) {
+	QueryPerformanceCounter(&timer->timeStamp);
+}
+
+double timerStop(Timer* timer) {	
+	LARGE_INTEGER newTimeStamp;
+	QueryPerformanceCounter(&newTimeStamp);
+
+	timer->dt = newTimeStamp.QuadPart - timer->timeStamp.QuadPart;
+
+	// In seconds.
+	timer->dt /= timer->frequency;
+
+	return timer->dt;
+}
+
+
 
 void shellExecute(char* command) {
 	system(command);
@@ -1181,12 +1211,15 @@ struct FolderSearchData {
 };
 
 bool folderSearchStart(FolderSearchData* fd, char* folder) {	
-	char* folderPath = allocaString(strLen(folder) + 1);
+	char* folderPath = mallocString(strLen(folder) + 1);
+
 	strClear(folderPath);
 	strAppend(folderPath, folder);
 	strAppend(folderPath, "*");
 
 	fd->folderHandle = FindFirstFile(folderPath, &fd->findData);
+
+	free(folderPath);
 
 	if(fd->folderHandle != INVALID_HANDLE_VALUE) return true;
 	else return false;

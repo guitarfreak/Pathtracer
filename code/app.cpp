@@ -22,13 +22,13 @@
 	- Detect windows text size and test ui with different sizes.
 	- Menu.
 	- Detect if window outside monitor range and move it inside.
-	- 32 bit version.
 
 	Done Today: 
 
 	Bugs:
 	- Windows key slow sometimes.
 	- F11 rapid pressing.
+	- Release builds sometimes don't start up on first few tries but then work.
 
 =================================================================================
 */
@@ -362,11 +362,13 @@ struct AppData {
 	WindowSettings wSettings;
 	GraphicsState graphicsState;
 
+	Timer frameTimer;
 	i64 lastTimeStamp;
 	f64 dt;
 	f64 time;
 	int frameCount;
-	i64 swapTime;
+
+	Timer swapTimer;
 
 	f64 fpsTime;
 	int fpsCounter;
@@ -429,7 +431,7 @@ struct AppData {
 
 extern "C" APPMAINFUNCTION(appMain) {
 
-	i64 startupTimer = timerInit();
+	// i64 startupTimer = timerInit();
 
 	if(init) {
 
@@ -504,7 +506,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		systemData->minWindowDim = vec2i(200,200);
 		systemData->maxWindowDim = ws->biggestMonitorSize;
 
+		#ifndef SHIPPING_MODE
 		makeWindowTopmost(systemData);
+		#endif
 
 		gs->useSRGB = true;
 
@@ -625,6 +629,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// @AppInit.
 
+		timerInit(&ad->swapTimer);
+		timerInit(&ad->frameTimer);
+
+		folderExistsCreate(Scenes_Folder);
+		folderExistsCreate(Screenshot_Folder);
+
+
 		ad->texFastMode = 2;
 		
 		ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
@@ -665,10 +676,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 	// Update timer.
 	{
 		if(init) {
-			ad->lastTimeStamp = timerInit();
+			timerStart(&ad->frameTimer);
 			ad->dt = 1/(float)60;
 		} else {
-			ad->dt = timerUpdate(ad->lastTimeStamp, &ad->lastTimeStamp);
+			ad->dt = timerStop(&ad->frameTimer);
 			ad->time += ad->dt;
 
 			ad->fpsTime += ad->dt;
@@ -678,6 +689,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				ad->fpsTime = 0;
 				ad->fpsCounter = 0;
 			}
+
+			timerStart(&ad->frameTimer);
+			// printf("%f\n", ad->dt);
 		}
 	}
 
@@ -769,6 +783,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
+	if(!ws->fullscreen)
 	{
 		// @DrawFrame
 		{
@@ -2589,7 +2604,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, 0.0f,0.0f);
 
-						char* filePath = fillString("%s\\%s", Scenes_Folder, "scene1");
+						char* filePath = fillString("%s\\%s", Scenes_Folder, "scene1.scene");
 
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Save")) {
 							FILE* file = fopen(filePath, "wb");
@@ -2858,7 +2873,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif 
 
-	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTime, init, ad->panelAlpha);
+	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha);
 
 	if(*isRunning == false) saveAppSettings(systemData);
 }

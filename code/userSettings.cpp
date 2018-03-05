@@ -18,20 +18,25 @@
 #define Window_Min_Size_X 300
 #define Window_Min_Size_Y 400
 
-#define App_Font_Folder "Fonts\\"
 #define Windows_Font_Folder "\\Fonts\\"
 #define Windows_Font_Path_Variable "windir"
-
-#define App_Image_Folder "Images\\"
-
-#define App_Save_File ".\\temp"
-
-#define Screenshot_Folder ".\\Screenshots"
-#define Scenes_Folder ".\\Scenes"
 
 #define Fallback_Font "arial.ttf"
 #define Fallback_Font_Italic "ariali.ttf"
 #define Fallback_Font_Bold "arialbd.ttf"
+
+#ifdef SHIPPING_MODE
+#define App_Font_Folder ".\\data\\Fonts\\"
+#define App_Image_Folder ".\\data\\Images\\"
+#else
+#define App_Font_Folder "..\\data\\Fonts\\"
+#define App_Image_Folder "..\\data\\Images\\"
+#endif
+
+#define App_Save_File ".\\session.tmp"
+
+#define Screenshot_Folder ".\\Screenshots"
+#define Scenes_Folder ".\\Scenes"
 
 
 
@@ -46,9 +51,6 @@ enum TextureId {
 	TEXTURE_SIZE,
 };
 
-char* texturePaths[] = {
-	"..\\data\\Textures\\Misc\\white.png",
-};
 
 //
 

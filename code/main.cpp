@@ -6,15 +6,27 @@
 #include "rt_hotload.cpp"
 #include "rt_misc_win32.cpp"
 
-#include <iacaMarks.h>
+#include "external\iacaMarks.h"
 
+#ifdef SHIPPING_MODE
+#define OPEN_CONSOLE 0
+#else 
 #define OPEN_CONSOLE 1
+#endif
+
 
 int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLine, int showCode) {
 
+	if(OPEN_CONSOLE) {
+		AllocConsole();
+		freopen("conin$","r",stdin);
+		freopen("conout$","w",stdout);
+		freopen("conout$","w",stderr);
+	}
+
 	HotloadDll hotloadDll;
 
-	#ifndef RELEASE_BUILD	
+	#ifndef SHIPPING_MODE	
 	initDll(&hotloadDll, "app.dll", "appTemp.dll", "lock.tmp");
 	#else 
 	initDll(&hotloadDll, "app.dll", "appTemp.dll", "lock.tmp", false);
@@ -30,13 +42,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 	threadInit(&threadQueue, coreCount-1);
 
 	AppMemory appMemory = {};
-
-	if(OPEN_CONSOLE) {
-		AllocConsole();
-		freopen("conin$","r",stdin);
-		freopen("conout$","w",stdout);
-		freopen("conout$","w",stderr);
-	}
 
     bool firstFrame = true;
     bool secondFrame = false;
