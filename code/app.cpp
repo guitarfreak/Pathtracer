@@ -19,7 +19,6 @@
 	- Cleanup.
 
 	- Shortest distance to camera for widgets.
-	- Detect windows text size and test ui with different sizes.
 	- Menu.
 	- Detect if window outside monitor range and move it inside.
 
@@ -43,7 +42,6 @@
 #include <gl\gl.h>
 
 #define STB_IMAGE_IMPLEMENTATION
-// #define STBI_ONLY_JPEG
 #define STBI_ONLY_PNG
 #include "external\stb_image.h"
 
@@ -55,7 +53,6 @@
 #include FT_PARAMETER_TAGS_H
 #include FT_MODULE_H
 
-#define ENABLE_CUSTOM_WINDOW_FRAME
 
 struct ThreadQueue;
 struct GraphicsState;
@@ -80,88 +77,6 @@ MemoryBlock* globalMemory;
 #include "newGui.cpp"
 
 #include "raycast.cpp"
-
-
-
-
-// #include <iostream>
-// #include <cstdio>
-// #include <chrono>
-// #include <thread>
-
-// std::chrono::system_clock::time_point a = std::chrono::system_clock::now();
-// std::chrono::system_clock::time_point b = std::chrono::system_clock::now();
-
-// int main()
-// {
-//     while (true)
-//     {
-//         // Maintain designated frequency of 5 Hz (200 ms per frame)
-//         a = std::chrono::system_clock::now();
-//         std::chrono::duration<double, std::milli> work_time = a - b;
-
-//         if (work_time.count() < 200.0)
-//         {
-//             std::chrono::duration<double, std::milli> delta_ms(200.0 - work_time.count());
-//             auto delta_ms_duration = std::chrono::duration_cast<std::chrono::milliseconds>(delta_ms);
-//             std::this_thread::sleep_for(std::chrono::milliseconds(delta_ms_duration.count()));
-//         }
-
-//         b = std::chrono::system_clock::now();
-//         std::chrono::duration<double, std::milli> sleep_time = b - a;
-
-//         // Your code here
-
-//         printf("Time: %f \n", (work_time + sleep_time).count());
-//     }
-// }
-
-
-
-
-
-
-
-// #include <Mmsystem.h>
-// #include <windows.h>    /* WinAPI */
-
-// /* Windows sleep in 100ns units */
-// BOOLEAN nanosleep(LONGLONG ns){
-//     /* Declarations */
-//     HANDLE timer;   /* Timer handle */
-//     LARGE_INTEGER li;   /* Time defintion */
-//     /* Create timer */
-//     if(!(timer = CreateWaitableTimer(NULL, TRUE, NULL)))
-//         return FALSE;
-//      Set timer properties 
-//     li.QuadPart = -(ns*10);
-//     if(!SetWaitableTimer(timer, &li, 0, NULL, NULL, FALSE)){
-//         CloseHandle(timer);
-//         return FALSE;
-//     }
-//     /* Start & wait for timer */
-//     WaitForSingleObject(timer, INFINITE);
-//     /* Clean resources */
-//     CloseHandle(timer);
-//     /* Slept without problems */
-//     return TRUE;
-// }
-
-
-
-// void usleep(__int64 usec) 
-// { 
-//     HANDLE timer; 
-//     LARGE_INTEGER ft; 
-
-//     ft.QuadPart = -(10*usec); // Convert to 100 nanosecond interval, negative value indicates relative time
-
-//     timer = CreateWaitableTimer(NULL, TRUE, NULL); 
-//     SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0); 
-//     WaitForSingleObject(timer, INFINITE); 
-//     CloseHandle(timer); 
-// }
-
 
 
 
@@ -386,11 +301,22 @@ struct AppData {
 	bool captureMouseKeepCenter;
 	bool fpsMode;
 
+	float mouseSpeed;
+
 	// App.
+
+	char* fontFile;
+	char* fontFileBold;
+	char* fontFileItalic;
+	int fontHeight;
+	float fontScale;
 
 	NewGui gui;
 	float panelHeightLeft;
 	float panelHeightRight;
+
+	float panelWidthLeft;
+	float panelWidthRight;
 
 	float panelAlpha;
 	float panelAlphaFadeState;
@@ -425,9 +351,11 @@ struct AppData {
 
 
 
-
+#ifdef SHIPPING_MODE
+#pragma optimize( "", on )
+#else 
 #pragma optimize( "", off )
-// #pragma optimize( "", on )
+#endif
 
 extern "C" APPMAINFUNCTION(appMain) {
 
@@ -608,19 +536,35 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Setup app temp settings.
 		{
-			if(!fileExists(App_Save_File)) {
-				AppTempSettings at = {};
-				appTempDefault(&at, ws->monitors[0].workRect);
+			// @AppSessionDefaults
+			if(!fileExists(App_Session_File)) {
+				AppSessionSettings at = {};
 
-				appWriteTempSettings(App_Save_File, &at);
+				Rect r = ws->monitors[0].workRect;
+				Vec2 center = vec2(rectCenX(r), (r.top - r.bottom)/2);
+				Vec2 dim = vec2(rectW(r), -rectH(r));
+				at.windowRect = rectCenDim(center, dim*0.85f);
+
+				at.mouseSpeed = 1;
+				at.fontScale = 1;
+				at.panelWidthLeft = 200;
+				at.panelWidthRight = 200;
+
+				appWriteTempSettings(App_Session_File, &at);
 			}
 
-			AppTempSettings at = {};
+			// @AppSessionLoad
 			{
-				appReadTempSettings(App_Save_File, &at);
+				AppSessionSettings at = {};
+				appReadTempSettings(App_Session_File, &at);
 
 				Rect r = at.windowRect;
 				MoveWindow(windowHandle, r.left, r.top, r.right-r.left, r.bottom-r.top, true);
+
+				ad->mouseSpeed = at.mouseSpeed;
+				ad->fontScale = at.fontScale;
+				ad->panelWidthLeft = at.panelWidthLeft;
+				ad->panelWidthRight = at.panelWidthRight;
 			}
 		}
 
@@ -646,6 +590,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 		strCpy(ad->screenShotName, "screenshot");
 
 		ad->entityUI.objectCopy = defaultObject();
+
+		ad->fontFile       = getPStringCpy("LiberationSans-Regular.ttf");
+		ad->fontFileBold   = getPStringCpy("LiberationSans-Bold.ttf");
+		ad->fontFileItalic = getPStringCpy("LiberationSans-Italic.ttf");
 	}
 
 	// @AppStart.
@@ -710,9 +658,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->frameCount++;
 
+		#ifdef ENABLE_CUSTOM_WINDOW_FRAME
 		if(systemData->mouseInClient) updateCursor(ws);
+		#else 
+	    if(mouseInClientArea(windowHandle)) updateCursor(ws);
+		#endif
 
 		ws->windowHasFocus = systemData->windowIsFocused;
+
+		systemData->fontHeight = getSystemFontHeight(systemData->windowHandle);
+		ad->fontHeight = roundInt(ad->fontScale*systemData->fontHeight);
 	}
 
 	if(input->keysPressed[KEYCODE_ESCAPE]) {
@@ -774,6 +729,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		scissorState(false);
 	}
 
+
 	// @AppLoop.
 
 	NewGui* gui = &ad->gui;
@@ -801,7 +757,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		if(!systemData->mouseInClient && !mouseInClientArea(windowHandle)) systemData->ncTestRegion = 0;
 
-		sd->normalTitleHeight = 22;
+		sd->normalTitleHeight = sd->fontHeight*1.4f;
 		sd->normalBorderSize = 5;
 		sd->normalVisualBorderSize = 1;
 		sd->buttonMargin = 3;
@@ -894,14 +850,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec2 tp = vec2(ws->titleRect.left + textPadding, rectCen(ws->titleRect).y);
 
-		Font* font = getFont("LiberationSans-Regular.ttf", fontHeight, "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf");
+		Font* font = getFont(ad->fontFile, fontHeight, ad->fontFileBold, ad->fontFileItalic);
 		TextSettings ts = textSettings(font, cText, TEXTSHADOW_MODE_SHADOW, vec2(-1,-1), 1, cTextShadow);
 
-		drawText("<b>PathTracer<b>", tp, vec2i(-1,0), ts);
+		drawText(fillString("<b>%s<b>", App_Name), tp, vec2i(-1,0), ts);
 
 		glDepthMask(true);
 	}
 	#endif
+
 
 	if(true)
 	{
@@ -1017,7 +974,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			cam->nearDist = camDistanceFromFOVandWidth(cam->fov, cam->dim.w);
 
 			if(ad->fpsMode) {
-				float speed = 0.0015f;
+				float speed = ad->mouseSpeed * 0.0015f;
 				
 				cam->rot.x += -input->mouseDelta.x*speed;
 				cam->rot.y += input->mouseDelta.y*speed;
@@ -1531,9 +1488,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
-			// Delete.
 			if(eui->selectedObject) {
+				// Delete.
 				if(keyPressed(gui, input, KEYCODE_DEL)) {
+					deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
+				}
+
+				// Copy.
+				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_C)) {
+					eui->objectCopy = world->objects[eui->selectedObject-1];
+				}
+
+				// Cut.
+				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X)) {
+					// Copy and delete.
+					eui->objectCopy = world->objects[eui->selectedObject-1];
 					deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
 				}
 			}
@@ -1543,17 +1512,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 				insertObject(defaultObject(), world->objects, &world->objectCount, cam);
 			}
 
-			// Copy.
-			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_C)) {
-				eui->objectCopy = world->objects[eui->selectedObject-1];
-			}
-
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
 				insertObject(eui->objectCopy, world->objects, &world->objectCount, cam);
 			}
-
-
 
 
 			eui->gotActive = false;
@@ -2321,7 +2283,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(ad->entityUI.selectionState == ENTITYUI_ACTIVE) gui->hotId[Gui_Focus_MLeft] = 0;
 
 		{
-			Font* font = getFont("LiberationSans-Regular.ttf", -15, "LiberationSans-Bold.ttf", "LiberationSans-Italic.ttf");
+			float fontHeight = ad->fontHeight;
+			Font* font = getFont(ad->fontFile, ad->fontHeight, ad->fontFileBold, ad->fontFileItalic);
 			
 			// Dark.
 			Vec4 cText = vec4(1,1);
@@ -2357,7 +2320,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			etbs.boxSettings.color = cEdit;
 			etbs.boxSettings.roundedCorner = 0;
 			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, vec4(0.5f,0.2,0,1), vec4(0,1,1,1), textPadding);
-			gui->sliderSettings = sliderSettings(etbs, 15, 15, 0, 0, 4, cButton, vec4(0,0,0,0));
+			float sw = fontHeight*1.0f;
+			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, 4, cButton, vec4(0,0,0,0));
 
 			// ScrollRegionSettings scrollSettings;
 			gui->popupSettings = boxSettings(cEdit, 0, cOutline);
@@ -2368,15 +2332,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		float panelOffset = 0;
-		float panelMargin = 5;
+		float panelMargin = roundFloat(ad->fontHeight*0.3f);
+		float panelWidthMax = ws->clientRes.w*0.5f;
+		float panelWidthMin = 100;
+
 		Vec2 panelDim;
 
-		panelDim = vec2(200,ad->panelHeightLeft);
+		clamp(&ad->panelWidthLeft, panelWidthMin, panelWidthMax);
+		clamp(&ad->panelWidthRight, panelWidthMin, panelWidthMax);
+
+		panelDim = vec2(ad->panelWidthLeft,ad->panelHeightLeft);
 		Rect rectPanelLeft = rectTLDim(vec2(panelOffset,-panelOffset), panelDim);
 
 		Vec2i res = ws->clientRes;
-		panelDim = vec2(200,ad->panelHeightRight);
-		Rect rectPanelRight = rectTRDim(vec2(res.w,0) + vec2(panelOffset,-panelOffset), panelDim);
+		panelDim = vec2(ad->panelWidthRight,ad->panelHeightRight);
+		Rect rectPanelRight = rectTRDim(vec2(res.w,0) + vec2(-panelOffset,-panelOffset), panelDim);
 
 		// Panel fade animation.
 		{
@@ -2402,10 +2372,35 @@ extern "C" APPMAINFUNCTION(appMain) {
 		#if 1
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelLeft, gui->zLevel);
+
+			// Resize panel width.
+			{
+				float border = panelMargin;
+				Rect r = rectRSetL(rectPanelLeft, border);
+
+				int result = newGuiGoDragAction(gui, r, gui->zLevel, Gui_Focus_MLeft);
+				if(result == 1) {
+					gui->mouseAnchor.x = rectPanelLeft.left + (input->mousePos.x-rectPanelLeft.right);
+				}
+				if(result) {
+					newGuiSetCursor(gui, IDC_SIZEWE);
+					ad->panelWidthLeft = input->mousePos.x - gui->mouseAnchor.x;
+
+					// Clamp Width.
+					clamp(&ad->panelWidthLeft, panelWidthMin, panelWidthMax);
+
+					rectPanelLeft.right = rectPanelLeft.left + ad->panelWidthLeft;
+				}
+				if(newGuiIsHot(gui)) {
+					newGuiSetCursor(gui, IDC_SIZEWE);
+				}
+			}
+
 			newGuiQuickBox(gui, rectPanelLeft);
 
-			if(init) newGuiScissorPush(gui, rect(0,0,0,0));
 			{
+				newGuiScissorPush(gui, rectExpand(rectPanelLeft, vec2(-2)));
+
 				Rect pri = rectExpand(rectPanelLeft, -vec2(panelMargin*2));
 
 				Font* font = gui->textSettings.font;
@@ -2430,9 +2425,41 @@ extern "C" APPMAINFUNCTION(appMain) {
 					char* s;
 					QuickRow qr;
 
+
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					newGuiQuickTextBox(gui, r, "<b>App Settings<b>", vec2i(0,0), &headerSettings);
+
+					s = "MouseSpeed";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
+					newGuiQuickSlider(gui, quickRowNext(&qr), &ad->mouseSpeed, 0, 2); 
+
+					s = fillString("Font Height: %i", ad->fontHeight);
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					newGuiQuickText(gui, r, s, vec2i(-1,0)); 
+
+					s = "FontScale";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
+					gui->sliderSettings.applyAfter = true;
+					newGuiQuickSlider(gui, quickRowNext(&qr), &ad->fontScale, 0.5f, 2); 
+					gui->sliderSettings.applyAfter = false;
+
+
+
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
 					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
+
+					s = "FitToScreen";
+					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, eh);
+					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
+					quickRowNext(&qr);
+					newGuiQuickCheckBox(gui, quickRowNext(&qr), &ad->fitToScreen);
 
 					s = "TexDim";
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2466,24 +2493,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMax);
 
 
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
-					newGuiQuickTextBox(gui, r, "<b>App Settings<b>", vec2i(0,0), &headerSettings);
-
-					s = "KeepUpdating";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, eh); 
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
-					quickRowNext(&qr);
-					newGuiQuickCheckBox(gui, quickRowNext(&qr), &ad->keepUpdating);
-
-					s = "FitToScreen";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, eh);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
-					quickRowNext(&qr);
-					newGuiQuickCheckBox(gui, quickRowNext(&qr), &ad->fitToScreen);
-
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
@@ -2510,6 +2519,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), s2, vec2i(-1,0));
 					}
 					eh = elementHeight;
+
 
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2639,6 +2649,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 
 				ad->panelHeightLeft = rectPanelLeft.top - p.y - pad.y + panelMargin;
+
+				newGuiScissorPop(gui);
 			}
 		}
 		#endif
@@ -2647,11 +2659,37 @@ extern "C" APPMAINFUNCTION(appMain) {
 		#if 1
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
+
+			// Resize panel width.
+			{
+				float border = panelMargin;
+				Rect r = rectRSetR(rectPanelRight, border);
+
+				int result = newGuiGoDragAction(gui, r, gui->zLevel, Gui_Focus_MLeft);
+				if(result == 1) {
+					// gui->mouseAnchor.x = rectPanelRight.right + (input->mousePos.x-rectPanelRight.left);
+					gui->mouseAnchor.x = input->mousePos.x - rectPanelRight.left;
+				}
+				if(result) {
+					newGuiSetCursor(gui, IDC_SIZEWE);
+					float panelLeft = input->mousePos.x - gui->mouseAnchor.x;
+					ad->panelWidthRight = rectPanelRight.right - panelLeft;
+
+					// Clamp Width.
+					clamp(&ad->panelWidthRight, panelWidthMin, panelWidthMax);
+
+					rectPanelRight.left = rectPanelRight.right - ad->panelWidthRight;
+				}
+				if(newGuiIsHot(gui)) {
+					newGuiSetCursor(gui, IDC_SIZEWE);
+				}
+			}
+
 			newGuiQuickBox(gui, rectPanelRight);
 
-
-			if(init) newGuiScissorPush(gui, rect(0,0,0,0));
 			{
+				newGuiScissorPush(gui, rectExpand(rectPanelRight, vec2(-2)));
+
 				Rect pri = rectExpand(rectPanelRight, -vec2(panelMargin*2));
 
 				Font* font = gui->textSettings.font;
@@ -2787,7 +2825,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->reflectionMod);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &mat->reflectionMod, 0, 1);
+
 
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2804,6 +2843,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 
 				ad->panelHeightRight = rectPanelRight.top - p.y - pad.y + panelMargin;
+
+				newGuiScissorPop(gui);
 			}
 		}
 		#endif
@@ -2812,68 +2853,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
-	#if 0
-	{
-		// Gamma test.
 
-		Rect cr = ws->clientRect;
-		Vec2 p = vec2(0,0);
-		float h = rectH(cr)/10;
-		Rect r;
-
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
-
-		setSRGB(false);
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r , vec4(0,1), vec4(1,1));
-		setSRGB(true);
-
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRect(r, vec4(0.5f,1));
-
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		setSRGB(false);
-		drawRect(r, vec4(0.5f,1));
-		setSRGB(true);
-
-
-		// r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		// // drawRectNewColoredW(r , vec4(0,1), vec4(0.5f,1));
-		// drawRect(r, vec4(1,1), rect(0,0,1,1), getTexture(TEXTURE_NATURE)->id);
-
-
-		glDisable(GL_FRAMEBUFFER_SRGB);
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r , vec4(1,0.5f,0,1), vec4(0,1,0,1));
-		glEnable(GL_FRAMEBUFFER_SRGB);
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r , vec4(1,0,0,1), vec4(0,1,0,1));
-
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r, vec4(1,0,0,1), vec4(1,0,0,1));
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r, vec4(1,1,1,1), vec4(1,1,1,1));
-		drawRectNewColoredW(r, vec4(1,0,0,0.5f), vec4(1,0,0,0.5f));
-
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		// drawRectNewColoredW(r, vec4(1,1), vec4(1,1));
-		drawRectNewColoredW(r, vec4(0,1), vec4(0,0));
-
-		glDisable(GL_FRAMEBUFFER_SRGB);
-		r = rectTLDim(p, vec2(rectW(cr), h)); p.y -= h;
-		drawRectNewColoredW(r, vec4(0,1), vec4(0,0));
-		glEnable(GL_FRAMEBUFFER_SRGB);
-
-		glEnable(GL_FRAMEBUFFER_SRGB);
-
-		// r = cr;
-		// // drawRectNewColoredW(r , vec4(0,1), vec4(0.5f,1));
-		// drawRect(r, vec4(1,1), rect(0,0,1,1), getTexture(TEXTURE_NATURE)->id);
-	}
-	#endif 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha);
 
-	if(*isRunning == false) saveAppSettings(systemData);
+	// @AppSessionWrite
+	if(*isRunning == false) {
+		AppSessionSettings at = {};
+
+		at.windowRect = getWindowWindowRect(systemData->windowHandle);
+		at.mouseSpeed = ad->mouseSpeed;
+		at.fontScale = ad->fontScale;
+		at.panelWidthLeft = ad->panelWidthLeft;
+		at.panelWidthRight = ad->panelWidthRight;
+
+		saveAppSettings(at);
+	}
 }

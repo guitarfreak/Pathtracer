@@ -33,12 +33,13 @@
 #define App_Image_Folder "..\\data\\Images\\"
 #endif
 
-#define App_Save_File ".\\session.tmp"
+#define App_Session_File ".\\session.tmp"
 
 #define Screenshot_Folder ".\\Screenshots"
 #define Scenes_Folder ".\\Scenes"
 
 
+#define App_Name "Pathtracer"
 
 //
 
@@ -83,31 +84,24 @@ enum WatchFolder {
 
 
 
-struct AppTempSettings {
+struct AppSessionSettings {
 	Rect windowRect;
+	float mouseSpeed;
+	float fontScale;
+	float panelWidthLeft;
+	float panelWidthRight;
 };
 
-void appWriteTempSettings(char* filePath, AppTempSettings* at) {
-	writeDataToFile((char*)at, sizeof(AppTempSettings), filePath);
+void appWriteTempSettings(char* filePath, AppSessionSettings* at) {
+	writeDataToFile((char*)at, sizeof(AppSessionSettings), filePath);
 }
 
-void appReadTempSettings(char* filePath, AppTempSettings* at) {
+void appReadTempSettings(char* filePath, AppSessionSettings* at) {
 	readDataFile((char*)at, filePath);
 }
 
-void appTempDefault(AppTempSettings* at, Rect monitor) {
-	Rect r = monitor;
-	Vec2 center = vec2(rectCenX(r), (r.top - r.bottom)/2);
-	Vec2 dim = vec2(rectW(r), -rectH(r));
-	at->windowRect = rectCenDim(center, dim*0.85f);
-}
-
-void saveAppSettings(SystemData* sd) {
-	if(fileExists(App_Save_File)) {
-		AppTempSettings at = {};
-
-		at.windowRect = getWindowWindowRect(sd->windowHandle);
-
-		appWriteTempSettings(App_Save_File, &at);
+void saveAppSettings(AppSessionSettings at) {
+	if(fileExists(App_Session_File)) {
+		appWriteTempSettings(App_Session_File, &at);
 	}
 }

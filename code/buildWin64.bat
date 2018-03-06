@@ -41,7 +41,6 @@ set MODE_DEFINE=
 if "%~2"=="-release" (
 	rem -Oy -Zo
 	set BUILD_MODE=-O2
-	rem set BUILD_MODE=-Od
 	set MODE_DEFINE=-DRELEASE_BUILD
 )
 
@@ -75,10 +74,12 @@ goto packShippingFolderEnd
 	mkdir ".\%BUILD_FOLDER%\data"
 	xcopy ".\data" ".\%BUILD_FOLDER%\data" /E /Q
 
-	del ".\%BUILD_FOLDER%\*.pdb"
-	del ".\%BUILD_FOLDER%\*.exp"
-	del ".\%BUILD_FOLDER%\*.lib"
-	del ".\%BUILD_FOLDER%\*.obj"
+	if "%~2"=="" goto nodelete
+		del ".\%BUILD_FOLDER%\*.pdb"
+		del ".\%BUILD_FOLDER%\*.exp"
+		del ".\%BUILD_FOLDER%\*.lib"
+		del ".\%BUILD_FOLDER%\*.obj"
+	:nodelete
 
 	xcopy ".\libs\freetype 2.9\lib\%PLATFORM%\*.dll" ".\%BUILD_FOLDER%" /Q
 

@@ -368,6 +368,8 @@ struct SliderSettings {
 
 	bool useDefaultValue;
 	float defaultvalue;
+	
+	bool applyAfter;
 };
 
 SliderSettings sliderSettings(TextBoxSettings textBoxSettings, float size, float minSize, float lineWidth, float rounding, float heightOffset, Vec4 color, Vec4 lineColor) {
@@ -511,6 +513,8 @@ struct NewGui {
 	int editInt;
 	float editFloat;
 	int editMaxSize;
+
+	int sliderId;
 
 	TextEditVars editVars;
 
@@ -1228,25 +1232,23 @@ Rect scissorTestIntersect(Rect scissor, Rect r) {
 }
 
 
-void drawArrow(Vec2 a, Vec2 b, Vec4 color, Rect scissor) {
-	
-}
-
-void drawText(Rect r, char* text, Vec2i align, Rect scissor, TextSettings settings) {
+void drawText(Rect r, char* text, Vec2i align, Rect scissor, TextSettings settings, float borderSize = 0) {
 	Vec2 pos = rectCen(r) + (rectDim(r)/2) * vec2(align);
 
-	scissorTestScreen(rectExpand(getRectScissor(r, scissor), vec2(2,2)));
+	scissorTestScreen(rectExpand(getRectScissor(r,scissor), -vec2(borderSize*2)));
 	drawText(text, pos, align, settings);
 	scissorTestScreen(scissor);
 }
 
-void drawBox(Rect r, Rect scissor, BoxSettings settings) {
+void drawBox(Rect r, Rect scissor, BoxSettings settings, bool round = true) {
 	scissorTestScreen(scissor);
 
-	r.left = roundFloat(r.left);
-	r.right = roundFloat(r.right);
-	r.top = roundFloat(r.top);
-	r.bottom = roundFloat(r.bottom);
+	if(round) {
+		r.left = roundFloat(r.left);
+		r.right = roundFloat(r.right);
+		r.top = roundFloat(r.top);
+		r.bottom = roundFloat(r.bottom);
+	}
 
 	if(settings.color.a != 0) {
 		drawRectRounded(r, settings.color, settings.roundedCorner);
@@ -1263,7 +1265,11 @@ void drawTextBox(Rect r, char* text, Vec2i align, Rect scissor, TextBoxSettings 
 
 	if(align.x == -1) r.left += settings.sideAlignPadding;
 	if(align.x == 1) r.right -= settings.sideAlignPadding;
-	drawText(r, text, align, scissor, settings.textSettings);
+
+	float borderSize = 0;
+	if(settings.boxSettings.borderColor.a != 0) borderSize = 1;
+
+	drawText(r, text, align, scissor, settings.textSettings, borderSize);
 }
 
 void drawTextEditBox(char* text, Rect textRect, bool active, Rect scissor, TextEditVars editVars, TextEditSettings editSettings) {
@@ -1436,7 +1442,7 @@ bool newGuiQuickCheckBox(NewGui* gui, Rect r, bool* value, CheckBoxSettings* set
 	drawBox(cr, gui->scissor, set.boxSettings);
 
 	if(*value) {
-		drawBox(rectExpand(cr, vec2(-rectW(cr)*(1 - set.sizeMod))), gui->scissor, boxSettings(set.color, set.boxSettings.roundedCorner/2));
+		drawBox(rectExpand(cr, vec2(-rectW(cr)*(1 - set.sizeMod))), gui->scissor, boxSettings(set.color, set.boxSettings.roundedCorner/2), false);
 	}
 
 	if(newGuiIsHot(gui)) newGuiSetCursor(gui, IDC_HAND);
@@ -1548,6 +1554,15 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 		}
 	}
 
+	// For apply after.
+	void* valuePointer = val;
+	int sliderId = newGuiIncrementId(gui);
+
+	if(set.applyAfter && gui->sliderId == sliderId) {
+		if(typeIsInt) val = &gui->editInt;
+		else val = &gui->editFloat;
+	}
+
 	// Right now we just handle int as if it was a float.
 
 	if(typeIsInt) clampInt((int*)val, Void_Dref(int, min), Void_Dref(int, max));
@@ -1577,7 +1592,16 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 		if(typeIsInt) Void_Dref(int, val) = roundInt(set.defaultvalue);
 		else Void_Dref(float, val) = set.defaultvalue;
 	} else {
-		if(event == 1) gui->mouseAnchor = gui->input->mousePosNegative - rectCen(slider);
+		if(event == 1) {
+			if(set.applyAfter) {
+				if(typeIsInt) gui->editInt = Void_Dref(int, val);
+				else gui->editFloat = Void_Dref(float, val);
+
+				gui->sliderId = sliderId;
+			}
+
+			gui->mouseAnchor = gui->input->mousePosNegative - rectCen(slider);
+		}
 		if(event > 0) {
 			Vec2 pos = gui->input->mousePosNegative - gui->mouseAnchor;
 			floatVal = newGuiSliderGetValue(pos, r, sliderSize, floatMin, floatMax, true);
@@ -1595,7 +1619,16 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 	set.color += newGuiColorMod(gui);
 	if(!editMode) drawSlider(val, type, r, slider, gui->scissor, set);
 
-	if(event == 3) result = true;
+	if(event == 3) {
+		if(set.applyAfter) {
+			if(typeIsInt) Void_Dref(int, valuePointer) = gui->editInt;
+			else Void_Dref(float, valuePointer) = gui->editFloat;
+
+			gui->sliderId = 0;
+		}
+	
+		result = true;
+	}
 	return result;
 }
 

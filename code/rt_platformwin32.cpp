@@ -1,3 +1,7 @@
+
+#define ENABLE_CUSTOM_WINDOW_FRAME
+
+
 #pragma once
 
 enum Keycode {
@@ -227,6 +231,8 @@ struct SystemData {
 	Input* input;
 
 	int coreCount;
+
+	int fontHeight;
 
 	// For nchittest
 
@@ -1098,6 +1104,15 @@ bool windowSizeChanged(HWND windowHandle, WindowSettings* ws) {
 	return result;
 }
 
+int getSystemFontHeight(HWND windowHandle) {
+	HDC dc = GetDC(windowHandle);
+
+	TEXTMETRIC textMetric;
+	GetTextMetrics(dc, &textMetric);
+
+	return textMetric.tmHeight;
+}
+
 // MetaPlatformFunction();
 uint getTicks() {
     uint result = GetTickCount();
@@ -1212,17 +1227,8 @@ struct FolderSearchData {
 
 bool folderSearchStart(FolderSearchData* fd, char* folder) {	
 	// Remember, for searching folder add "*" at the end of path
-	// like this: "C:\folder\*"
-
-	// char* folderPath = mallocString(strLen(folder) + 1);
-
-	// strClear(folderPath);
-	// strAppend(folderPath, folder);
-	// strAppend(folderPath, "*");
 
 	fd->folderHandle = FindFirstFile(folder, &fd->findData);
-
-	// free(folderPath);
 
 	if(fd->folderHandle != INVALID_HANDLE_VALUE) return true;
 	else return false;
