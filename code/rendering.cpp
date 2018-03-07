@@ -949,14 +949,16 @@ void drawRectRounded(Rect r, Vec4 color, float size) {
 	// glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 };
 
-void drawRectShadow(Rect r, Vec4 color, float size) {
+void drawRectShadow(Rect r, Vec4 color, float alpha, float size, bool drawBackground = false) {
 	float z = globalGraphicsState->zOrder;
+
+	if(drawBackground) drawRect(r, color);
 
 	size *= 2;
 
 	glBindTexture(GL_TEXTURE_2D, 0);
 	Vec4 c = COLOR_SRGB(color);
-	Vec4 c2 = vec4(0,0);
+	Vec4 c2 = vec4(0,alpha);
 	glBegin(GL_QUAD_STRIP);
 
 	pushColor(c); pushVec(rectBL(r), z); pushColor(c2); pushVec(rectBL(r) + normVec2(vec2(-1,-1))*size, z);
@@ -966,6 +968,10 @@ void drawRectShadow(Rect r, Vec4 color, float size) {
 	pushColor(c); pushVec(rectBL(r), z); pushColor(c2); pushVec(rectBL(r) + normVec2(vec2(-1,-1))*size, z);
 
 	glEnd();
+};
+
+void drawRectShadow(Rect r, Vec4 color, float size, bool drawBackground = false) {
+	return drawRectShadow(r, color, 0, size, drawBackground);
 };
 
 void drawRectRoundedOutline(Rect r, Vec4 color, float size, float offset = -1) {

@@ -594,9 +594,6 @@ void newGuiPopupSetup(NewGui* gui);
 void newGuiUpdateComboBoxPopups(NewGui* gui);
 void newGuiEnd(NewGui* gui) {
 
-	newGuiPopupSetup(gui);
-	newGuiUpdateComboBoxPopups(gui);
-
 	if(gui->currentCursor != IDC_ARROW) {
 		setCursor(gui->windowSettings, gui->currentCursor);
 	}
@@ -2312,6 +2309,8 @@ void newGuiPopupSetup(NewGui* gui) {
 
 		if(newGuiGotActive(gui, id)) gui->popupStackCount = 0;
 	}
+
+	newGuiUpdateComboBoxPopups(gui);
 }
 
 void newGuiUpdateComboBoxPopups(NewGui* gui) {
@@ -2346,8 +2345,13 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 
 
 			newGuiSetHotAllMouseOver(gui, r, gui->zLevel);
+
+			// Shadow.
+			Rect shadowRect = rectTrans(r, vec2(1,-1)*padding*0.5f);
+			drawRect(shadowRect, vec4(0,0.8f));
+			// drawRectShadow(r, vec4(0,1), 7);
+
 			drawBox(r, gui->scissor, gui->popupSettings);
-			drawRectShadow(r, vec4(0,1), 7);
 
 			// scissorState();
 			Rect layoutRect = rectExpand(r, vec2(-padding*2,-2));

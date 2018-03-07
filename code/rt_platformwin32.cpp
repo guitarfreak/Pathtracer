@@ -275,8 +275,7 @@ struct WindowSettings {
 	bool fullscreen;
 	uint style;
 	WINDOWPLACEMENT g_wpPrev;
-
-	RECT windowedRect;
+	Rect previousWindowRect;
 
 	MonitorData monitors[3];
 	int monitorCount;
@@ -1030,8 +1029,11 @@ void updateResolution(HWND windowHandle, SystemData* sd, WindowSettings* ws) {
 	ws->aspectRatio = ws->currentRes.x / (float)ws->currentRes.y;
 }
 
+Rect getWindowRect(WindowSettings* ws);
 void setWindowMode(HWND hwnd, WindowSettings* wSettings, int mode) {
 	if(mode == WINDOW_MODE_FULLBORDERLESS && !wSettings->fullscreen) {
+		wSettings->previousWindowRect = getWindowWindowRect(hwnd);
+		
 		wSettings->g_wpPrev = {};
 
 		DWORD dwStyle = getWindowStyle(hwnd);
@@ -1065,8 +1067,7 @@ void setWindowMode(HWND hwnd, WindowSettings* wSettings, int mode) {
 }
 
 void swapBuffers(SystemData* systemData) {
-    SwapBuffers(systemData->deviceContext);
-}
+    SwapBuffers(systemData->deviceContext); }
 
 Rect getWindowRect(WindowSettings* ws) {
 	return ws->windowRect;
