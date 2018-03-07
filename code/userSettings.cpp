@@ -90,18 +90,20 @@ struct AppSessionSettings {
 	float fontScale;
 	float panelWidthLeft;
 	float panelWidthRight;
+
+	char sceneFile[200];
 };
 
-void appWriteTempSettings(char* filePath, AppSessionSettings* at) {
+void appWriteSessionSettings(char* filePath, AppSessionSettings* at) {
 	writeDataToFile((char*)at, sizeof(AppSessionSettings), filePath);
 }
 
-void appReadTempSettings(char* filePath, AppSessionSettings* at) {
+void appReadSessionSettings(char* filePath, AppSessionSettings* at) {
 	readDataFile((char*)at, filePath);
 }
 
 void saveAppSettings(AppSessionSettings at) {
 	if(fileExists(App_Session_File)) {
-		appWriteTempSettings(App_Session_File, &at);
+		appWriteSessionSettings(App_Session_File, &at);
 	}
 }

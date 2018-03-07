@@ -22,7 +22,7 @@ pushd "..\%BUILD_FOLDER%"
 set INC=
 set LINC=
 
-set LINKER_LIBS= -DEFAULTLIB:Opengl32.lib -DEFAULTLIB:Shell32.lib -DEFAULTLIB:user32.lib -DEFAULTLIB:Gdi32.lib -DEFAULTLIB:Shlwapi.lib -DEFAULTLIB:Winmm.lib
+set LINKER_LIBS= -DEFAULTLIB:Opengl32.lib -DEFAULTLIB:Shell32.lib -DEFAULTLIB:user32.lib -DEFAULTLIB:Gdi32.lib -DEFAULTLIB:Shlwapi.lib -DEFAULTLIB:Winmm.lib -DEFAULTLIB:Psapi.lib -DEFAULTLIB:Comdlg32.lib
 
 set                  PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\amd64;%PATH%
 set          INC=%INC% -I"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\include"

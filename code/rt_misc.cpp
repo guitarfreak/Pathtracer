@@ -696,6 +696,14 @@ void readDataFile(char* data, char* fileName) {
 	fclose(file);
 }
 
+char* getFileNameFromPath(char *filePath) {
+    char *name = strrchr(filePath, '\\');
+    if(!name) name = filePath;
+    else name++;
+
+    return name;
+}
+
 //
 // ???
 //

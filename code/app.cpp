@@ -39,6 +39,8 @@
 #define WIN32_LEAN_AND_MEAN 
 #define NOMINMAX
 #include <windows.h>
+#include "Commdlg.h"
+
 #include <gl\gl.h>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -80,193 +82,6 @@ MemoryBlock* globalMemory;
 
 
 
-void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
-	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
-
-	Vec2 bDim = vec2(sd->titleHeight);
-
-	sd->titleHeight = sd->normalTitleHeight;
-	sd->borderSize = sd->normalBorderSize;
-	sd->visualBorderSize = sd->normalVisualBorderSize;
-
-	if(sd->maximized) {
-		sd->borderSize = 0;
-		sd->visualBorderSize = 0;
-	}
-
-	if(ws->fullscreen) {
-		sd->borderSize = 0;
-		sd->visualBorderSize = 0;
-		sd->titleHeight = 0;
-	}
-
-	Vec2i res = ws->currentRes;
-
-	ws->windowRes = res;
-	ws->windowRect = rect(0, -ws->windowRes.h, ws->windowRes.w, 0);
-
-	Rect wr = ws->windowRect;
-	ws->clientRect = rect(wr.min + vec2(sd->visualBorderSize), wr.max - vec2(sd->visualBorderSize, sd->titleHeight+sd->visualBorderSize));
-	ws->clientRes = vec2i(roundInt(rectW(ws->clientRect)), roundInt(rectH(ws->clientRect)));
-
-	float vbs = sd->visualBorderSize;
-	ws->titleRect = rect(vbs, -sd->titleHeight - vbs, rectW(ws->windowRect)-vbs, -vbs);
-
-	float bm = sd->buttonMargin*2;
-
-	Rect titleRectWithSepLine = ws->titleRect;
-	titleRectWithSepLine.bottom += 1;
-
-	Vec2 p = vec2(titleRectWithSepLine.right - bDim.w/2, rectCen(titleRectWithSepLine).y);
-	sd->rClose = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
-	sd->rMaximize = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
-	sd->rMinimize = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
-
-	if(ws->fullscreen) {
-		sd->rClose    = rect(-1,-1,-1,-1);
-		sd->rMaximize = rect(-1,-1,-1,-1);
-		sd->rMinimize = rect(-1,-1,-1,-1);
-	}
-
-	ws->windowRectBL = rect(0, 0, res.w, res.h);
-
-	ws->clientRectBL = ws->windowRectBL;
-	ws->clientRectBL.min += vec2(sd->visualBorderSize);
-	ws->clientRectBL.max -= vec2(sd->visualBorderSize,sd->visualBorderSize+sd->titleHeight);
-
-	if(sd->maximized) {
-		float sbs = ws->styleBorderSize;
-		ws->windowRectBL = rect(sbs, sbs, sbs+res.w, sbs+res.h);
-	}
-
-	#else 
-
-	Vec2i res = ws->currentRes;
-	ws->clientRes = res;
-	ws->windowRes = res;
-
-	#endif
-}
-
-void setClientViewport(WindowSettings* ws, Rect vp) {
-	vp = rectTrans(vp, ws->clientRectBL.min);
-	setViewPort(vp);
-}
-
-void setClientScissor(WindowSettings* ws, Rect vp) {
-	vp = rectTrans(vp, ws->clientRectBL.min);
-	scissorTest(vp);
-}
-
-void setWindowViewport(WindowSettings* ws, Rect vp) {
-	vp = rectTrans(vp, ws->windowRectBL.min);
-	setViewPort(vp);
-}
-
-
-bool keyPressed(NewGui* gui, Input* input, int keycode) {
-	if(gui->activeId != 0) return false;
-	else return input->keysPressed[keycode];
-}
-
-bool keyDown(NewGui* gui, Input* input, int keycode) {
-	if(gui->activeId != 0) return false;
-	else return input->keysDown[keycode];
-}
-
-int mouseWheel(NewGui* gui, Input* input) {
-	if(gui->hotId[Gui_Focus_MWheel] != 0 || gui->activeId != 0) return false;
-	else return input->mouseWheel; 
-}
-
-int mouseButtonPressedLeft(NewGui* gui, Input* input) {
-	if(gui->hotId[Gui_Focus_MLeft] != 0 || gui->activeId != 0) return false;
-	else return input->mouseButtonPressed[0]; 
-}
-
-bool guiHotMouseClick(NewGui* gui) {
-	return gui->hotId[Gui_Focus_MLeft] != 0;
-}
-
-
-Vec3 mouseRayCast(Rect tr, Vec2 mp, Camera* cam) {
-
-	Vec2 mousePercent = {};
-	mousePercent.x = mapRange01(mp.x, tr.left, tr.right);
-	mousePercent.y = mapRange01(mp.y, tr.bottom, tr.top);
-
-	OrientationVectors ovecs = cam->ovecs;
-	Vec3 camBottomLeft = cam->pos + ovecs.dir*cam->nearDist + (-ovecs.right)*(cam->dim.w/2.0f) + (-ovecs.up)*(cam->dim.h/2.0f);
-
-	Vec3 p = camBottomLeft;
-	p += (cam->ovecs.right*cam->dim.w) * mousePercent.x;
-	p += (cam->ovecs.up*cam->dim.h) * mousePercent.y;
-
-	Vec3 rayDir = normVec3(p - cam->pos);
-
-	return rayDir;
-}
-
-enum EntitySelectionMode {
-	ENTITYUI_MODE_SELECTED = 0,
-	ENTITYUI_MODE_TRANSLATION,
-	ENTITYUI_MODE_ROTATION,
-	ENTITYUI_MODE_SCALE,
-
-	ENTITYUI_MODE_SIZE,
-};
-
-enum EntityUIState {
-	ENTITYUI_INACTIVE = 0,
-	ENTITYUI_HOT,
-	ENTITYUI_ACTIVE,
-};
-
-enum EntityTranslateMode {
-	TRANSLATE_MODE_AXIS = 0,
-	TRANSLATE_MODE_PLANE,
-	TRANSLATE_MODE_CENTER,
-};
-
-struct EntityUI {
-	Object objectCopy;
-
-	int selectedObject;
-
-	int selectionMode;
-	int selectionState;
-	bool gotActive;
-	int hotId;
-
-	bool guiHasFocus;
-
-	float selectionAnimState;
-	bool localMode;
-	bool snappingEnabled;
-	float snapGridSize;
-	float snapGridDim;
-
-	int axisIndex;
-	Vec3 axis;
-	Vec3 objectDistanceVector;
-
-	// Translation mode.
-
-	Vec3 startPos;
-	int translateMode;
-	Vec3 centerOffset;
-	float centerDistanceToCam;
-	Vec3 axes[3];
-
-	// Rotation mode.
-
-	Quat startRot;
-	float currentRotationAngle;
-
-	// Scale mode.
-
-	float startDim;
-};
 
 struct AppData {
 
@@ -325,6 +140,10 @@ struct AppData {
 
 	// 
 
+	bool sceneHasFile;
+	char* sceneFile;
+	int sceneFileMax;
+
 	World world;
 	EntityUI entityUI;
 	RaytraceSettings settings;
@@ -351,15 +170,16 @@ struct AppData {
 
 
 
-#ifdef SHIPPING_MODE
-#pragma optimize( "", on )
-#else 
+// #ifdef SHIPPING_MODE
+// #pragma optimize( "", on )
+// #else 
 #pragma optimize( "", off )
-#endif
+// #endif
 
 extern "C" APPMAINFUNCTION(appMain) {
 
 	// i64 startupTimer = timerInit();
+
 
 	if(init) {
 
@@ -374,6 +194,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		MemoryArray* tMemory = &appMemory->memoryArrays[appMemory->memoryArrayCount++];
 		initMemoryArray(tMemory, megaBytes(2), 0);
 	}
+
 
 	// Setup memory and globals.
 
@@ -393,6 +214,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	globalThreadQueue = threadQueue;
 	globalGraphicsState = &ad->graphicsState;
 
+
 	// Init.
 
 	if(init) {
@@ -401,13 +223,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// AppData.
 		//
 
+
 		getPMemory(sizeof(AppData));
 		*ad = {};
 
+
 		// int windowStyle = (WS_POPUP | WS_BORDER);
 		// int windowStyle = (WS_POPUP);
-		int windowStyle = WS_OVERLAPPEDWINDOW;
+		int windowStyle = WS_OVERLAPPEDWINDOW & ~WS_SYSMENU;
 		initSystem(systemData, ws, windowsData, vec2i(1920*0.85f, 1080*0.85f), windowStyle, 1);
+
 
 		windowHandle = systemData->windowHandle;
 
@@ -435,7 +260,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		systemData->maxWindowDim = ws->biggestMonitorSize;
 
 		#ifndef SHIPPING_MODE
-		makeWindowTopmost(systemData);
+		// makeWindowTopmost(systemData);
 		#endif
 
 		gs->useSRGB = true;
@@ -535,6 +360,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		globalGraphicsState->fallbackFontItalic = getPStringCpy(Fallback_Font_Italic);
 
 		// Setup app temp settings.
+		AppSessionSettings appSessionSettings = {};
 		{
 			// @AppSessionDefaults
 			if(!fileExists(App_Session_File)) {
@@ -547,16 +373,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				at.mouseSpeed = 1;
 				at.fontScale = 1;
-				at.panelWidthLeft = 200;
-				at.panelWidthRight = 200;
+				at.panelWidthLeft = systemData->fontHeight*15;
+				at.panelWidthRight = systemData->fontHeight*15;
+				strClear(at.sceneFile);
 
-				appWriteTempSettings(App_Session_File, &at);
+				appWriteSessionSettings(App_Session_File, &at);
 			}
 
 			// @AppSessionLoad
 			{
 				AppSessionSettings at = {};
-				appReadTempSettings(App_Session_File, &at);
+				appReadSessionSettings(App_Session_File, &at);
 
 				Rect r = at.windowRect;
 				MoveWindow(windowHandle, r.left, r.top, r.right-r.left, r.bottom-r.top, true);
@@ -565,6 +392,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				ad->fontScale = at.fontScale;
 				ad->panelWidthLeft = at.panelWidthLeft;
 				ad->panelWidthRight = at.panelWidthRight;
+
+				appSessionSettings = at;
 			}
 		}
 
@@ -594,7 +423,61 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->fontFile       = getPStringCpy("LiberationSans-Regular.ttf");
 		ad->fontFileBold   = getPStringCpy("LiberationSans-Bold.ttf");
 		ad->fontFileItalic = getPStringCpy("LiberationSans-Italic.ttf");
+
+
+
+
+		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
+
+		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
+		ad->settings.sampleCountGrid = 4;
+		ad->settings.sampleGridWidth = 10;
+
+		ad->settings.rayBouncesMax = 6;
+
+		ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
+		// ad->threadCount = 1;
+
+		ad->keepUpdating = false;
+
+		ad->drawSceneWired = true;
+		ad->fitToScreen = true;
+
+		ad->settings.randomDirectionCount = 20000;
+
+		ad->sceneFileMax = 200;
+		ad->sceneFile = getPString(ad->sceneFileMax);
+		if(strLen(appSessionSettings.sceneFile)) {
+			strCpy(ad->sceneFile, appSessionSettings.sceneFile);
+			ad->sceneHasFile = true;
+			loadScene(&ad->world, ad->sceneFile);
+		} else {
+			ad->sceneHasFile = false;
+			getDefaultScene(&ad->world);
+		}
+
+
+		// Precalc random directions.
+		{
+			int count = ad->settings.randomDirectionCount;
+			ad->settings.randomDirections = mallocArray(Vec3, count);
+			float precision = 0.001f;
+
+			for(int i = 0; i < count; i++) {
+				// Cube discard method.
+
+				Vec3 randomDir;
+				do {
+					randomDir = vec3(randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision));
+				} while(lenVec3(randomDir) > 1);
+				randomDir = normVec3(randomDir);
+				if(randomDir == vec3(0,0,0)) randomDir = vec3(1,0,0);
+
+				ad->settings.randomDirections[i] = randomDir;
+			}
+		}
 	}
+
 
 	// @AppStart.
 
@@ -879,50 +762,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// @Settings.
 
 		if(init) {
-			ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
 
-			ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
-			ad->settings.sampleCountGrid = 4;
-			ad->settings.sampleGridWidth = 10;
-
-			ad->settings.rayBouncesMax = 6;
-
-			ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
-			// ad->threadCount = 1;
-
-			ad->keepUpdating = false;
-
-			ad->drawSceneWired = true;
-			ad->fitToScreen = true;
-
-			ad->settings.randomDirectionCount = 20000;
-
-			Camera* cam = &ad->world.camera;
-			cam->pos = vec3(0, -50, 10);
-			cam->rot = vec3(0, 0, 0);
-			cam->fov = 90;
-			cam->dim.w = 10;
-			cam->farDist = 10000;
-
-			// Precalc random directions.
-			{
-				int count = ad->settings.randomDirectionCount;
-				ad->settings.randomDirections = mallocArray(Vec3, count);
-				float precision = 0.001f;
-
-				for(int i = 0; i < count; i++) {
-					// Cube discard method.
-
-					Vec3 randomDir;
-					do {
-						randomDir = vec3(randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision), randomFloatPCG(-1,1,precision));
-					} while(lenVec3(randomDir) > 1);
-					randomDir = normVec3(randomDir);
-					if(randomDir == vec3(0,0,0)) randomDir = vec3(1,0,0);
-
-					ad->settings.randomDirections[i] = randomDir;
-				}
-			}
 		}
 
 		// Mouse capture.
@@ -1013,201 +853,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Vec3 black = vec3(0.2f);
 				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 			}
-		}
-
-		{
-			World* world = &ad->world;
-
-			#if 0
-
-			if(init || keyPressed(gui, input, KEYCODE_T) {
-
-				world->shapeCount = 0;
-				if(world->shapes) free(world->shapes);
-				world->shapes = mallocArray(Shape, 1000);
-
-				int count = 5;
-				float r = 30;
-				Vec3 offset = vec3(0,0,r/2.0f);
-				for(int i = 0; i < count; i++) {
-					// int type = randomIntPCG(0, SHAPE_COUNT-1);
-					int type = SHAPE_SPHERE;
-
-					Vec3 pos = vec3(randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r,r,0.01f), randomFloatPCG(-r/2.0f,r/2.0f,0.01f));
-					pos += offset;
-					float size = randomFloatPCG(15,30,0.01f);
-
-					// bool emitter = randomIntPCG(0,1);
-					bool emitter = 0;
-					Vec3 c = hslToRgbFloat(vec3(randomFloatPCG(0,1,0.01f), randomFloatPCG(0.5f,1,0.01f), randomFloatPCG(0.25f,0.75f,0.01f)));
-
-					float rm = randomFloatPCG(0,1,0.01f);
-
-					Shape s = {};
-
-					s.type = type;
-					s.pos = pos;
-					if(type == SHAPE_SPHERE) s.r = size/2.0f;
-					else if(type == SHAPE_BOX) s.dim = vec3(size/2.0f);
-					s.color = c;
-					if(emitter) s.emitColor = c;
-					else s.color = c;
-					s.reflectionMod = rm;
-
-					world->shapes[world->shapeCount++] = s;
-				}
-
-				Shape s = {};
-
-				// Plane
-
-				s = {};
-				s.type = SHAPE_BOX;
-				s.pos = vec3(0,0,0);
-				s.dim = vec3(1000000,1000000,0.0001f);
-				s.color = vec3(0.5f);
-				// s.color = vec3(0.99f);
-				// s.reflectionMod = 0.3f;
-				s.reflectionMod = 0.5f;
-				// s.reflectionMod = 0.9f;
-				// s.reflectionMod = 0.1f;
-				world->shapes[world->shapeCount++] = s;
-
-				// Mirror Sphere
-
-				s = {};
-				s.type = SHAPE_SPHERE;
-				s.pos = vec3(0,0,20);
-				s.r = 10;
-				s.color = vec3(0.5f);
-				// s.color = vec3(0.99f);
-				// s.reflectionMod = 0.3f;
-				s.reflectionMod = 1.0f;
-				// s.reflectionMod = 0.9f;
-				// s.reflectionMod = 0.1f;
-				world->shapes[world->shapeCount++] = s;
-
-
-
-
-
-				// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-				world->defaultEmitColor = vec3(1.0f);
-				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
-				world->globalLightColor = vec3(1,1,1);
-				// world->globalLightColor = vec3(0.0f);
-
-				// Calc bounding spheres.
-				for(int i = 0; i < world->shapeCount; i++) {
-					Shape* s = world->shapes + i;
-					shapeBoundingSphere(s);
-				}
-			}
-
-			#endif
-
-			// if(init || reload) {
-			// if(init || keyPressed(gui, input, KEYCODE_R)) {
-			if(init) {
-				world->defaultEmitColor = vec3(1,1,1);
-
-				world->ambientRatio = 0.2f;
-				world->ambientColor = vec3(1.0f);
-
-				// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-				// world->defaultEmitColor = vec3(1.0f);
-				world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
-				world->globalLightColor = vec3(1,1,1);
-				// world->globalLightColor = vec3(0.0f);
-
-
-
-				world->lightCount = 0;
-				reallocArraySave(Light, world->lights, 10);
-
-				Light l;
-
-				l = {};
-				l.type = LIGHT_TYPE_DIRECTION;
-				l.pos = normVec3(vec3(-1.5f,-1,-2.0f));
-				// l.diffuseColor = vec3(0.9,0,0);
-				l.diffuseColor = vec3(0.9f);
-				l.specularColor = vec3(1.0f);
-				l.brightness = 1.0f;
-				world->lights[world->lightCount++] = l;
-
-				world->objectCount = 0;
-				reallocArraySave(Object, world->objects, 100);
-
-				Material materials[10] = {};
-				materials[0].emitColor = vec3(0,0,0);
-				materials[0].reflectionMod = 0.5f;
-
-				// materials[0].diffuseRatio = 0.5f;
-				// materials[0].specularRatio = 0.5f;
-				// materials[0].shininess = 15;
-
-				Object obj;
-
-				// Ground plane.
-
-				// obj = {};
-				// obj.pos = vec3(0,0,0);
-				// obj.rot = quat();
-				// obj.color = vec3(0.5f);
-				// obj.material = materials[0];
-				// obj.geometry.type = GEOM_TYPE_BOX;
-				// // obj.geometry.dim = vec3(100000, 100000, 0.01f);
-				// obj.geometry.dim = vec3(5, 5, 0.01f);
-				// world->objects[world->objectCount++] = obj;
-
-				// Sphere.
-
-				obj = {};
-				obj.pos = vec3(0,0,20);
-				obj.rot = quat();
-				obj.color = vec3(0.3f,0.5f,0.8f);
-				obj.material = materials[0];
-				obj.geometry.type = GEOM_TYPE_SPHERE;
-				obj.geometry.r = 5;
-				world->objects[world->objectCount++] = obj;
-
-				obj = {};
-				obj.pos = vec3(10,0,15);
-				obj.rot = quat();
-				obj.color = vec3(0.6f,0.5f,0.8f);
-				obj.material = materials[0];
-				obj.geometry.type = GEOM_TYPE_SPHERE;
-				obj.geometry.r = 5;
-				world->objects[world->objectCount++] = obj;
-
-				obj = {};
-				obj.pos = vec3(0,5,5);
-				obj.rot = quat();
-				obj.color = vec3(0.3f,0.5f,0.2f);
-				obj.material = materials[0];
-				obj.geometry.type = GEOM_TYPE_SPHERE;
-				obj.geometry.r = 5;
-				world->objects[world->objectCount++] = obj;
-				
-				// Box.
-				
-				obj = {};
-				obj.pos = vec3(-5,-10,10);
-				obj.rot = quat();
-				obj.color = vec3(0.87f,0.1f,0.3f);
-				obj.material = materials[0];
-				obj.geometry.type = GEOM_TYPE_BOX;
-				// obj.geometry.dim = vec3(5,6,7);
-				obj.geometry.dim = vec3(5,10,10);
-				world->objects[world->objectCount++] = obj;
-
-				// Calc bounding spheres.
-				for(int i = 0; i < world->objectCount; i++) {
-					geometryBoundingSphere(&world->objects[i].geometry);
-				}
-			}
-
 		}
 
 		if(keyPressed(gui, input, KEYCODE_SPACE) && !ad->drawSceneWired) {
@@ -2611,37 +2256,44 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 
 
+						// File name.
+						{
+							char* s = "File:";
+							char* fileName = getFileNameFromPath(ad->sceneFile);
+							char* s2 = ad->sceneHasFile ? fileName : "";
+
+							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+							qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, getTextDim(s2, font).w);
+
+							newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+							quickRowNext(&qr);
+							newGuiQuickText(gui, quickRowNext(&qr), s2, vec2i(-1,0));
+						}
+
+
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, 0.0f,0.0f);
 
-						char* filePath = fillString("%s\\%s", Scenes_Folder, "scene1.scene");
-
-						if(newGuiQuickButton(gui, quickRowNext(&qr), "Save")) {
-							FILE* file = fopen(filePath, "wb");
-
-							if(file) {
-								fwrite(&world->camera, sizeof(Camera), 1, file);
-
-								fwrite(&world->objectCount, sizeof(world->objectCount), 1, file);
-								fwrite(world->objects, sizeof(Object)*world->objectCount, 1, file);
-							}
-
-							fclose(file);
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "New")) {
+							getDefaultScene(world);
+							ad->sceneHasFile = false;
+							strClear(ad->sceneFile);
 						}
 
-						if(newGuiQuickButton(gui, quickRowNext(&qr), "Load")) {
-							FILE* file = fopen(filePath, "rb");
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "Open")) {
+							openSceneCommand(world, ad->sceneFile, &ad->sceneHasFile);
+						}
 
-							if(file) {
-								fread(&world->camera, sizeof(Camera), 1, file);
 
-								fread(&world->objectCount, sizeof(world->objectCount), 1, file);
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, 0.0f,0.0f);
 
-								reallocArraySave(Object, world->objects, world->objectCount);
-								fread(world->objects, sizeof(Object)*world->objectCount, 1, file);
-							}
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "Save")) {
+							saveSceneCommand(world, ad->sceneFile, &ad->sceneHasFile);
+						}
 
-							fclose(file);
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "Save as")) {
+							saveAsSceneCommand(world, ad->sceneFile, &ad->sceneHasFile);
 						}
 					}
 
@@ -2834,10 +2486,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Copy")) {
 							eui->objectCopy = world->objects[eui->selectedObject-1];
 						}
-
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
 							deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
 						}
+
 					}
 
 				}
@@ -2854,7 +2506,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#endif
 
 
-
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha);
 
 	// @AppSessionWrite
@@ -2866,6 +2517,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		at.fontScale = ad->fontScale;
 		at.panelWidthLeft = ad->panelWidthLeft;
 		at.panelWidthRight = ad->panelWidthRight;
+		strCpy(at.sceneFile, ad->sceneFile);
 
 		saveAppSettings(at);
 	}

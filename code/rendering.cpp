@@ -486,8 +486,7 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 	if(!fontFolder) return 0;
 
 	char* path = fillString("%s%s", fontFolder, file);
-	char* fileBuffer = mallocString(fileSize(path) + 1);
-	readFileToBuffer(fileBuffer, path);
+
 
 
 	Font font;
@@ -637,12 +636,13 @@ Font* getFont(char* fontFile, float heightIndex, char* boldFontFile = 0, char* i
 					float h = globalGraphicsState->fonts[i][j].heightIndex;
 					if(h == 0 || h == heightIndex) {
 						fontSlot = &globalGraphicsState->fonts[i][j];
-						break;
+						goto forEnd;
 					}
 				}
 			}
 		}
 	}
+	forEnd:
 
 	// We are going to assume for now that a font size of 0 means it is uninitialized.
 	if(fontSlot->heightIndex == 0) {
@@ -705,6 +705,21 @@ void scissorTestScreen(Rect r) {
 	sr = rectTrans(sr, globalGraphicsState->clientRectOffset);
 
 	scissorTest(sr);
+}
+
+void setClientViewport(WindowSettings* ws, Rect vp) {
+	vp = rectTrans(vp, ws->clientRectBL.min);
+	setViewPort(vp);
+}
+
+void setClientScissor(WindowSettings* ws, Rect vp) {
+	vp = rectTrans(vp, ws->clientRectBL.min);
+	scissorTest(vp);
+}
+
+void setWindowViewport(WindowSettings* ws, Rect vp) {
+	vp = rectTrans(vp, ws->windowRectBL.min);
+	setViewPort(vp);
 }
 
 void scissorState(bool state = true) {

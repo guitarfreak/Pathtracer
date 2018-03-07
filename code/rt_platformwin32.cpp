@@ -749,6 +749,7 @@ void CALLBACK updateInput(SystemData* sd) {
 
 #include <Mmsystem.h>
 
+int getSystemFontHeight(HWND windowHandle);
 void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, Vec2i res, int style, int , int monitor = 0) {
 	systemData->windowsData = wData;
 
@@ -798,7 +799,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     }
 
     systemData->windowClass = windowClass;
-
     systemData->windowHandle = CreateWindowEx(0, windowClass.lpszClassName, "", ws->style, wx,wy,ww,wh, 0, 0, systemData->instance, 0);
 
     if(!systemData->windowHandle) {
@@ -888,6 +888,9 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     	int error = timeBeginPeriod(timecaps.wPeriodMin);
     	if(error != TIMERR_NOERROR) printf("Timer error.\n");
     }
+
+	systemData->fontHeight = getSystemFontHeight(systemData->windowHandle);
+
 }
 
 void makeWindowTopmost(SystemData* sd) {
@@ -1240,4 +1243,85 @@ bool folderSearchNextFile(FolderSearchData* fd) {
 	fd->fileName = fd->findData.cFileName;
 	
 	return true;
+}
+
+#include "psapi.h"
+
+void getMemoryUsage() {
+	PROCESS_MEMORY_COUNTERS_EX pmc;
+	GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc));
+
+	SIZE_T commited = pmc.PrivateUsage;
+	SIZE_T workingSet = pmc.WorkingSetSize;
+
+	printf("%f %f\n", commited/1024.0f/1024.0f, workingSet/1024.0f/1024.0f);
+}
+
+
+void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
+	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
+
+	Vec2 bDim = vec2(sd->titleHeight);
+
+	sd->titleHeight = sd->normalTitleHeight;
+	sd->borderSize = sd->normalBorderSize;
+	sd->visualBorderSize = sd->normalVisualBorderSize;
+
+	if(sd->maximized) {
+		sd->borderSize = 0;
+		sd->visualBorderSize = 0;
+	}
+
+	if(ws->fullscreen) {
+		sd->borderSize = 0;
+		sd->visualBorderSize = 0;
+		sd->titleHeight = 0;
+	}
+
+	Vec2i res = ws->currentRes;
+
+	ws->windowRes = res;
+	ws->windowRect = rect(0, -ws->windowRes.h, ws->windowRes.w, 0);
+
+	Rect wr = ws->windowRect;
+	ws->clientRect = rect(wr.min + vec2(sd->visualBorderSize), wr.max - vec2(sd->visualBorderSize, sd->titleHeight+sd->visualBorderSize));
+	ws->clientRes = vec2i(roundInt(rectW(ws->clientRect)), roundInt(rectH(ws->clientRect)));
+
+	float vbs = sd->visualBorderSize;
+	ws->titleRect = rect(vbs, -sd->titleHeight - vbs, rectW(ws->windowRect)-vbs, -vbs);
+
+	float bm = sd->buttonMargin*2;
+
+	Rect titleRectWithSepLine = ws->titleRect;
+	titleRectWithSepLine.bottom += 1;
+
+	Vec2 p = vec2(titleRectWithSepLine.right - bDim.w/2, rectCen(titleRectWithSepLine).y);
+	sd->rClose = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
+	sd->rMaximize = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
+	sd->rMinimize = rectCenDim(p, bDim - bm); p.x -= bDim.w - bm/2;
+
+	if(ws->fullscreen) {
+		sd->rClose    = rect(-1,-1,-1,-1);
+		sd->rMaximize = rect(-1,-1,-1,-1);
+		sd->rMinimize = rect(-1,-1,-1,-1);
+	}
+
+	ws->windowRectBL = rect(0, 0, res.w, res.h);
+
+	ws->clientRectBL = ws->windowRectBL;
+	ws->clientRectBL.min += vec2(sd->visualBorderSize);
+	ws->clientRectBL.max -= vec2(sd->visualBorderSize,sd->visualBorderSize+sd->titleHeight);
+
+	if(sd->maximized) {
+		float sbs = ws->styleBorderSize;
+		ws->windowRectBL = rect(sbs, sbs, sbs+res.w, sbs+res.h);
+	}
+
+	#else 
+
+	Vec2i res = ws->currentRes;
+	ws->clientRes = res;
+	ws->windowRes = res;
+
+	#endif
 }

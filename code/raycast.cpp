@@ -613,228 +613,283 @@ int castRay(Vec3 rayPos, Vec3 rayDir, Object* objects, int objectCount) {
 
 
 
-
-#if 0
-
-void processPixelsThreaded(void* data) {
-	TimeStamp pixelTimings[5] = {};
-
-	ProcessPixelsData* d = (ProcessPixelsData*)data;
-
-	World world = *d->world;
-	RaytraceSettings settings = *d->settings;	
-	Vec3* buffer = d->buffer;
-
-	int sampleCount = settings.sampleCount;	
-	Vec2* samples = settings.samples;
-	Camera camera = world.camera;
-
-	Vec3 black = vec3(0.0f);
-	Vec3 white = vec3(1.0f);
-
-	Vec2i texDim = settings.texDim;
-	int totalPixelCount = texDim.w * texDim.h;
-	int pixelRangeEnd = d->pixelIndex+d->pixelCount;
-	for(int pixelIndex = d->pixelIndex; pixelIndex < pixelRangeEnd; pixelIndex++) {
-		startTimer(0);
-
-		if(d->stopProcessing) {
-			d->stopProcessing = false;
-			break;
-		}
-		
-		int x = pixelIndex % texDim.w;
-		int y = pixelIndex / texDim.w;
-
-		if(settings.sampleMode == SAMPLE_MODE_BLUE_MULTI) {
-			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
-			int offset = settings.sampleGridOffsets[index];
-			samples = settings.samples + offset;
-			sampleCount = settings.sampleGridOffsets[index+1] - offset;
-		}
-
-		{
-			// IACA_VC64_START;
-
-			Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
-			Vec3 finalColor = black;
-
-			for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-				startTimer(1);
-
-
-
-				Vec3 rayPos = settings.camTopLeft;
-				rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
-				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
-
-				Vec3 rayDir = normVec3(rayPos - camera.pos);
-
-				Vec3 attenuation = white;
-				int lastObjectIndex = -1;
-				for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
-					startTimer(2);
-
-					// Find shape with closest intersection.
-
-					Vec3 objectReflectionPos, objectReflectionDir, objectReflectionNormal;
-					int objectIndex = -1;
-					{
-						startTimer(3);
-
-						float minDistance = FLT_MAX;
-						for(int i = 0; i < world.objectCount; i++) {
-							if(lastObjectIndex == i) continue;
-
-							Object* obj = world.objects + i;
-							Geometry* g = &obj->geometry;
-
-							// Check collision with bounding sphere.
-							bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
-							if(possibleIntersection) {
-
-								Vec3 reflectionPos, reflectionNormal;
-								float distance = -1;
-								{
-									switch(g->type) {
-										case GEOM_TYPE_BOX: {
-											int face;
-											bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
-											if(hit) {
-												reflectionPos = rayPos + rayDir*distance;
-												reflectionNormal = boxRaycastNormals[face];
-											}
-										} break;
-
-										case GEOM_TYPE_SPHERE: {
-											distance = lineSphereIntersection(rayPos, rayDir, obj->pos, g->r, &reflectionPos);
-											if(distance > 0) {
-												reflectionNormal = normVec3(reflectionPos - obj->pos);
-											}
-										} break;
-									}
-								}
-
-								if(distance > 0 && distance < minDistance) {
-									minDistance = distance;
-									objectIndex = i;
-
-									objectReflectionPos = reflectionPos;
-									objectReflectionNormal = reflectionNormal;
-								}
-							}
-						}
-
-						endTimer(3);
-					}
-
-					if(objectIndex != -1) {
-						startTimer(4);
-
-						Object* obj = world.objects + objectIndex;
-						Geometry* g = &obj->geometry;
-						Material* m = &obj->material;
-						lastObjectIndex = objectIndex;
-
-						// Color calculation.
-
-						// Vec3 gDir = -world.globalLightDir;
-						// Vec3 gDiffuseColor = world.globalLightColor;
-						// Vec3 gSpecularColor = world.globalLightColor;
-
-						// Blinn-Phong.
-
-						// float lightDot = dot(rayDir, -world.globalLightDir);
-
-						Vec3 lightIntensity = {};
-
-						Vec3 ambient = world.ambientRatio * world.ambientColor;
-
-						for(int i = 0; i < world.lightCount; i++) {
-							Light* l = world.lights + i;
-
-							Vec3 diffuse = m->diffuseRatio * l->diffuseColor * clampMin(dot(objectReflectionNormal, -l->dir), 0);
-
-							Vec3 halfwayVector = normVec3(-rayDir + -l->dir);
-							Vec3 specular = l->specularColor * pow(clampMin(dot(objectReflectionNormal, halfwayVector), 0), m->shininess);
-
-							lightIntensity += diffuse * specular;
-						}
-
-						finalColor = obj->color * (ambient + lightIntensity);
-
-						// finalColor += obj->color * (gAmbientColor + diffuseColor + specularColor);
-
-						// attenuation = attenuation * g->color;
-						attenuation = black;
-					
-						if(attenuation == black) {
-							endTimer(4);
-							break;
-						}
-
-						break;
-
-						// Calculate new direction.
-
-						int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
-						Vec3 randomDir = settings.randomDirections[dirIndex];
-
-						// Reflect.
-						float d = dot(randomDir, objectReflectionNormal);
-						if(d <= 0) randomDir = reflectVector(randomDir, objectReflectionNormal);
-
-						Vec3 objectReflectionDir = reflectVector(rayDir, objectReflectionNormal);
-
-						randomDir = lerp(m->reflectionMod, randomDir, objectReflectionDir);
-
-						rayPos = objectReflectionPos;
-						rayDir = randomDir;
-
-
-						endTimer(4);
-					} else {
-
-						if(rayIndex == 0) {
-							finalColor += world.defaultEmitColor; // Sky hit.
-						} else {
-							// float lightDot = dot(rayDir, -world.globalLightDir);
-							// lightDot = clampMin(lightDot, 0);
-							// // lightDot = dotUnitToPercent(lightDot);
-							// Vec3 light = world.globalLightColor * lightDot;
-
-							// finalColor += attenuation * (world.defaultEmitColor + light);
-						}
-
-						break;
-					}
-
-
-					endTimer(2);
-				}
-
-
-
-				endTimer(1);
-			}
-
-			finalColor = finalColor/(float)sampleCount;
-			finalColor = clampMax(finalColor, white);
-
-			buffer[y*texDim.w + x] = finalColor;
-
-			// IACA_VC64_END;
-		}
-
-		endTimer(0);
-	}
-
-	if(printRaytraceTimings) {
-		for(int i = 0; i < arrayCount(pixelTimings); i++) {
-			processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
-			processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
-		}
+void getDefaultScene(World* world) {
+	float zLevel = 7;
+
+	Camera* cam = &world->camera;
+	cam->pos = vec3(0, -50, zLevel);
+	cam->rot = vec3(0, 0, 0);
+	cam->fov = 90;
+	cam->dim.w = 10;
+	cam->farDist = 10000;
+
+
+	world->defaultEmitColor = vec3(1,1,1);
+
+	world->ambientRatio = 0.2f;
+	world->ambientColor = vec3(1.0f);
+
+	// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
+	// world->defaultEmitColor = vec3(1.0f);
+	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
+	world->globalLightColor = vec3(1,1,1);
+	// world->globalLightColor = vec3(0.0f);
+
+
+	world->lightCount = 0;
+	reallocArraySave(Light, world->lights, 10);
+
+	Light l;
+
+	l = {};
+	l.type = LIGHT_TYPE_DIRECTION;
+	l.pos = normVec3(vec3(-1.5f,-1,-2.0f));
+	// l.diffuseColor = vec3(0.9,0,0);
+	l.diffuseColor = vec3(0.9f);
+	l.specularColor = vec3(1.0f);
+	l.brightness = 1.0f;
+	world->lights[world->lightCount++] = l;
+
+	world->objectCount = 0;
+	reallocArraySave(Object, world->objects, 100);
+
+	Material materials[10] = {};
+	materials[0].emitColor = vec3(0,0,0);
+	materials[0].reflectionMod = 0.8f;
+
+	materials[1].emitColor = vec3(0,0,0);
+	materials[1].reflectionMod = 0.2f;
+
+	Object obj;
+
+	// Ground plane.
+
+	obj = {};
+	obj.pos = vec3(0,0,0);
+	obj.rot = quat();
+	obj.color = vec3(0.5f);
+	obj.material = materials[0];
+	obj.geometry.type = GEOM_TYPE_BOX;
+	// obj.geometry.dim = vec3(100000, 100000, 0.01f);
+	obj.geometry.dim = vec3(50, 50, 0.01f);
+	world->objects[world->objectCount++] = obj;
+
+	// Sphere.
+
+	obj = {};
+	obj.pos = vec3(0,0,zLevel);
+	obj.rot = quat();
+	obj.color = vec3(0.3f,0.5f,0.8f);
+	obj.material = materials[1];
+	obj.geometry.type = GEOM_TYPE_SPHERE;
+	obj.geometry.r = 5;
+	world->objects[world->objectCount++] = obj;
+	
+	// Calc bounding spheres.
+	for(int i = 0; i < world->objectCount; i++) {
+		geometryBoundingSphere(&world->objects[i].geometry);
 	}
 }
 
-#endif
+
+
+
+
+
+enum EntitySelectionMode {
+	ENTITYUI_MODE_SELECTED = 0,
+	ENTITYUI_MODE_TRANSLATION,
+	ENTITYUI_MODE_ROTATION,
+	ENTITYUI_MODE_SCALE,
+
+	ENTITYUI_MODE_SIZE,
+};
+
+enum EntityUIState {
+	ENTITYUI_INACTIVE = 0,
+	ENTITYUI_HOT,
+	ENTITYUI_ACTIVE,
+};
+
+enum EntityTranslateMode {
+	TRANSLATE_MODE_AXIS = 0,
+	TRANSLATE_MODE_PLANE,
+	TRANSLATE_MODE_CENTER,
+};
+
+struct EntityUI {
+	Object objectCopy;
+
+	int selectedObject;
+
+	int selectionMode;
+	int selectionState;
+	bool gotActive;
+	int hotId;
+
+	bool guiHasFocus;
+
+	float selectionAnimState;
+	bool localMode;
+	bool snappingEnabled;
+	float snapGridSize;
+	float snapGridDim;
+
+	int axisIndex;
+	Vec3 axis;
+	Vec3 objectDistanceVector;
+
+	// Translation mode.
+
+	Vec3 startPos;
+	int translateMode;
+	Vec3 centerOffset;
+	float centerDistanceToCam;
+	Vec3 axes[3];
+
+	// Rotation mode.
+
+	Quat startRot;
+	float currentRotationAngle;
+
+	// Scale mode.
+
+	float startDim;
+};
+
+bool keyPressed(NewGui* gui, Input* input, int keycode) {
+	if(gui->activeId != 0) return false;
+	else return input->keysPressed[keycode];
+}
+
+bool keyDown(NewGui* gui, Input* input, int keycode) {
+	if(gui->activeId != 0) return false;
+	else return input->keysDown[keycode];
+}
+
+int mouseWheel(NewGui* gui, Input* input) {
+	if(gui->hotId[Gui_Focus_MWheel] != 0 || gui->activeId != 0) return false;
+	else return input->mouseWheel; 
+}
+
+int mouseButtonPressedLeft(NewGui* gui, Input* input) {
+	if(gui->hotId[Gui_Focus_MLeft] != 0 || gui->activeId != 0) return false;
+	else return input->mouseButtonPressed[0]; 
+}
+
+bool guiHotMouseClick(NewGui* gui) {
+	return gui->hotId[Gui_Focus_MLeft] != 0;
+}
+
+
+Vec3 mouseRayCast(Rect tr, Vec2 mp, Camera* cam) {
+
+	Vec2 mousePercent = {};
+	mousePercent.x = mapRange01(mp.x, tr.left, tr.right);
+	mousePercent.y = mapRange01(mp.y, tr.bottom, tr.top);
+
+	OrientationVectors ovecs = cam->ovecs;
+	Vec3 camBottomLeft = cam->pos + ovecs.dir*cam->nearDist + (-ovecs.right)*(cam->dim.w/2.0f) + (-ovecs.up)*(cam->dim.h/2.0f);
+
+	Vec3 p = camBottomLeft;
+	p += (cam->ovecs.right*cam->dim.w) * mousePercent.x;
+	p += (cam->ovecs.up*cam->dim.h) * mousePercent.y;
+
+	Vec3 rayDir = normVec3(p - cam->pos);
+
+	return rayDir;
+}
+
+
+void saveScene(World* world, char* filePath) {
+	FILE* file = fopen(filePath, "wb");
+
+	if(file) {
+		fwrite(world, sizeof(World), 1, file);
+
+		fwrite(world->objects, sizeof(Object)*world->objectCount, 1, file);
+		fwrite(world->lights, sizeof(Light)*world->lightCount, 1, file);
+	}
+
+	fclose(file);
+}
+
+void loadScene(World* world, char* filePath) {
+	FILE* file = fopen(filePath, "rb");
+
+	if(file) {
+		fread(world, sizeof(World), 1, file);
+
+		world->objects = mallocArray(Object, world->objectCount);
+		fread(world->objects, sizeof(Object)*world->objectCount, 1, file);
+
+		world->lights = mallocArray(Light, world->lightCount);
+		fread(world->lights, sizeof(Object)*world->lightCount, 1, file);
+	}
+
+	fclose(file);
+}
+
+char* openSceneDialog(bool saveMode = false) {
+	int filePathSize = 200;
+	char* filePath = getTString(filePathSize);
+	char* fileName = getTString(filePathSize);
+	strClear(filePath);
+
+	if(saveMode) strCpy(filePath, ".scene");
+
+	OPENFILENAME ofn = {};
+
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = NULL;
+	ofn.lpstrFile = filePath;
+	ofn.nMaxFile = filePathSize;
+	ofn.lpstrFileTitle = fileName;
+	ofn.nMaxFileTitle = filePathSize;
+
+	ofn.lpstrInitialDir = Scenes_Folder;
+
+	ofn.lpstrFilter = "Scene Files\0*.scene\0";
+	ofn.nFilterIndex = 1;
+	ofn.lpstrDefExt = ".scene";
+
+	ofn.Flags = OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
+
+	if(saveMode) ofn.Flags |= OFN_OVERWRITEPROMPT;
+	else ofn.Flags |= OFN_FILEMUSTEXIST;
+
+	int error;
+	if(saveMode) error = GetSaveFileName(&ofn);	
+	else error = GetOpenFileName(&ofn);
+	
+	if(error == 0) return "";
+
+	return ofn.lpstrFile;
+}
+
+
+
+void openSceneCommand(World* world, char* sceneFile, bool* sceneHasFile) {
+	char* filePath = openSceneDialog();
+	if(strLen(filePath)) {
+		loadScene(world, filePath);
+		(*sceneHasFile) = true;
+		strCpy(sceneFile, filePath);
+	}
+}
+
+void saveAsSceneCommand(World* world, char* sceneFile, bool* sceneHasFile) {
+	char* filePath = openSceneDialog(true);
+	if(strLen(filePath)) {
+		saveScene(world, filePath);
+		(*sceneHasFile) = true;
+		strCpy(sceneFile, filePath);
+	}
+}
+
+void saveSceneCommand(World* world, char* sceneFile, bool* sceneHasFile) {
+	if((*sceneHasFile)) saveScene(world, sceneFile);
+	else {
+		saveAsSceneCommand(world, sceneFile, sceneHasFile);
+	}
+} 
