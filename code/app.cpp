@@ -144,6 +144,8 @@ struct AppData {
 	char* sceneFile;
 	int sceneFileMax;
 
+	DialogData dialogData;
+
 	World world;
 	EntityUI entityUI;
 	RaytraceSettings settings;
@@ -258,7 +260,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		systemData->maxWindowDim = ws->biggestMonitorSize;
 
 		#ifndef SHIPPING_MODE
-		makeWindowTopmost(systemData);
+		// makeWindowTopmost(systemData);
 		#endif
 
 		gs->useSRGB = true;
@@ -454,6 +456,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			getDefaultScene(&ad->world);
 		}
 
+		ad->dialogData.active = false;
+		ad->dialogData.filePathSize = 400;
+		ad->dialogData.filePath = getPString(ad->dialogData.filePathSize);
+		ad->dialogData.windowHandle = windowHandle;
 
 		// Precalc random directions.
 		{
@@ -540,9 +546,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->frameCount++;
 
 		#ifdef ENABLE_CUSTOM_WINDOW_FRAME
-		if(systemData->mouseInClient) updateCursor(ws);
+		if(systemData->mouseInClient && !ws->dontUpdateCursor) updateCursor(ws);
 		#else 
-	    if(mouseInClientArea(windowHandle)) updateCursor(ws);
+	    if(mouseInClientArea(windowHandle) && !ws->dontUpdateCursor) updateCursor(ws);
 		#endif
 
 		ws->windowHasFocus = systemData->windowIsFocused;
@@ -782,7 +788,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Mouse capture.
 		{
 			if(!ad->captureMouse) {
-				if((input->keysPressed[KEYCODE_F3] || input->mouseButtonPressed[1]) && ad->drawSceneWired) {
+				if((input->keysPressed[KEYCODE_F3] || mouseButtonPressedRight(gui, input)) && ad->drawSceneWired) {
 					ad->captureMouse = true;
 
 					if(input->keysPressed[KEYCODE_F3]) ad->captureMouseKeepCenter = true;
@@ -792,7 +798,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					GetCursorPos(&ws->lastMousePosition);
 				}
 			} else {
-				if(input->keysPressed[KEYCODE_F3] || input->mouseButtonReleased[1]) {
+				if(input->keysPressed[KEYCODE_F3] || mouseButtonReleasedRight(gui, input)) {
 					ad->captureMouse = false;
 
 					SetCursorPos(ws->lastMousePosition.x, ws->lastMousePosition.y);
@@ -1174,6 +1180,35 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
 				insertObject(eui->objectCopy, world->objects, &world->objectCount, cam);
+			}
+
+
+			// Dialog.
+			{
+				DialogData* dd = &ad->dialogData;
+				if(dd->finished) {
+					if(!dd->error) {
+						if(dd->saveMode) {
+							saveScene(world, dd->result);
+							ad->sceneHasFile = true;
+							strCpy(ad->sceneFile, dd->result);
+						} else {
+							loadScene(world, dd->result);
+							ad->sceneHasFile = true;
+							strCpy(ad->sceneFile, dd->result);
+						}
+					}
+
+					dd->finished = false;
+					gui->activeId = 0;
+					ws->dontUpdateCursor = false;
+				}
+
+				// If active dialog, disable everything.
+				if(dd->active) {
+					ws->dontUpdateCursor = true;
+					gui->activeId = -1;
+				}
 			}
 
 
@@ -2608,7 +2643,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Open...", vec2i(-1,0))) {
-							openSceneCommand(world, ad->sceneFile, &ad->sceneHasFile);
+							openDialogThreaded(&ad->dialogData);
 							close = true;
 						}
 
@@ -2621,13 +2656,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Save", vec2i(-1,0))) {
-							saveSceneCommand(world, ad->sceneFile, &ad->sceneHasFile);
+							if(ad->sceneHasFile) saveScene(world, ad->sceneFile);
+							else openDialogThreaded(&ad->dialogData, true);
+
 							close = true;
 						}
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Save as...", vec2i(-1,0))) {
-							saveAsSceneCommand(world, ad->sceneFile, &ad->sceneHasFile);
+							openDialogThreaded(&ad->dialogData, true);
 							close = true;
 						}
 

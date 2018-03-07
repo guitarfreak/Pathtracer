@@ -777,6 +777,16 @@ int mouseButtonPressedLeft(NewGui* gui, Input* input) {
 	else return input->mouseButtonPressed[0]; 
 }
 
+int mouseButtonPressedRight(NewGui* gui, Input* input) {
+	if(gui->hotId[Gui_Focus_MRight] != 0 || gui->activeId != 0) return false;
+	else return input->mouseButtonPressed[1]; 
+}
+
+int mouseButtonReleasedRight(NewGui* gui, Input* input) {
+	if(gui->hotId[Gui_Focus_MRight] != 0 || gui->activeId != 0) return false;
+	else return input->mouseButtonReleased[1]; 
+}
+
 bool guiHotMouseClick(NewGui* gui) {
 	return gui->hotId[Gui_Focus_MLeft] != 0;
 }
@@ -830,22 +840,42 @@ void loadScene(World* world, char* filePath) {
 	fclose(file);
 }
 
-char* openSceneDialog(bool saveMode = false) {
-	int filePathSize = 200;
-	char* filePath = getTString(filePathSize);
-	char* fileName = getTString(filePathSize);
-	strClear(filePath);
 
-	if(saveMode) strCpy(filePath, ".scene");
+
+
+struct DialogData {
+	bool active;
+	bool finished;
+
+	char* filePath;
+	int filePathSize;
+	bool saveMode;
+
+	HWND windowHandle;
+
+	char* result;
+	bool error;
+};
+
+DWORD WINAPI openDialogProc(LPVOID data) {
+	DialogData* dd = (DialogData*)data;
+
+	dd->active = true;
+
+	bool saveMode = dd->saveMode;
+
+	strClear(dd->filePath);
+
+	if(saveMode) strCpy(dd->filePath, ".scene");
 
 	OPENFILENAME ofn = {};
 
 	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = NULL;
-	ofn.lpstrFile = filePath;
-	ofn.nMaxFile = filePathSize;
-	ofn.lpstrFileTitle = fileName;
-	ofn.nMaxFileTitle = filePathSize;
+	ofn.hwndOwner = dd->windowHandle;
+	ofn.lpstrFile = dd->filePath;
+	ofn.nMaxFile = dd->filePathSize;
+	// ofn.lpstrFileTitle = dd->fileName;
+	// ofn.nMaxFileTitle = dd->filePathSize;
 
 	ofn.lpstrInitialDir = Scenes_Folder;
 
@@ -858,38 +888,24 @@ char* openSceneDialog(bool saveMode = false) {
 	if(saveMode) ofn.Flags |= OFN_OVERWRITEPROMPT;
 	else ofn.Flags |= OFN_FILEMUSTEXIST;
 
-	int error;
-	if(saveMode) error = GetSaveFileName(&ofn);	
-	else error = GetOpenFileName(&ofn);
+	int result;
+	if(saveMode) result = GetSaveFileName(&ofn);	
+	else result = GetOpenFileName(&ofn);
 	
-	if(error == 0) return "";
+	if(result > 0) {
+		dd->error = false;
+		dd->result = ofn.lpstrFile;
+	} else {
+		dd->error = true;
+	}
 
-	return ofn.lpstrFile;
+	dd->active = false;
+	dd->finished = true;
+
+	return 0;
 }
 
-
-
-void openSceneCommand(World* world, char* sceneFile, bool* sceneHasFile) {
-	char* filePath = openSceneDialog();
-	if(strLen(filePath)) {
-		loadScene(world, filePath);
-		(*sceneHasFile) = true;
-		strCpy(sceneFile, filePath);
-	}
+void openDialogThreaded(DialogData* dd, bool saveMode = false) {
+	dd->saveMode = saveMode;
+    HANDLE thread = CreateThread(0, 0, openDialogProc, dd, 0, 0);
 }
-
-void saveAsSceneCommand(World* world, char* sceneFile, bool* sceneHasFile) {
-	char* filePath = openSceneDialog(true);
-	if(strLen(filePath)) {
-		saveScene(world, filePath);
-		(*sceneHasFile) = true;
-		strCpy(sceneFile, filePath);
-	}
-}
-
-void saveSceneCommand(World* world, char* sceneFile, bool* sceneHasFile) {
-	if((*sceneHasFile)) saveScene(world, sceneFile);
-	else {
-		saveAsSceneCommand(world, sceneFile, sceneHasFile);
-	}
-} 

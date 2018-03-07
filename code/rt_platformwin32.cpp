@@ -300,6 +300,7 @@ struct WindowSettings {
 
 	float aspectRatio;	
 
+	bool dontUpdateCursor;
 	bool customCursor;
 	POINT lastMousePosition;
 
