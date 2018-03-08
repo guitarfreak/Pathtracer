@@ -449,6 +449,7 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	}
 
         	// BottomRight corner grab.
+        	if(b)
         	{
         		Vec2 cornerPoint = vec2(r.right,r.bottom) - vec2(sd->cornerGrabSize,0);
         		int result = dot(vec2(x,y) - cornerPoint, normVec2(vec2(1,-1)));

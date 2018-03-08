@@ -19,15 +19,12 @@
 	- Cleanup.
 
 	- Shortest distance to camera for widgets.
-	- Menu.
-	- Detect if window outside monitor range and move it inside.
 
 	Done Today: 
 
 	Bugs:
 	- Windows key slow sometimes.
 	- F11 rapid pressing.
-	- Release builds sometimes don't start up on first few tries but then work.
 
 =================================================================================
 */
@@ -1136,7 +1133,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->snappingEnabled = false;
 			}
 
-			// Selection.
+			// @Selection.
 
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
@@ -1960,16 +1957,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	#if 1
 	{
-		// @Panel
-
-		bindFrameBuffer(FRAMEBUFFER_2dPanels);
 		setClientViewport(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
 		setClientScissor(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
 
-		// scissorState(false);
 
-		glEnable(GL_BLEND);
-		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
 
 		NewGui* gui = &ad->gui;
 
@@ -2050,7 +2041,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
 
 			if(newGuiQuickPButton(gui, r, s) || 
-			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r))) {
+			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
 
 				gui->popupStackCount = 0;
 
@@ -2065,13 +2056,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				newGuiPopupPush(gui, pd);
 
+				gui->menuId = newGuiCurrentId(gui);
 				gui->menuActive = true;
 			}
 
 			s = "Edit";
 			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
 			if(newGuiQuickPButton(gui, r, s) || 
-			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r))) {
+			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
 
 				gui->popupStackCount = 0;
 
@@ -2086,6 +2078,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				newGuiPopupPush(gui, pd);
 
+				gui->menuId = newGuiCurrentId(gui);
 				gui->menuActive = true;
 			}
 
@@ -2093,6 +2086,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 
+
+		bindFrameBuffer(FRAMEBUFFER_2dPanels);
+		glEnable(GL_BLEND);
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE);
+
+
+		// @Panel
 
 		Vec2 panelOffset = vec2(0,menuHeight);
 		float panelMargin = roundFloat(ad->fontHeight*0.3f);
@@ -2286,10 +2286,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, 0.6f, 0);
-					newGuiQuickTextEdit(gui, quickRowNext(&qr), ad->screenShotName, arrayCount(ad->screenShotName)-1);
-
-					if(newGuiQuickButton(gui, quickRowNext(&qr), "Screenshot")) {
+					if(newGuiQuickButton(gui, r, "Screenshot")) {
 						if(!ad->activeProcessing && ad->buffer) {
 							Vec2i texDim = ad->settings.texDim;
 							int size = texDim.w * texDim.h;
@@ -2308,14 +2305,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 					}
 
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					if(newGuiQuickButton(gui, r, "Open screenshot folder")) {
-						// Doesn't work.
+					// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					// if(newGuiQuickButton(gui, r, "Open screenshot folder")) {
+					// 	// Doesn't work.
 						
-						// shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
-						// system("start .\\");
-						// system("start "" .\\");
-					}
+					// 	// shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
+					// 	// system("start .\\");
+					// 	// system("start "" .\\");
+					// }
 
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;

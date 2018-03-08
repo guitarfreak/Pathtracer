@@ -508,6 +508,7 @@ struct NewGui {
 	Vec4 colorModHot;
 	Vec4 colorModActive;
 
+	int menuId;
 	bool menuActive;
 
 	// Temp vars for convenience.

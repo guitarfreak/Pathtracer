@@ -443,11 +443,25 @@ void processPixelsThreaded(void* data) {
 								{
 									switch(g->type) {
 										case GEOM_TYPE_BOX: {
-											int face;
-											bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
-											if(hit) {
-												reflectionPos = rayPos + rayDir*distance;
-												reflectionNormal = boxRaycastNormals[face];
+
+											// Check for rotation.
+
+											if(obj->rot == quat()) {
+												int face;
+												bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
+												if(hit) {
+													reflectionPos = rayPos + rayDir*distance;
+													reflectionNormal = boxRaycastNormals[face];
+												}
+											} else {
+												int face;
+												Vec3 intersection;
+												bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, g->dim, obj->rot, &intersection, &face);
+												if(hit) {
+													reflectionPos = intersection;
+													reflectionNormal = boxRaycastNormals[face];
+													distance = lenVec3(intersection - rayPos);
+												}
 											}
 										} break;
 
