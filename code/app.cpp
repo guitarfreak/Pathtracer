@@ -255,7 +255,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		systemData->maxWindowDim = ws->biggestMonitorSize;
 
 		#ifndef SHIPPING_MODE
-		// makeWindowTopmost(systemData);
+		makeWindowTopmost(systemData);
 		#endif
 
 		gs->useSRGB = true;
@@ -2063,7 +2063,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				PopupData pd = {};
 				pd.type = POPUP_TYPE_OTHER;
 				pd.id = newGuiCurrentId(gui);
-				pd.name = "FileMenu";
+				strCpy(pd.name, "FileMenu");
 				pd.p = rectBL(r);
 				pd.width = ad->fontHeight * 7;
 				pd.settings = gui->boxSettings;
@@ -2075,7 +2075,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				gui->menuActive = true;
 			}
 
-			s = "Edit";
+			s = "Settings";
 			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
 			if(newGuiQuickPButton(gui, r, s) || 
 			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
@@ -2085,9 +2085,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				PopupData pd = {};
 				pd.type = POPUP_TYPE_OTHER;
 				pd.id = newGuiCurrentId(gui);
-				pd.name = "EditMenu";
+				strCpy(pd.name, "SettingMenu");
 				pd.p = rectBL(r);
-				pd.width = ad->fontHeight * 7;
+				pd.width = ad->fontHeight * 11;
 				pd.settings = gui->boxSettings;
 				pd.border = vec2(5,5);
 
@@ -2202,30 +2202,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Rect r;
 					char* s;
 					QuickRow qr;
-
-
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
-					newGuiQuickTextBox(gui, r, "<b>App Settings<b>", vec2i(0,0), &headerSettings);
-
-					s = "MouseSpeed";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
-					newGuiQuickSlider(gui, quickRowNext(&qr), &ad->mouseSpeed, 0, 2); 
-
-					s = fillString("Font Height: %i", ad->fontHeight);
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					newGuiQuickText(gui, r, s, vec2i(-1,0)); 
-
-					s = "FontScale";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
-					gui->sliderSettings.applyAfter = true;
-					newGuiQuickSlider(gui, quickRowNext(&qr), &ad->fontScale, 0.5f, 2); 
-					gui->sliderSettings.applyAfter = false;
-
 
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2591,35 +2567,45 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float border = 1;
 				float eh = fontHeight * 1.4;
 				float ew = popupWidth;
+				float ep = fontHeight * 0.7f;
 
 				float textSidePadding = fontHeight*0.7f;
-				float topBottomPadding = textSidePadding*0.3f;
+				float topBottomPadding = textSidePadding*0.4f;
 
 				float separatorHeight = eh*0.4f;
 				Vec4 cSeperator = gui->popupSettings.borderColor;
 
-				float elementCount = 5;
-				float separatorCount = 2;
-				float popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount;
 
-				Rect pr = rectTLDim(pd.p-vec2(0,popupOffset), vec2(popupWidth,popupHeight));
+				float elementCount;
+				float separatorCount;
+				float popupHeight;
 
-				newGuiSetHotAllMouseOver(gui, pr, gui->zLevel);
+				if(strCompare(pd.name, "FileMenu")) {
+					elementCount = 5;
+					separatorCount = 2;
+					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount;
+				} else if(strCompare(pd.name, "SettingMenu")) {
+					elementCount = 4;
+					separatorCount = 1;
+					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount + topBottomPadding*0.5f;
+				}
 
-				Rect shadowRect = rectTrans(pr, vec2(1,-1)*textSidePadding*0.5f);
+
+				Rect rPop = rectTLDim(pd.p-vec2(0,popupOffset), vec2(popupWidth,popupHeight));
+
+				newGuiSetHotAllMouseOver(gui, rPop, gui->zLevel);
+
+				Rect shadowRect = rectTrans(rPop, vec2(1,-1)*textSidePadding*0.5f);
 				drawRect(shadowRect, vec4(0,0.8f));
 
-				newGuiQuickBox(gui, pr, &gui->popupSettings);
+				newGuiQuickBox(gui, rPop, &gui->popupSettings);
 
 				if(gui->popupSettings.borderColor.a) {
-					rectExpand(&pr, vec2(-border*2));
+					rectExpand(&rPop, vec2(-border*2));
 					ew -= border*2;
 				}
 
-				pr.top -= topBottomPadding;
-				pr.bottom -= topBottomPadding;
-
-				newGuiScissorPush(gui, pr);
+				newGuiScissorPush(gui, rPop);
 
 				{
 					Vec4 cButton = gui->popupSettings.color;
@@ -2628,10 +2614,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 					gui->buttonSettings = textBoxSettings(bs.textSettings, boxSettings(cButton));
 					gui->buttonSettings.sideAlignPadding = textSidePadding;
 
-					Vec2 p = rectTL(pr);
+					Vec2 p = rectTL(rPop);
 					Rect r;
+					char* s;
+					QuickRow qr;
+					Font* font = gui->textSettings.font;
 
 					if(strCompare(pd.name, "FileMenu")) {
+						Rect pr = rPop;
+						pr.top -= topBottomPadding;
+						pr.bottom -= topBottomPadding;
+
+						p = rectTL(pr);
+
+
 						bool close = false;
 						World* world = &ad->world;
 
@@ -2651,7 +2647,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						{
 							p.y -= separatorHeight*0.5f;
-							Vec2 lp = vec2(p.x,roundFloat(p.y))-vec2(0,0.5f);
+							Vec2 lp = vec2(p.x,roundFloat(p.y))+vec2(0,0.5f);
 							drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeperator);
 							p.y -= separatorHeight*0.5f;
 						}
@@ -2686,14 +2682,37 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(close) gui->popupStackCount = 0;
 					}
 
-					if(strCompare(pd.name, "EditMenu")) {
+					if(strCompare(pd.name, "SettingMenu")) {
 						bool close = false;
 						World* world = &ad->world;
 
+						p += vec2(textSidePadding, -topBottomPadding);
+						ew -= textSidePadding*2;
+
+
+						s = "Mouse sensitivity";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
-						if(newGuiQuickPButton(gui, r, "Nothing...", vec2i(-1,0))) {
-							close = true;
-						}
+						newGuiQuickText(gui, r, s, vec2i(-1,0)); 
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						newGuiQuickSlider(gui, r, &ad->mouseSpeed, 0, 2); 
+
+						p.y -= separatorHeight;
+
+						s = "Font scale";
+						char* s2 = fillString("Height: %i", ad->fontHeight);
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						qr = quickRow(r, 0, getTextDim(s, font).w, 0, getTextDim(s2, font).w);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
+						quickRowNext(&qr);
+						newGuiQuickText(gui, quickRowNext(&qr), s2, vec2i(1,0)); 
+
+						newGuiQuickText(gui, r, s, vec2i(-1,0)); 
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						gui->sliderSettings.applyAfter = true;
+						newGuiQuickSlider(gui, r, &ad->fontScale, 0.5f, 2); 
+						gui->sliderSettings.applyAfter = false;
 
 						if(close) gui->popupStackCount = 0;
 					}

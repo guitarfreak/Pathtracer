@@ -467,7 +467,7 @@ enum Popup_Type {
 struct PopupData {
 	int type;
 	int id;
-	char* name;
+	char name[30];
 	Rect r;
 
 	Vec2 p;
