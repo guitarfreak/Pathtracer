@@ -857,69 +857,36 @@ void loadScene(World* world, char* filePath) {
 
 
 
-struct DialogData {
-	bool active;
-	bool finished;
 
-	char* filePath;
-	int filePathSize;
-	bool saveMode;
 
-	HWND windowHandle;
+void openSceneDialog(DialogData* dd, bool saveMode = false) {
+	dd->type = "Scene";
 
-	char* result;
-	bool error;
-};
-
-DWORD WINAPI openDialogProc(LPVOID data) {
-	DialogData* dd = (DialogData*)data;
-
-	dd->active = true;
-
-	bool saveMode = dd->saveMode;
-
-	strClear(dd->filePath);
-
-	if(saveMode) strCpy(dd->filePath, ".scene");
-
-	OPENFILENAME ofn = {};
-
-	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = dd->windowHandle;
-	ofn.lpstrFile = dd->filePath;
-	ofn.nMaxFile = dd->filePathSize;
-	// ofn.lpstrFileTitle = dd->fileName;
-	// ofn.nMaxFileTitle = dd->filePathSize;
-
-	ofn.lpstrInitialDir = Scenes_Folder;
-
-	ofn.lpstrFilter = "Scene Files\0*.scene\0";
-	ofn.nFilterIndex = 1;
-	ofn.lpstrDefExt = ".scene";
-
-	ofn.Flags = OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
-
-	if(saveMode) ofn.Flags |= OFN_OVERWRITEPROMPT;
-	else ofn.Flags |= OFN_FILEMUSTEXIST;
-
-	int result;
-	if(saveMode) result = GetSaveFileName(&ofn);	
-	else result = GetOpenFileName(&ofn);
-	
-	if(result > 0) {
-		dd->error = false;
-		dd->result = ofn.lpstrFile;
-	} else {
-		dd->error = true;
+	dd->saveMode = saveMode;
+	if(saveMode) {
+		strClear(dd->filePath);
+		strCpy(dd->filePath, ".scene");
 	}
 
-	dd->active = false;
-	dd->finished = true;
+	dd->initialDir = Scenes_Folder;
+	dd->filterIndex = 1;
+	dd->filter = "Scene Files\0*.scene\0";
+	dd->defaultExtension = ".scene";
 
-	return 0;
+    HANDLE thread = CreateThread(0, 0, openDialogProc, dd, 0, 0);
 }
 
-void openDialogThreaded(DialogData* dd, bool saveMode = false) {
-	dd->saveMode = saveMode;
+void openScreenshotDialog(DialogData* dd) {
+	dd->type = "Screenshot";
+
+	dd->saveMode = true;
+	strClear(dd->filePath);
+	strCpy(dd->filePath, ".png");
+
+	dd->initialDir = Screenshot_Folder;
+	dd->filterIndex = 1;
+	dd->filter = "Image Files\0*.png\0";
+	dd->defaultExtension = ".png";
+
     HANDLE thread = CreateThread(0, 0, openDialogProc, dd, 0, 0);
 }

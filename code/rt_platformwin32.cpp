@@ -547,6 +547,25 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
     return 1;
 }
 
+void inputPrepare(Input* input) {
+	input->anyKey = false;
+    input->mouseWheel = 0;
+    for(int i = 0; i < arrayCount(input->mouseButtonPressed); i++) input->mouseButtonPressed[i] = 0;
+    for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) input->mouseButtonReleased[i] = 0;
+    for(int i = 0; i < arrayCount(input->keysPressed); i++) input->keysPressed[i] = 0;
+    input->mShift = 0;
+    input->mCtrl = 0;
+    input->mAlt = 0;
+    input->inputCharacterCount = 0;
+    input->mouseDelta = vec2(0,0);
+
+    input->doubleClick = false;
+
+    input->closeWindow = false;
+	input->maximizeWindow = false;
+	input->minimizeWindow = false;
+}
+
 void CALLBACK updateInput(SystemData* sd) {
 	for(;;) {
 
@@ -554,23 +573,6 @@ void CALLBACK updateInput(SystemData* sd) {
 		HWND windowHandle = sd->windowHandle;
 
 		SetTimer(windowHandle, 1, 1, 0);
-
-		input->anyKey = false;
-	    input->mouseWheel = 0;
-	    for(int i = 0; i < arrayCount(input->mouseButtonPressed); i++) input->mouseButtonPressed[i] = 0;
-	    for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) input->mouseButtonReleased[i] = 0;
-	    for(int i = 0; i < arrayCount(input->keysPressed); i++) input->keysPressed[i] = 0;
-	    input->mShift = 0;
-	    input->mCtrl = 0;
-	    input->mAlt = 0;
-	    input->inputCharacterCount = 0;
-	    input->mouseDelta = vec2(0,0);
-
-	    input->doubleClick = false;
-
-	    input->closeWindow = false;
-		input->maximizeWindow = false;
-		input->minimizeWindow = false;
 
 	    bool mouseInClient = mouseInClientArea(windowHandle);
 
@@ -634,35 +636,29 @@ void CALLBACK updateInput(SystemData* sd) {
 								// SetCapture(windowHandle);
 								input->mouseButtonPressed[0] = true; 
 								input->mouseButtonDown[0] = true; 
-							}
-							if(buttonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) {
+							} else if(buttonFlags & RI_MOUSE_RIGHT_BUTTON_DOWN) {
 								// SetCapture(windowHandle);
 								input->mouseButtonPressed[1] = true; 
 								input->mouseButtonDown[1] = true; 
-							}
-							if(buttonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) {
+							} else if(buttonFlags & RI_MOUSE_MIDDLE_BUTTON_DOWN) {
 								// SetCapture(windowHandle);
 								input->mouseButtonPressed[2] = true; 
 								input->mouseButtonDown[2] = true; 
-							}
-
-							if(buttonFlags & RI_MOUSE_WHEEL) {
+							} else if(buttonFlags & RI_MOUSE_WHEEL) {
 								input->mouseWheel += ((SHORT)raw->data.mouse.usButtonData) / WHEEL_DELTA;
 							}
 	            	    }
 
 	            	    if(buttonFlags & RI_MOUSE_LEFT_BUTTON_UP) {
-	            	    	// SetCapture(windowHandle);
+	            	    	// ReleaseCapture();
 	            	    	input->mouseButtonDown[0] = false; 
 	            	    	input->mouseButtonReleased[0] = true; 
-	            	    }
-	            	    if(buttonFlags & RI_MOUSE_RIGHT_BUTTON_UP) {
-	            	    	// SetCapture(windowHandle);
+	            	    } else if(buttonFlags & RI_MOUSE_RIGHT_BUTTON_UP) {
+	            	    	// ReleaseCapture();
 	            	    	input->mouseButtonDown[1] = false; 
 	            	    	input->mouseButtonReleased[1] = true; 
-	            	    }
-	            	    if(buttonFlags & RI_MOUSE_MIDDLE_BUTTON_UP) {
-	            	    	// SetCapture(windowHandle);
+	            	    } else if(buttonFlags & RI_MOUSE_MIDDLE_BUTTON_UP) {
+	            	    	// ReleaseCapture();
 	            	    	input->mouseButtonDown[2] = false; 
 	            	    	input->mouseButtonReleased[2] = true; 
 	            	    }
@@ -687,16 +683,16 @@ void CALLBACK updateInput(SystemData* sd) {
 	        }
 	    }
 
-	    for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) {
-	    	if(input->mouseButtonPressed[i] && input->mouseButtonReleased[i]) {
-	    		input->mouseButtonPressed[i] = false;
-	    	}
+	    if(!sd->windowIsFocused) {
+	    	for(int i = 0; i < arrayCount(input->mouseButtonPressed); i++) input->mouseButtonPressed[i] = 0;
+	    	for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) input->mouseButtonReleased[i] = 0;
 	    }
+	    sd->setFocus = false;
 
 	    // In case we clear because of focus.
 	    bool closeWindowTemp = input->closeWindow;
 
-	    if(sd->killedFocus || sd->setFocus) {
+	    if(sd->killedFocus) {
 	    	for(int i = 0; i < KEYCODE_COUNT; i++) {
 	    		input->keysDown[i] = false;
 	    	}
@@ -707,7 +703,6 @@ void CALLBACK updateInput(SystemData* sd) {
 	    	}
 
 	    	sd->killedFocus = false;
-	    	sd->setFocus = false;
 	    }
 
 	    input->closeWindow = closeWindowTemp;
@@ -1327,4 +1322,68 @@ void updateWindowFrameData(SystemData* sd, WindowSettings* ws) {
 	ws->windowRes = res;
 
 	#endif
+}
+
+struct DialogData {
+	char* type;
+
+	bool active;
+	bool finished;
+
+	char* filePath;
+	int filePathSize;
+
+	char* initialDir;
+	char* filter;
+	int filterIndex;
+	char* defaultExtension;
+
+	bool saveMode;
+
+	HWND windowHandle;
+
+	char* result;
+	bool error;
+};
+
+DWORD WINAPI openDialogProc(LPVOID data) {
+	DialogData* dd = (DialogData*)data;
+
+	dd->active = true;
+
+	bool saveMode = dd->saveMode;
+
+	OPENFILENAME ofn = {};
+
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = dd->windowHandle;
+	ofn.lpstrFile = dd->filePath;
+	ofn.nMaxFile = dd->filePathSize;
+
+	ofn.lpstrInitialDir = dd->initialDir;
+
+	ofn.lpstrFilter = dd->filter;
+	ofn.nFilterIndex = dd->filterIndex;
+	ofn.lpstrDefExt = dd->defaultExtension;
+
+	ofn.Flags = OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR;
+
+	if(saveMode) ofn.Flags |= OFN_OVERWRITEPROMPT;
+	else ofn.Flags |= OFN_FILEMUSTEXIST;
+
+	int result;
+	if(saveMode) result = GetSaveFileName(&ofn);	
+	else result = GetOpenFileName(&ofn);
+	
+	if(result > 0) {
+		dd->error = false;
+		dd->result = ofn.lpstrFile;
+	} else {
+		dd->error = true;
+	}
+
+	dd->active = false;
+	dd->finished = true;
+
+	return 0;
 }

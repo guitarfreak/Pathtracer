@@ -24,7 +24,6 @@
 
 	Bugs:
 	- Windows key slow sometimes.
-	- F11 rapid pressing.
 
 =================================================================================
 */
@@ -535,6 +534,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	{
 		updateWindowFrameData(systemData, ws);
 
+		inputPrepare(input);
 		SwitchToFiber(systemData->messageFiber);
 
 		if(ad->input.closeWindow) *isRunning = false;
@@ -564,9 +564,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	if(input->keysPressed[KEYCODE_F11] && !systemData->maximized) {
 		if(ws->fullscreen) setWindowMode(windowHandle, ws, WINDOW_MODE_WINDOWED);
 		else setWindowMode(windowHandle, ws, WINDOW_MODE_FULLBORDERLESS);
-
-		// Bug.
-		input->keysPressed[KEYCODE_F11] = false;
 	}
 
 	if(input->resize) {
@@ -619,6 +616,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	{
 		newGuiBegin(gui, &ad->input, ws);
+		
 	}
 
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
@@ -1118,6 +1116,52 @@ extern "C" APPMAINFUNCTION(appMain) {
 			eui->selectedObject = 0;
 		}
 
+		// @Dialogs.
+		{
+			DialogData* dd = &ad->dialogData;
+			if(dd->finished) {
+				if(!dd->error) {
+					if(strCompare(dd->type, "Scene")) {
+						if(dd->saveMode) {
+							saveScene(world, dd->result);
+							ad->sceneHasFile = true;
+							strCpy(ad->sceneFile, dd->result);
+						} else {
+							loadScene(world, dd->result);
+							ad->sceneHasFile = true;
+							strCpy(ad->sceneFile, dd->result);
+						}
+
+					} else if(strCompare(dd->type, "Screenshot")) {
+						Vec2i texDim = ad->settings.texDim;
+						int size = texDim.w * texDim.h;
+						char* intBuffer = mallocArray(char, size*3);
+
+						Vec3* floatBuffer = ad->buffer;
+						for(int i = 0; i < size; i++) {
+							intBuffer[i*3 + 0] = colorFloatToInt(floatBuffer[i].r);
+							intBuffer[i*3 + 1] = colorFloatToInt(floatBuffer[i].g);
+							intBuffer[i*3 + 2] = colorFloatToInt(floatBuffer[i].b);
+						}
+
+						stbi_write_png(ad->dialogData.filePath, texDim.w, texDim.h, 3, intBuffer, 0);
+
+						free(intBuffer);
+					}
+				}
+
+				dd->finished = false;
+				gui->activeId = 0;
+				ws->dontUpdateCursor = false;
+			}
+
+			// If active dialog, disable everything.
+			if(dd->active) {
+				ws->dontUpdateCursor = true;
+				gui->activeId = -1;
+			}
+		}
+
 		if(ad->drawSceneWired) {
 			if(mouseWheel(gui, input) && eui->selectionState != ENTITYUI_ACTIVE) {
 				ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+ mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
@@ -1176,35 +1220,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
 				insertObject(eui->objectCopy, world->objects, &world->objectCount, cam);
-			}
-
-
-			// Dialog.
-			{
-				DialogData* dd = &ad->dialogData;
-				if(dd->finished) {
-					if(!dd->error) {
-						if(dd->saveMode) {
-							saveScene(world, dd->result);
-							ad->sceneHasFile = true;
-							strCpy(ad->sceneFile, dd->result);
-						} else {
-							loadScene(world, dd->result);
-							ad->sceneHasFile = true;
-							strCpy(ad->sceneFile, dd->result);
-						}
-					}
-
-					dd->finished = false;
-					gui->activeId = 0;
-					ws->dontUpdateCursor = false;
-				}
-
-				// If active dialog, disable everything.
-				if(dd->active) {
-					ws->dontUpdateCursor = true;
-					gui->activeId = -1;
-				}
 			}
 
 
@@ -2283,36 +2298,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 					}
 					eh = elementHeight;
 
-
-
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					if(newGuiQuickButton(gui, r, "Screenshot")) {
+					qr = quickRow(r, pad.x, 0.0f, 0.0f);
+					if(newGuiQuickButton(gui, quickRowNext(&qr), "Screenshot")) {
 						if(!ad->activeProcessing && ad->buffer) {
-							Vec2i texDim = ad->settings.texDim;
-							int size = texDim.w * texDim.h;
-							char* intBuffer = mallocArray(char, size*3);
-
-							Vec3* floatBuffer = ad->buffer;
-							for(int i = 0; i < size; i++) {
-								intBuffer[i*3 + 0] = colorFloatToInt(floatBuffer[i].r);
-								intBuffer[i*3 + 1] = colorFloatToInt(floatBuffer[i].g);
-								intBuffer[i*3 + 2] = colorFloatToInt(floatBuffer[i].b);
-							}
-
-							stbi_write_png(fillString("%s%s%s", "Screenshots\\", ad->screenShotName, ".png"), texDim.w, texDim.h, 3, intBuffer, 0);
-
-							free(intBuffer);
+							openScreenshotDialog(&ad->dialogData);
 						}
 					}
-
-					// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					// if(newGuiQuickButton(gui, r, "Open screenshot folder")) {
-					// 	// Doesn't work.
-						
-					// 	// shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
-					// 	// system("start .\\");
-					// 	// system("start "" .\\");
-					// }
+					if(newGuiQuickButton(gui, quickRowNext(&qr), "Open screenshot folder")) {
+						shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
+					}
 
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2636,8 +2631,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Vec2 p = rectTL(pr);
 					Rect r;
 
-
-
 					if(strCompare(pd.name, "FileMenu")) {
 						bool close = false;
 						World* world = &ad->world;
@@ -2652,7 +2645,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Open...", vec2i(-1,0))) {
-							openDialogThreaded(&ad->dialogData);
+							openSceneDialog(&ad->dialogData);
 							close = true;
 						}
 
@@ -2666,14 +2659,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Save", vec2i(-1,0))) {
 							if(ad->sceneHasFile) saveScene(world, ad->sceneFile);
-							else openDialogThreaded(&ad->dialogData, true);
+							else openSceneDialog(&ad->dialogData, true);
 
 							close = true;
 						}
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Save as...", vec2i(-1,0))) {
-							openDialogThreaded(&ad->dialogData, true);
+							openSceneDialog(&ad->dialogData, true);
 							close = true;
 						}
 
@@ -2693,58 +2686,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(close) gui->popupStackCount = 0;
 					}
 
-
 					if(strCompare(pd.name, "EditMenu")) {
 						bool close = false;
 						World* world = &ad->world;
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Nothing...", vec2i(-1,0))) {
-							getDefaultScene(world);
-							ad->sceneHasFile = false;
-							strClear(ad->sceneFile);
 							close = true;
 						}
-
-						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
-						// if(newGuiQuickPButton(gui, r, "Open...", vec2i(-1,0))) {
-						// 	openDialogThreaded(&ad->dialogData);
-						// 	close = true;
-						// }
-
-						// {
-						// 	p.y -= separatorHeight*0.5f;
-						// 	Vec2 lp = vec2(p.x,roundFloat(p.y))-vec2(0,0.5f);
-						// 	drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeperator);
-						// 	p.y -= separatorHeight*0.5f;
-						// }
-
-						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
-						// if(newGuiQuickPButton(gui, r, "Save", vec2i(-1,0))) {
-						// 	if(ad->sceneHasFile) saveScene(world, ad->sceneFile);
-						// 	else openDialogThreaded(&ad->dialogData, true);
-
-						// 	close = true;
-						// }
-
-						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
-						// if(newGuiQuickPButton(gui, r, "Save as...", vec2i(-1,0))) {
-						// 	openDialogThreaded(&ad->dialogData, true);
-						// 	close = true;
-						// }
-
-						// {
-						// 	p.y -= separatorHeight*0.5f;
-						// 	Vec2 lp = vec2(p.x,roundFloat(p.y))-vec2(0,0.5f);
-						// 	drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeperator);
-						// 	p.y -= separatorHeight*0.5f;
-						// }
-
-						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
-						// if(newGuiQuickPButton(gui, r, "Exit", vec2i(-1,0))) {
-						// 	*isRunning = false;
-						// 	close = true;
-						// }
 
 						if(close) gui->popupStackCount = 0;
 					}
