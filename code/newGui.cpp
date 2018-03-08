@@ -1446,7 +1446,8 @@ bool newGuiQuickCheckBox(NewGui* gui, Rect r, bool* value, CheckBoxSettings* set
 	drawBox(cr, gui->scissor, set.boxSettings);
 
 	if(*value) {
-		drawBox(rectExpand(cr, vec2(-rectW(cr)*(1 - set.sizeMod))), gui->scissor, boxSettings(set.color, set.boxSettings.roundedCorner/2), false);
+		cr = rectRound(cr);
+		drawBox(rectExpand(cr, vec2(-rectW(cr)*(1 - set.sizeMod))), gui->scissor, boxSettings(set.color, set.boxSettings.roundedCorner/2));
 	}
 
 	if(newGuiIsHot(gui)) newGuiSetCursor(gui, IDC_HAND);
@@ -2327,71 +2328,66 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 		PopupData pd = gui->popupStack[i];
 
 		if(pd.type == POPUP_TYPE_COMBO_BOX) {
-			TextBoxSettings bs = gui->buttonSettings;
-			bs.boxSettings.roundedCorner = 0;
-			bs.boxSettings.borderColor = vec4(0,0);
-			bs.boxSettings.color = gui->popupSettings.color;
-
-
 			ComboBoxData cData = gui->comboBoxData;
+			BoxSettings ps = gui->popupSettings;
 
+			float comboboxPopupTopOffset = 2;
+
+			Font* font = gui->textSettings.font;
+			float fontHeight = font->height;
 			float padding = gui->comboBoxSettings.sideAlignPadding;
-			float fontHeight = gui->textSettings.font->height;
+			float topBottomPadding = padding*0.3f;
+
+			float eh = fontHeight * 1.2f;
+
+			float border = 0;
+			if(ps.borderColor.a > 0) border = 1;
 
 			float maxWidth = 0;
 			for(int i = 0; i < cData.count; i++) {
-				float w = getTextDim(cData.strings[i], bs.textSettings.font).w;
+				float w = getTextDim(cData.strings[i], font).w;
 				maxWidth = max(maxWidth, w);
 			}
 			maxWidth += padding*2 + 4;
-			// clamp(&maxWidth, POPUP_MIN_WIDTH, POPUP_MAX_WIDTH);
+			clampMin(&maxWidth, POPUP_MIN_WIDTH);
 
-			// Rect r = rectTDim(rectT(pd.r), vec2(maxWidth, (fontHeight+1) * cData.count));
-			float popupWidth = rectW(pd.r);
-			clampMin(&popupWidth, POPUP_MIN_WIDTH);
-			// Rect r = rectTDim(rectT(pd.r), vec2(popupWidth, (fontHeight) * cData.count + 1));
-			Rect r = rectTDim(rectT(pd.r)-vec2(0,2), vec2(max(maxWidth, rectW(pd.r)), (fontHeight) * cData.count + 2));
+			float popupWidth = max(maxWidth, rectW(pd.r));
+			float popupHeight = eh * cData.count + border*2 + topBottomPadding*2;
 
+			Rect r = rectTDim(rectT(pd.r)-vec2(0,comboboxPopupTopOffset), vec2(popupWidth, popupHeight));
 
-			newGuiSetHotAllMouseOver(gui, r, gui->zLevel);
 
 			// Shadow.
 			Rect shadowRect = rectTrans(r, vec2(1,-1)*padding*0.5f);
 			drawRect(shadowRect, vec4(0,0.8f));
-			// drawRectShadow(r, vec4(0,1), 7);
 
+			// Background.
 			drawBox(r, gui->scissor, gui->popupSettings);
 
-			// scissorState();
-			Rect layoutRect = rectExpand(r, vec2(-padding*2,-2));
-			// newGuiScissorLayoutPush(gui, layoutRect, layoutData(layoutRect, gui->textSettings.font->height, 0, 0));
-			// newGuiScissorLayoutPush(gui, layoutRect, layoutData(layoutRect, gui->textSettings.font->height, vec2(0,0)));
 
-			gui->comboBoxSettings.sideAlignPadding = 0;
+			Rect lr = rectExpand(r, vec2(-border*2));
+			Vec2 p = rectTL(lr) + vec2(0,-topBottomPadding);
 
-			Vec2 p = rectTL(layoutRect);
+			float ew = rectW(lr);
+
+
+			Vec4 cButton = gui->popupSettings.color;
+			TextBoxSettings bs = textBoxSettings(gui->buttonSettings.textSettings, boxSettings(cButton));
+			bs.sideAlignPadding = padding;
 
 			for(int i = 0; i < cData.count; i++) {
 				bs.boxSettings.color = gui->popupSettings.color;
 				if(cData.index == i) bs.boxSettings.color += newGuiHotActiveColorMod(true, false);
-				// if(cData.index == i) bs.boxSettings.borderColor.a = 1;
-				// else bs.boxSettings.borderColor.a = 0;
 
-				Rect br = rectTLDim(p, vec2(rectW(layoutRect), fontHeight));
-				p.y -= rectH(br);
+				Rect br = rectTLDim(p, vec2(ew, eh)); p.y -= eh;
 
-				// if(newGuiQuickButton(gui, newGuiLRectAdv(gui), cData.strings[i], vec2i(-1,0), &bs)) {
 				if(newGuiQuickButton(gui, br, cData.strings[i], vec2i(-1,0), &bs)) {
 					gui->comboBoxData.index = i;
 					gui->comboBoxData.finished = true;
 
 					*gui->comboBoxIndex = gui->comboBoxData.index;
-					// newGuiPopupPop(gui);
 				}
 			}
-
-			// newGuiScissorLayoutPop(gui);
-			// scissorState(false);						
 		}
 	}
 }

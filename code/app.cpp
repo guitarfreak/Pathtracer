@@ -133,6 +133,8 @@ struct AppData {
 
 	Font* font;
 
+	float menuHeight;
+
 	// 
 
 	bool sceneHasFile;
@@ -152,8 +154,6 @@ struct AppData {
 	bool fitToScreen;
 	bool drawSceneWired;
 
-	char screenShotName[50];
-
 	bool activeProcessing;
 	int threadCount;
 	ProcessPixelsData threadData[RAYTRACE_THREAD_JOB_COUNT];
@@ -161,8 +161,6 @@ struct AppData {
   
 	f64 processStartTime;
 	f64 processTime;
-
-	int texFastMode;
 };
 
 
@@ -255,7 +253,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		systemData->maxWindowDim = ws->biggestMonitorSize;
 
 		#ifndef SHIPPING_MODE
-		makeWindowTopmost(systemData);
+		// makeWindowTopmost(systemData);
 		#endif
 
 		gs->useSRGB = true;
@@ -404,14 +402,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 		folderExistsCreate(Screenshot_Folder);
 
 
-		ad->texFastMode = 2;
-		
 		ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
 		ad->entityUI.localMode = false;
 		ad->entityUI.snapGridSize = 1;
 		ad->entityUI.snapGridDim = 100;
-
-		strCpy(ad->screenShotName, "screenshot");
 
 		ad->entityUI.objectCopy = defaultObject();
 
@@ -422,7 +416,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
-		ad->settings.texDim = vec2i(240*pow(2, ad->texFastMode), 135*pow(2, ad->texFastMode));
+		ad->settings.texDim = vec2i(1280, 720);
 
 		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
 		ad->settings.sampleCountGrid = 4;
@@ -442,7 +436,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->sceneFileMax = 200;
 		ad->sceneFile = getPString(ad->sceneFileMax);
-		if(strLen(appSessionSettings.sceneFile)) {
+
+		if(strLen(appSessionSettings.sceneFile) && 
+		   fileExists(appSessionSettings.sceneFile)) {
 			strCpy(ad->sceneFile, appSessionSettings.sceneFile);
 			ad->sceneHasFile = true;
 			loadScene(&ad->world, ad->sceneFile);
@@ -1044,17 +1040,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glGenerateTextureMipmap(ad->raycastTexture.id);
 		}
 
-		// if(input->keysPressed[KEYCODE_1]) ad->texFastMode = 0;
-		// if(input->keysPressed[KEYCODE_2]) ad->texFastMode = 1;
-		// if(input->keysPressed[KEYCODE_3]) ad->texFastMode = 2;
-		// if(input->keysPressed[KEYCODE_4]) ad->texFastMode = 3;
-		// if(input->keysPressed[KEYCODE_5]) ad->texFastMode = 4;
-
 		{
 
 			Rect sr = getScreenRect(ws);
-			Rect tr = sr;
-			Vec2 sd = rectDim(sr);
+			Rect tr = rectAddT(sr, -ad->menuHeight);
+			Vec2 sd = rectDim(tr);
 			Vec2 texDim = vec2(ad->raycastTexture.dim);
 
 			if(ad->fitToScreen) {
@@ -1072,8 +1062,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				c.y = roundFloat(c.y);
 
 				tr = rectTLDim(c, texDim);
-
-				// tr = rectCenDim(c, texDim);
 			}
 
 			if(!ad->drawSceneWired) {
@@ -1214,12 +1202,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// Insert default.
 			if(keyPressed(gui, input, KEYCODE_RETURN)) {
-				insertObject(defaultObject(), world->objects, &world->objectCount, cam);
+				insertObject(&ad->world, defaultObject());
 			}
 
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
-				insertObject(eui->objectCopy, world->objects, &world->objectCount, cam);
+				insertObject(&ad->world, eui->objectCopy);
 			}
 
 
@@ -2030,10 +2018,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gui->checkBoxSettings = checkBoxSettings(cbs, cButton, 0.5f);
 		}
 
-		float menuHeight = ad->fontHeight * 1.3f;
+		ad->menuHeight = ad->fontHeight * 1.3f;
 
 		// @Menu.
 		{
+			float menuHeight = ad->menuHeight;
 			Rect mr = rectRSetB(rectTLDim(0,0, ws->clientRes.w, ws->clientRes.h), menuHeight);
 
 			Vec4 cMenu = vec4(0.3f,1);
@@ -2109,7 +2098,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// @Panel
 
-		Vec2 panelOffset = vec2(0,menuHeight);
+		Vec2 panelOffset = vec2(0,ad->menuHeight);
 		float panelMargin = roundFloat(ad->fontHeight*0.3f);
 		float panelWidthMax = ws->clientRes.w*0.5f;
 		float panelWidthMin = 100;
@@ -2281,7 +2270,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							openScreenshotDialog(&ad->dialogData);
 						}
 					}
-					if(newGuiQuickButton(gui, quickRowNext(&qr), "Open screenshot folder")) {
+					if(newGuiQuickButton(gui, quickRowNext(&qr), "Open folder")) {
 						shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
 					}
 
@@ -2333,11 +2322,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 							qr = quickRow(r, pad.x, 0.0f, 0.0f);
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Object")) {
-								insertObject(defaultObject(), world->objects, &world->objectCount, cam);
+								insertObject(&ad->world, defaultObject());
 							}
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copy")) {
-								insertObject(eui->objectCopy, world->objects, &world->objectCount, cam);
+								insertObject(&ad->world, eui->objectCopy);
 							}
 						}
 
@@ -2735,7 +2724,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	// @AppSessionWrite
 	if(*isRunning == false) {
-
 		Rect windowRect = getWindowWindowRect(systemData->windowHandle);
 		if(ws->fullscreen) windowRect = ws->previousWindowRect;
 

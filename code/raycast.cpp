@@ -201,6 +201,49 @@ OrientationVectors getVectorsFromRotation(Vec3 rot) {
 
 
 
+
+
+
+enum SampleMode {
+	SAMPLE_MODE_GRID = 0,
+	SAMPLE_MODE_BLUE,
+	SAMPLE_MODE_BLUE_MULTI,
+	SAMPLE_MODE_MSAA4X,
+	SAMPLE_MODE_MSAA8X,
+
+	SAMPLE_MODE_COUNT,	
+};
+
+char* sampleModeStrings[] = {
+	"GRID",
+	"BLUE",
+	"BLUE_MULTI",
+	"MSAA4X",
+	"MSAA8X",
+};
+
+struct World {
+	Camera camera;
+
+	Object* objects;
+	int objectCount;
+	int objectCountMax;
+
+	Light* lights;
+	int lightCount;
+
+	float ambientRatio;
+	Vec3 ambientColor;
+
+	Vec3 defaultEmitColor;
+
+	Vec3 globalLightDir;
+	Vec3 globalLightColor;
+};
+
+
+
+
 Object defaultObject() {
 	Material m = {};
 	m.emitColor = vec3(0,0,0);
@@ -231,49 +274,22 @@ void deleteObject(Object* objects, int* objectCount, int* selected) {
 	}
 }
 
-void insertObject(Object obj, Object* objects, int* objectCount, Camera* cam) {
+void insertObject(World* world, Object obj) {
 	float spawnDistance = 30;
+	Camera* cam = &world->camera;
 	obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
-	objects[(*objectCount)++] = obj;
+
+	// Object* objects = world->objects;
+	if(world->objectCount >= world->objectCountMax) {
+		world->objectCountMax *= 2;
+		reallocArraySave(Object, world->objects, world->objectCountMax);
+	}
+
+	world->objects[world->objectCount++] = obj;
 }
 
 
 
-enum SampleMode {
-	SAMPLE_MODE_GRID = 0,
-	SAMPLE_MODE_BLUE,
-	SAMPLE_MODE_BLUE_MULTI,
-	SAMPLE_MODE_MSAA4X,
-	SAMPLE_MODE_MSAA8X,
-
-	SAMPLE_MODE_COUNT,	
-};
-
-char* sampleModeStrings[] = {
-	"GRID",
-	"BLUE",
-	"BLUE_MULTI",
-	"MSAA4X",
-	"MSAA8X",
-};
-
-struct World {
-	Camera camera;
-
-	Object* objects;
-	int objectCount;
-
-	Light* lights;
-	int lightCount;
-
-	float ambientRatio;
-	Vec3 ambientColor;
-
-	Vec3 defaultEmitColor;
-
-	Vec3 globalLightDir;
-	Vec3 globalLightColor;
-};
 
 enum {
 	RENDERING_MODE_RAY_TRACER = 0, 
@@ -664,8 +680,10 @@ void getDefaultScene(World* world) {
 	l.brightness = 1.0f;
 	world->lights[world->lightCount++] = l;
 
+	world->objectCountMax = 100;
 	world->objectCount = 0;
-	reallocArraySave(Object, world->objects, 100);
+	reallocArraySave(Object, world->objects, world->objectCountMax);
+
 
 	Material materials[10] = {};
 	materials[0].emitColor = vec3(0,0,0);
@@ -842,9 +860,12 @@ void loadScene(World* world, char* filePath) {
 	FILE* file = fopen(filePath, "rb");
 
 	if(file) {
+		freeAndSetNullSave(world->objects);
+		freeAndSetNullSave(world->lights);
+
 		fread(world, sizeof(World), 1, file);
 
-		world->objects = mallocArray(Object, world->objectCount);
+		world->objects = mallocArray(Object, world->objectCountMax);
 		fread(world->objects, sizeof(Object)*world->objectCount, 1, file);
 
 		world->lights = mallocArray(Light, world->lightCount);
@@ -853,7 +874,6 @@ void loadScene(World* world, char* filePath) {
 
 	fclose(file);
 }
-
 
 
 

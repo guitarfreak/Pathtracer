@@ -1355,7 +1355,7 @@ DWORD WINAPI openDialogProc(LPVOID data) {
 
 	OPENFILENAME ofn = {};
 
-	ofn.lStructSize = sizeof(ofn);
+	ofn.lStructSize = sizeof(OPENFILENAME);
 	ofn.hwndOwner = dd->windowHandle;
 	ofn.lpstrFile = dd->filePath;
 	ofn.nMaxFile = dd->filePathSize;
@@ -1374,7 +1374,8 @@ DWORD WINAPI openDialogProc(LPVOID data) {
 	int result;
 	if(saveMode) result = GetSaveFileName(&ofn);	
 	else result = GetOpenFileName(&ofn);
-	
+
+
 	if(result > 0) {
 		dd->error = false;
 		dd->result = ofn.lpstrFile;
