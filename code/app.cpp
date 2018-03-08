@@ -33,7 +33,6 @@
 */
 
 
-
 // External.
 
 #define WIN32_LEAN_AND_MEAN 
@@ -835,7 +834,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(ad->fpsMode) {
 				float speed = ad->mouseSpeed * 0.0015f;
-				
+
 				cam->rot.x += -input->mouseDelta.x*speed;
 				cam->rot.y += input->mouseDelta.y*speed;
 				clamp(&cam->rot.y, -M_PI_2 + 0.001f, M_PI_2 - 0.001f);
@@ -2027,7 +2026,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		float menuHeight = ad->fontHeight * 1.3f;
 
-		// Menu.
+		// @Menu.
 		{
 			Rect mr = rectRSetB(rectTLDim(0,0, ws->clientRes.w, ws->clientRes.h), menuHeight);
 
@@ -2046,37 +2045,49 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Rect r;
 			Vec2 p = rectTL(mr);
 
+
 			s = "File";
 			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
 
-			if(newGuiQuickPButton(gui, r, s)) {
-				// PopupData pd = {};
-				// pd.type = POPUP_TYPE_OTHER;
-				// pd.id = newGuiCurrentId(gui);
-				// // pd.r = rectTLDim(rectBL(r), vec2(rectW(r), set.textSettings.font->height*cData.count));
-				// pd.r = rectTLDim(rectBL(r), vec2(rectW(r), 0));
-				// pd.settings = gui->boxSettings;
-				// pd.border = vec2(5,5);
+			if(newGuiQuickPButton(gui, r, s) || 
+			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r))) {
 
-				// newGuiPopupPush(gui, pd);
-
-
+				gui->popupStackCount = 0;
 
 				PopupData pd = {};
 				pd.type = POPUP_TYPE_OTHER;
 				pd.id = newGuiCurrentId(gui);
 				pd.name = "FileMenu";
-				// pd.r = rectTLDim(rectBL(r), vec2(rectW(r), 0));
-				pd.r.min = rectBL(r);
+				pd.p = rectBL(r);
+				pd.width = ad->fontHeight * 7;
 				pd.settings = gui->boxSettings;
 				pd.border = vec2(5,5);
 
 				newGuiPopupPush(gui, pd);
+
+				gui->menuActive = true;
 			}
 
 			s = "Edit";
 			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
-			newGuiQuickPButton(gui, r, s);
+			if(newGuiQuickPButton(gui, r, s) || 
+			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r))) {
+
+				gui->popupStackCount = 0;
+
+				PopupData pd = {};
+				pd.type = POPUP_TYPE_OTHER;
+				pd.id = newGuiCurrentId(gui);
+				pd.name = "EditMenu";
+				pd.p = rectBL(r);
+				pd.width = ad->fontHeight * 7;
+				pd.settings = gui->boxSettings;
+				pd.border = vec2(5,5);
+
+				newGuiPopupPush(gui, pd);
+
+				gui->menuActive = true;
+			}
 
 			gui->buttonSettings = tbs;
 		}
@@ -2578,60 +2589,61 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				if(pd.type != POPUP_TYPE_OTHER) continue;
 
-				if(strCompare(pd.name, "FileMenu")) {
 
-					float fontHeight = gui->textSettings.font->height;
+				float fontHeight = gui->textSettings.font->height;
 
-					float popupOffset = 0;
-					float popupWidth = 120;
+				float popupOffset = 0;
+				float popupWidth = pd.width;
 
-					float padding = 0;
-					float border = 1;
-					float eh = fontHeight * 1.4;
-					float ew = popupWidth;
+				float padding = 0;
+				float border = 1;
+				float eh = fontHeight * 1.4;
+				float ew = popupWidth;
 
-					float textSidePadding = fontHeight*0.7f;
-					float topBottomPadding = textSidePadding*0.3f;
+				float textSidePadding = fontHeight*0.7f;
+				float topBottomPadding = textSidePadding*0.3f;
 
-					float separatorHeight = eh*0.4f;
-					Vec4 cSeperator = gui->popupSettings.borderColor;
+				float separatorHeight = eh*0.4f;
+				Vec4 cSeperator = gui->popupSettings.borderColor;
 
-					float elementCount = 5;
-					float separatorCount = 2;
-					float popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount;
+				float elementCount = 5;
+				float separatorCount = 2;
+				float popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount;
 
-					Rect pr = rectTLDim(pd.r.min-vec2(0,popupOffset), vec2(popupWidth,popupHeight));
+				Rect pr = rectTLDim(pd.p-vec2(0,popupOffset), vec2(popupWidth,popupHeight));
 
-					newGuiSetHotAllMouseOver(gui, pr, gui->zLevel);
+				newGuiSetHotAllMouseOver(gui, pr, gui->zLevel);
 
-					Rect shadowRect = rectTrans(pr, vec2(1,-1)*textSidePadding*0.5f);
-					drawRect(shadowRect, vec4(0,0.8f));
+				Rect shadowRect = rectTrans(pr, vec2(1,-1)*textSidePadding*0.5f);
+				drawRect(shadowRect, vec4(0,0.8f));
 
-					newGuiQuickBox(gui, pr, &gui->popupSettings);
+				newGuiQuickBox(gui, pr, &gui->popupSettings);
 
-					if(gui->popupSettings.borderColor.a) {
-						rectExpand(&pr, vec2(-border*2));
-						ew -= border*2;
-					}
+				if(gui->popupSettings.borderColor.a) {
+					rectExpand(&pr, vec2(-border*2));
+					ew -= border*2;
+				}
 
-					pr.top -= topBottomPadding;
-					pr.bottom -= topBottomPadding;
+				pr.top -= topBottomPadding;
+				pr.bottom -= topBottomPadding;
 
-					newGuiScissorPush(gui, pr);
+				newGuiScissorPush(gui, pr);
 
-					{
-						Vec4 cButton = gui->popupSettings.color;
+				{
+					Vec4 cButton = gui->popupSettings.color;
 
-						TextBoxSettings bs = gui->buttonSettings;
-						gui->buttonSettings = textBoxSettings(bs.textSettings, boxSettings(cButton));
-						gui->buttonSettings.sideAlignPadding = textSidePadding;
+					TextBoxSettings bs = gui->buttonSettings;
+					gui->buttonSettings = textBoxSettings(bs.textSettings, boxSettings(cButton));
+					gui->buttonSettings.sideAlignPadding = textSidePadding;
 
-						Vec2 p = rectTL(pr);
-						Rect r;
+					Vec2 p = rectTL(pr);
+					Rect r;
 
-						World* world = &ad->world;
 
+
+					if(strCompare(pd.name, "FileMenu")) {
 						bool close = false;
+						World* world = &ad->world;
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "New...", vec2i(-1,0))) {
@@ -2682,12 +2694,70 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 
 						if(close) gui->popupStackCount = 0;
-
-						gui->buttonSettings = bs;
 					}
 
-					newGuiScissorPop(gui);
+
+					if(strCompare(pd.name, "EditMenu")) {
+						bool close = false;
+						World* world = &ad->world;
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						if(newGuiQuickPButton(gui, r, "Nothing...", vec2i(-1,0))) {
+							getDefaultScene(world);
+							ad->sceneHasFile = false;
+							strClear(ad->sceneFile);
+							close = true;
+						}
+
+						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						// if(newGuiQuickPButton(gui, r, "Open...", vec2i(-1,0))) {
+						// 	openDialogThreaded(&ad->dialogData);
+						// 	close = true;
+						// }
+
+						// {
+						// 	p.y -= separatorHeight*0.5f;
+						// 	Vec2 lp = vec2(p.x,roundFloat(p.y))-vec2(0,0.5f);
+						// 	drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeperator);
+						// 	p.y -= separatorHeight*0.5f;
+						// }
+
+						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						// if(newGuiQuickPButton(gui, r, "Save", vec2i(-1,0))) {
+						// 	if(ad->sceneHasFile) saveScene(world, ad->sceneFile);
+						// 	else openDialogThreaded(&ad->dialogData, true);
+
+						// 	close = true;
+						// }
+
+						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						// if(newGuiQuickPButton(gui, r, "Save as...", vec2i(-1,0))) {
+						// 	openDialogThreaded(&ad->dialogData, true);
+						// 	close = true;
+						// }
+
+						// {
+						// 	p.y -= separatorHeight*0.5f;
+						// 	Vec2 lp = vec2(p.x,roundFloat(p.y))-vec2(0,0.5f);
+						// 	drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeperator);
+						// 	p.y -= separatorHeight*0.5f;
+						// }
+
+						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						// if(newGuiQuickPButton(gui, r, "Exit", vec2i(-1,0))) {
+						// 	*isRunning = false;
+						// 	close = true;
+						// }
+
+						if(close) gui->popupStackCount = 0;
+					}
+
+
+
+					gui->buttonSettings = bs;
 				}
+
+				newGuiScissorPop(gui);
 			}
 		}
 

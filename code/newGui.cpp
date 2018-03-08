@@ -469,6 +469,10 @@ struct PopupData {
 	int id;
 	char* name;
 	Rect r;
+
+	Vec2 p;
+	float width;
+
 	BoxSettings settings;
 	Vec2 border;
 };
@@ -503,6 +507,8 @@ struct NewGui {
 
 	Vec4 colorModHot;
 	Vec4 colorModActive;
+
+	bool menuActive;
 
 	// Temp vars for convenience.
 
@@ -2308,6 +2314,8 @@ void newGuiPopupSetup(NewGui* gui) {
 		}
 
 		if(newGuiGotActive(gui, id)) gui->popupStackCount = 0;
+	} else {
+		gui->menuActive = false;
 	}
 
 	newGuiUpdateComboBoxPopups(gui);
