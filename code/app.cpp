@@ -2127,7 +2127,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					eui->localMode = !eui->localMode;
 				}
 				rectExpand(&r, vec2(-buttonMargin));
-				drawRect(rectRound(r), eui->localMode?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_ICON_ICON)->id);
+				drawRect(rectRound(r), eui->localMode?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_LOCAL_GLOBAL_ICON)->id);
 
 				// Selection mode.
 				for(int i = 0; i < ENTITYUI_MODE_SIZE; i++) {
