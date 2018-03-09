@@ -1131,10 +1131,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode - mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
 			}
 
-			if(input->mouseButtonPressed[2] && eui->selectionState != ENTITYUI_ACTIVE) {
-				eui->localMode = !eui->localMode;
-			}
-
 			if(input->keysDown[KEYCODE_SHIFT]) {
 				eui->snappingEnabled = true;
 			} else {
@@ -1184,7 +1180,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
-				int id = insertObject(&ad->world, eui->objectCopy);
+				int id = insertObject(&ad->world, eui->objectCopy, true);
 				if(eui->selectedObject) eui->selectedObject = id;
 			}
 
@@ -2367,7 +2363,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copy")) {
-								int id = insertObject(&ad->world, eui->objectCopy);
+								int id = insertObject(&ad->world, eui->objectCopy, true);
 								if(eui->selectedObject) eui->selectedObject = id;
 							}
 						}

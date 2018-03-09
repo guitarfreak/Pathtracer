@@ -274,12 +274,14 @@ void deleteObject(Object* objects, int* objectCount, int* selected) {
 	}
 }
 
-int insertObject(World* world, Object obj) {
+int insertObject(World* world, Object obj, bool keepPosition = false) {
 	float spawnDistance = 30;
 	Camera* cam = &world->camera;
-	obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
 
-	// Object* objects = world->objects;
+	if(!keepPosition) {
+		obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
+	}
+
 	if(world->objectCount >= world->objectCountMax) {
 		world->objectCountMax *= 2;
 		reallocArraySave(Object, world->objects, world->objectCountMax);
