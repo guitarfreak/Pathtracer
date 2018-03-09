@@ -28,41 +28,29 @@ struct Material {
 struct Geometry {
 	int type;
 	float boundingSphereRadius;
-
-	union {
-		// Sphere
-		struct {
-			float r;
-		};
-
-		// Box
-		struct {
-			Vec3 dim;
-		};
-	};
 };
 
-Vec3 geometryGetDim(Geometry* geom) {
-	switch(geom->type) {
-		case GEOM_TYPE_SPHERE: return vec3(geom->r*2);
-		case GEOM_TYPE_BOX: return geom->dim;
-	}
-	return vec3(0,0,0);
-}
+// Vec3 geometryGetDim(Geometry* geom) {
+// 	switch(geom->type) {
+// 		case GEOM_TYPE_SPHERE: return vec3(geom->r*2);
+// 		case GEOM_TYPE_BOX: return geom->dim;
+// 	}
+// 	return vec3(0,0,0);
+// }
 
-void geometrySetDim(Geometry* geom, Vec3 dim) {
-	switch(geom->type) {
-		case GEOM_TYPE_SPHERE: geom->r = dim.x/2; return;
-		case GEOM_TYPE_BOX: geom->dim = dim; return;
-	}
-}
+// void geometrySetDim(Geometry* geom, Vec3 dim) {
+// 	switch(geom->type) {
+// 		case GEOM_TYPE_SPHERE: geom->r = dim.x/2; return;
+// 		case GEOM_TYPE_BOX: geom->dim = dim; return;
+// 	}
+// }
 
-void geometrySetDim(Geometry* geom, float length, int axisIndex) {
-	switch(geom->type) {
-		case GEOM_TYPE_SPHERE: geom->r = length/2; return;
-		case GEOM_TYPE_BOX: geom->dim.e[axisIndex] = length; return;
-	}
-}
+// void geometrySetDim(Geometry* geom, float length, int axisIndex) {
+// 	switch(geom->type) {
+// 		case GEOM_TYPE_SPHERE: geom->r = length/2; return;
+// 		case GEOM_TYPE_BOX: geom->dim.e[axisIndex] = length; return;
+// 	}
+// }
 
 enum {
 	LIGHT_TYPE_DIRECTION = 0,
@@ -84,6 +72,7 @@ struct Light {
 struct Object {
 	Vec3 pos;
 	Quat rot;
+	Vec3 dim;
 
 	Vec3 color;
 	Geometry geometry;
@@ -97,7 +86,7 @@ float lineShapeIntersection(Vec3 lp, Vec3 ld, Object* obj, Vec3* reflectionPos, 
 	switch(geometry->type) {
 		case GEOM_TYPE_BOX: {
 			int face;
-			bool hit = boxRaycast(lp, ld, rect3CenDim(obj->pos, geometry->dim), &distance, &face);
+			bool hit = boxRaycast(lp, ld, rect3CenDim(obj->pos, obj->dim), &distance, &face);
 			if(hit) {
 				*reflectionPos = lp + ld*distance;
 				Vec3 normal;
@@ -115,7 +104,7 @@ float lineShapeIntersection(Vec3 lp, Vec3 ld, Object* obj, Vec3* reflectionPos, 
 		} break;
 
 		case GEOM_TYPE_SPHERE: {
-			distance = lineSphereIntersection(lp, ld, obj->pos, geometry->r, reflectionPos);
+			distance = lineSphereIntersection(lp, ld, obj->pos, obj->dim.x*0.5f, reflectionPos);
 
 			if(distance > 0) {
 				*reflectionNormal = normVec3(*reflectionPos - obj->pos);
@@ -130,19 +119,14 @@ float lineShapeIntersection(Vec3 lp, Vec3 ld, Object* obj, Vec3* reflectionPos, 
 	return -1;
 }
 
-void geometryBoundingSphere(Geometry* g) {
+void geometryBoundingSphere(Object* obj) {
 	float r;
-	switch(g->type) {
-		case GEOM_TYPE_BOX: {
-			r = lenVec3(g->dim)/2;
-		} break;
-
-		case GEOM_TYPE_SPHERE: {
-			r = g->r;
-		} break;
+	switch(obj->geometry.type) {
+		case GEOM_TYPE_BOX:    r = lenVec3(obj->dim)*0.5f; break;
+		case GEOM_TYPE_SPHERE: r = obj->dim.x*0.5f; break;
 	}
 
-	g->boundingSphereRadius = r;
+	obj->geometry.boundingSphereRadius = r;
 }
 
 
@@ -252,12 +236,11 @@ Object defaultObject() {
 	Object obj = {};
 	obj.pos = vec3(0,0,0);
 	obj.rot = quat();
+	obj.dim = vec3(2.5f);
 	obj.color = vec3(0.5f,0.5f,0.5f);
 	obj.material = m;
 	obj.geometry.type = GEOM_TYPE_SPHERE;
-	obj.geometry.r = 5;
-
-	geometryBoundingSphere(&obj.geometry);
+	geometryBoundingSphere(&obj);
 	
 	return obj;
 }
@@ -468,7 +451,7 @@ void processPixelsThreaded(void* data) {
 
 											if(obj->rot == quat()) {
 												int face;
-												bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
+												bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, obj->dim), &distance, &face);
 												if(hit) {
 													reflectionPos = rayPos + rayDir*distance;
 													reflectionNormal = boxRaycastNormals[face];
@@ -476,7 +459,7 @@ void processPixelsThreaded(void* data) {
 											} else {
 												int face;
 												Vec3 intersection;
-												bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, g->dim, obj->rot, &intersection, &face);
+												bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &intersection, &face);
 												if(hit) {
 													reflectionPos = intersection;
 													reflectionNormal = boxRaycastNormals[face];
@@ -486,7 +469,7 @@ void processPixelsThreaded(void* data) {
 										} break;
 
 										case GEOM_TYPE_SPHERE: {
-											distance = lineSphereIntersection(rayPos, rayDir, obj->pos, g->r, &reflectionPos);
+											distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos);
 											if(distance > 0) {
 												reflectionNormal = normVec3(reflectionPos - obj->pos);
 											}
@@ -608,15 +591,16 @@ int castRay(Vec3 rayPos, Vec3 rayDir, Object* objects, int objectCount) {
 			{
 				switch(g->type) {
 					case GEOM_TYPE_BOX: {
-						int face;
-						// bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, g->dim), &distance, &face);
+						// int face;
+						// bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, obj->dim), &distance, &face);
 						// if(hit) {
 						// 	reflectionPos = rayPos + rayDir*distance;
 						// 	reflectionNormal = boxRaycastNormals[face];
 						// }
 
+						int face;
 						Vec3 intersection;
-						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, g->dim, obj->rot, &intersection, &face);
+						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &intersection, &face);
 						if(hit) {
 							reflectionPos = intersection;
 							reflectionNormal = boxRaycastNormals[face];
@@ -626,7 +610,7 @@ int castRay(Vec3 rayPos, Vec3 rayDir, Object* objects, int objectCount) {
 					} break;
 
 					case GEOM_TYPE_SPHERE: {
-						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, g->r, &reflectionPos);
+						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos);
 						if(distance > 0) {
 							reflectionNormal = normVec3(reflectionPos - obj->pos);
 						}
@@ -706,8 +690,7 @@ void getDefaultScene(World* world) {
 	obj.color = vec3(0.5f);
 	obj.material = materials[0];
 	obj.geometry.type = GEOM_TYPE_BOX;
-	// obj.geometry.dim = vec3(100000, 100000, 0.01f);
-	obj.geometry.dim = vec3(50, 50, 0.01f);
+	obj.dim = vec3(50, 50, 0.01f);
 	world->objects[world->objectCount++] = obj;
 
 	// Sphere.
@@ -717,13 +700,13 @@ void getDefaultScene(World* world) {
 	obj.rot = quat();
 	obj.color = vec3(0.3f,0.5f,0.8f);
 	obj.material = materials[1];
+	obj.dim = vec3(2.5f);
 	obj.geometry.type = GEOM_TYPE_SPHERE;
-	obj.geometry.r = 5;
 	world->objects[world->objectCount++] = obj;
 	
 	// Calc bounding spheres.
 	for(int i = 0; i < world->objectCount; i++) {
-		geometryBoundingSphere(&world->objects[i].geometry);
+		geometryBoundingSphere(&world->objects[i]);
 	}
 }
 

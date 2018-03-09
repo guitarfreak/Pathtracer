@@ -129,9 +129,9 @@ char* fillString(char* text, ...) {
 
 struct Texture {
 	bool isCreated;
-
-	// char* name;
+	char* name;
 	uint id;
+
 	Vec2i dim;
 	int channels;
 	int levels;
@@ -314,8 +314,6 @@ void initFrameBuffer(FrameBuffer* fb) {
 }
 
 void attachToFrameBuffer(FrameBuffer* fb, int slot, int internalFormat, int w, int h, int msaa = 0) {
-	// FrameBuffer* fb = getFrameBuffer(id);
-
 	bool isRenderBuffer = msaa > 0;
 
 	Texture t;
@@ -326,6 +324,7 @@ void attachToFrameBuffer(FrameBuffer* fb, int slot, int internalFormat, int w, i
 	t.isRenderBuffer = isRenderBuffer;
 	t.msaa = msaa;
 
+	t.name = getPStringCpy("");
 	Texture* tex = addTexture(t);
 
 	Vec2i indexRange;
@@ -418,8 +417,10 @@ uint checkStatusFrameBuffer(int id) {
 struct GraphicsState {
 	bool useSRGB;
 
-	Texture textures[32]; //TEXTURE_SIZE
+	Texture* textures;
 	int textureCount;
+	int textureCountMax;
+
 	Texture textures3d[2];
 	GLuint samplers[SAMPLER_SIZE];
 
@@ -451,19 +452,23 @@ Texture* getTexture(int textureId) {
 	return t;
 }
 
-Texture* getTextureX(int textureId) {
-	GraphicsState* gs = globalGraphicsState;
-	for(int i = 0; i < arrayCount(gs->textures); i++) {
-		if(gs->textures[i].id == textureId) {
-			return gs->textures + i;
+Texture* getTexture(char* name) {
+	for(int i = 0; i < globalGraphicsState->textureCount; i++) {
+		Texture* t = globalGraphicsState->textures + i;
+
+		if(strCompare(t->name, name)) {
+			return t;
 		}
 	}
 
-	return 0;
+	return (&globalGraphicsState->textures[0]);
 }
 
 Texture* addTexture(Texture tex) {
 	GraphicsState* gs = globalGraphicsState;
+
+	assert(gs->textureCount < gs->textureCountMax);
+
 	gs->textures[gs->textureCount++] = tex;
 	return gs->textures + (gs->textureCount - 1);
 }
@@ -1199,6 +1204,18 @@ Vec3 boxVertices[] = {
 	vec3(-0.5f,-0.5f, 0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3( 0.5f,-0.5f, 0.5f), 
 };
 
+Vec3 sphereVertices[] = {
+	vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  
+	vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  
+	vec3(0,0,1),  vec3(0,-1,0), vec3(-1,0,0), 
+	vec3(0,0,1),  vec3(1,0,0),  vec3(0,-1,0), 
+	vec3(0,0,-1), vec3(1,0,0),  vec3(0,1,0),  
+	vec3(0,0,-1), vec3(0,1,0),  vec3(-1,0,0), 
+	vec3(0,0,-1), vec3(-1,0,0), vec3(0,-1,0), 
+	vec3(0,0,-1), vec3(0,-1,0), vec3(1,0,0),  
+};
+
+
 inline void pushTriangle(Vec3 v0, Vec3 v1, Vec3 v2) {
 	glVertex3f(v0.x, v0.y, v0.z);
 	glVertex3f(v1.x, v1.y, v1.z);
@@ -1319,7 +1336,7 @@ void drawRing(Vec3 pos, Vec3 normal, float r, float thickness, Vec4 color) {
 
 void drawTriangleSubDiv(Vec3 a, Vec3 b, Vec3 c, int divIndex) {
 	if(divIndex == 0) {
-		Vec3 n = normVec3((a+b+c)/3.0f);
+		Vec3 n = normVec3(a+b+c);
 		glNormal3f(n.x, n.y, n.z);
 		pushTriangle(a,b,c);
 	} else {
@@ -1343,16 +1360,17 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 	glTranslatef(pos.x, pos.y, pos.z);
 	glScalef(r, r, r);
 
+	int i = 0;
 	int div = 3;
 	glBegin(GL_TRIANGLES);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,-1,0), vec3(-1,0,0), div);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(1,0,0),  vec3(0,-1,0), div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(1,0,0),  vec3(0,1,0),  div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(0,1,0),  vec3(-1,0,0), div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(-1,0,0), vec3(0,-1,0), div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(0,-1,0), vec3(1,0,0),  div);
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
 	glEnd();
 	glPopMatrix();
 }
@@ -1362,16 +1380,17 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 void drawSphereRaw() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+	int i = 0;
 	int div = 3;
 	glBegin(GL_TRIANGLES);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(0,-1,0), vec3(-1,0,0), div);
-	drawTriangleSubDiv(vec3(0,0,1),  vec3(1,0,0),  vec3(0,-1,0), div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(1,0,0),  vec3(0,1,0),  div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(0,1,0),  vec3(-1,0,0), div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(-1,0,0), vec3(0,-1,0), div);
-	drawTriangleSubDiv(vec3(0,0,-1), vec3(0,-1,0), vec3(1,0,0),  div);
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
+	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
 	glEnd();
 }
 

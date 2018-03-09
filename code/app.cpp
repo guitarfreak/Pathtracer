@@ -149,6 +149,7 @@ struct AppData {
 	Vec3* buffer;
 	Texture raycastTexture;
 	Rect textureScreenRect;
+	Rect textureScreenRectFitted;
 
 	bool fitToScreen;
 	bool drawSceneWired;
@@ -263,13 +264,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Setup Textures.
 		//
 
-		// for(int i = 0; i < TEXTURE_SIZE; i++) {
-		// 	Texture tex;
-		// 	uchar buffer [] = {255,255,255,255 ,255,255,255,255 ,255,255,255,255, 255,255,255,255};
-		// 	loadTexture(&tex, buffer, 2,2, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
-
-		// 	addTexture(tex);
-		// }
+		globalGraphicsState->textureCountMax = 20;
+		globalGraphicsState->textures = getPArray(Texture, globalGraphicsState->textureCountMax);
+		globalGraphicsState->textureCount = 0;
 
 		FolderSearchData fd;
 		folderSearchStart(&fd, fillString("%s*", App_Image_Folder));
@@ -280,6 +277,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Texture tex;
 			char* filePath = fillString("%s%s", App_Image_Folder, fd.fileName);
 			loadTextureFromFile(&tex, filePath, -1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+			tex.name = getPStringCpy(fd.fileName);
 			addTexture(tex);
 		}
 
@@ -1038,13 +1036,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Vec2 sd = rectDim(tr);
 			Vec2 texDim = vec2(ad->raycastTexture.dim);
 
-			if(ad->fitToScreen) {
-				if(((float)texDim.h / texDim.w) > (sd.h / sd.w)) {
-					tr = rectSetW(tr, ((float)texDim.w / texDim.h)*sd.h);
-				} else {
-					tr = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
-				}
+			if(((float)texDim.h / texDim.w) > (sd.h / sd.w)) {
+				ad->textureScreenRectFitted = rectSetW(tr, ((float)texDim.w / texDim.h)*sd.h);
 			} else {
+				ad->textureScreenRectFitted = rectSetH(tr, ((float)texDim.h / texDim.w)*sd.w);
+			}
+
+			{
 				Vec2 c = rectCen(sr);
 				Vec2i td = ad->raycastTexture.dim;
 				c.x -= td.w/2.0f;
@@ -1052,16 +1050,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 				c.x = roundFloat(c.x);
 				c.y = roundFloat(c.y);
 
-				tr = rectTLDim(c, texDim);
+				ad->textureScreenRect = rectTLDim(c, texDim);
+			}
+
+			if(ad->fitToScreen) {
+				ad->textureScreenRect = ad->textureScreenRectFitted;
 			}
 
 			if(!ad->drawSceneWired) {
 				glDepthMask(false);
-				drawRect(tr, vec4(1,1,1,1), rect(0,0,1,1), ad->raycastTexture.id);
+				drawRect(ad->textureScreenRect, vec4(1,1,1,1), rect(0,0,1,1), ad->raycastTexture.id);
 				glDepthMask(true);
 			}
-
-			ad->textureScreenRect = tr;
 		}
 
 		if(keyPressed(gui, input, KEYCODE_F)) ad->fitToScreen = !ad->fitToScreen;
@@ -1140,7 +1140,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// @Selection.
 
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
-				Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
 				int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
 				if(objectIndex != -1) {
@@ -1206,7 +1206,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Object* obj = ad->world.objects + (eui->selectedObject-1);
 				Camera* cam = &ad->world.camera;
 				Vec3 rayPos = cam->pos;
-				Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, &ad->world.camera);
+				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
 				if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 
@@ -1319,12 +1319,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(distance != -1) {
 						Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
 
-						Geometry* geom = &obj->geometry;
-
 						if(eui->gotActive) {
 							eui->objectDistanceVector = obj->pos - linePointOnAxis;
 
-							eui->startDim = geometryGetDim(geom).e[eui->axisIndex-1];
+							eui->startDim = obj->dim.e[eui->axisIndex-1];
 						}
 
 						float oldLength = lenVec3(eui->objectDistanceVector);
@@ -1339,8 +1337,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 							currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
 						}
 
-						geometrySetDim(geom, currentAxisLength, eui->axisIndex-1);
-						geometryBoundingSphere(&obj->geometry);
+						if(obj->geometry.type == GEOM_TYPE_SPHERE) {
+							// obj->dim = vec3(currentAxisLength*0.5f);
+							obj->dim = vec3(currentAxisLength);
+						} else if(obj->geometry.type == GEOM_TYPE_BOX) {
+							obj->dim.e[eui->axisIndex-1] = currentAxisLength;
+						}
+
+						geometryBoundingSphere(obj);
 					}
 				}
 
@@ -1354,7 +1358,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Camera* cam = &ad->world.camera;
 		Vec2 d = cam->dim;
 
-		Rect tr = ad->textureScreenRect;
+		Rect tr = ad->textureScreenRectFitted;
 
 		glClearColor(0,0,0, 1);
 		// glClear(GL_COLOR_BUFFER_BIT);
@@ -1419,17 +1423,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glBindTexture(GL_TEXTURE_2D, 0);
 
 		{
-			// @Bottom grid
+			// @Grid
 			EntityUI* eui = &ad->entityUI;
-
-			glDisable(GL_LIGHTING);
-			float l = eui->snapGridDim/2;
-			float arrowSize = 0.5f;
-			drawArrow(vec3(0,0,0) + vec3(-1, 0,0)*arrowSize/2, vec3(-1, 0,0) * l, vec3(0,0,1), arrowSize, vec4(1,0,0,1));
-			drawArrow(vec3(0,0,0) + vec3( 1, 0,0)*arrowSize/2, vec3( 1, 0,0) * l, vec3(0,0,1), arrowSize, vec4(1,0.5f,0.5f,1));
-			drawArrow(vec3(0,0,0) + vec3( 0,-1,0)*arrowSize/2, vec3( 0,-1,0) * l, vec3(0,0,1), arrowSize, vec4(0,1,0,1));
-			drawArrow(vec3(0,0,0) + vec3( 0, 1,0)*arrowSize/2, vec3( 0, 1,0) * l, vec3(0,0,1), arrowSize, vec4(0.5f,1,0.5f,1));
-			glEnable(GL_LIGHTING);
 
 			glDisable(GL_LIGHTING);
 			ad->entityUI.snapGridSize = 3;
@@ -1483,8 +1478,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				glColor4f(c.r, c.g, c.b, c.a);
 
 				Vec3 scale = vec3(1,1,1);
-				if(g->type == GEOM_TYPE_BOX) scale = g->dim;
-				if(g->type == GEOM_TYPE_SPHERE) scale = vec3(g->r);
+				scale = obj->dim;
+				if(g->type == GEOM_TYPE_SPHERE) scale = scale / 2;
 
 				Mat4 tm = translationMatrix(obj->pos);
 				Mat4 rm = quatRotationMatrix(obj->rot);
@@ -1634,7 +1629,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							axis[i] = a;
 						}
 
-						Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
+						Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
 
 						glDisable(GL_DEPTH_TEST);
 
@@ -1703,7 +1698,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 									if(axis[i] == eui->axis) a = 1;
 							}
 
-							drawPlane(p, axis[i], axis[(i+1)%3], vec2(dim), vec4(colorSquares,a), rect(0,0,1,1), getTexture(TEXTURE_ROUNDED_SQUARE)->id);
+							drawPlane(p, axis[i], axis[(i+1)%3], vec2(dim), vec4(colorSquares,a), rect(0,0,1,1), getTexture("roundedSquare.png")->id);
 						}
 
 						// Move center.
@@ -1820,7 +1815,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							axis[i] = a;
 						}
 
-						Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
+						Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
 
 						// Find closest ring to camera.
 
@@ -1895,7 +1890,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						for(int i = 0; i < 3; i++) {
 							Vec3 color = c[i];
 
-							float arrowLength = geometryGetDim(geom).e[i]/2 + scaleArrowBoxDim;
+							float arrowLength = obj->dim.e[i]/2 + scaleArrowBoxDim;
 
 							Vec3 axis = vec3(0,0,0);
 							axis.e[i] = 1;
@@ -1904,7 +1899,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 p = obj->pos + axis * arrowLength;
 
 							if(eui->selectionState != ENTITYUI_ACTIVE) {
-								Vec3 rayDir = mouseRayCast(ad->textureScreenRect, input->mousePosNegative, cam);
+								Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
 								Vec3 intersection;
 								bool result = boxRaycastRotated(cam->pos, rayDir, p, vec3(scaleArrowBoxDim), obj->rot, &intersection);
 								if(result) {
@@ -2090,28 +2085,34 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				Rect r;
 				
+				// Make Screenshot.
+
 				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
 				if(ad->tracerFinished) {
 					if(newGuiQuickButton(gui, r, "", &tbs)) {
 						openScreenshotDialog(&ad->dialogData);
 					}
 					rectExpand(&r, vec2(-buttonMargin));
-					drawRect(rectRound(r), cButtonActive, rect(0,0,1,1), getTexture(TEXTURE_SCREENSHOT_ICON)->id);
+					drawRect(rectRound(r), cButtonActive, rect(0,0,1,1), getTexture("screenshotIcon.png")->id);
 				}
+
+				// Open Folder.
 
 				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
 				if(newGuiQuickButton(gui, r, "", &tbs)) {
 					shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
 				}
 				rectExpand(&r, vec2(-buttonMargin));
-				drawRect(rectRound(r), cButtonActive, rect(0,0,1,1), getTexture(TEXTURE_FOLDER_ICON)->id);
+				drawRect(rectRound(r), cButtonActive, rect(0,0,1,1), getTexture("folderIcon.png")->id);
+
+				// Fit to Screen.
 
 				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
-				if(newGuiQuickButton(gui, r, "", &tbs)) {
+				if(newGuiQuickPButton(gui, r, "", &tbs)) {
 					ad->fitToScreen = !ad->fitToScreen;
 				}
 				rectExpand(&r, vec2(-buttonMargin));
-				drawRect(rectRound(r), ad->fitToScreen?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_FIT_TO_SCREEN_ICON)->id);
+				drawRect(rectRound(r), ad->fitToScreen?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture("fitToScreenIcon.png")->id);
 
 				{
 					p.x += separatorWidth * 0.5f;
@@ -2122,21 +2123,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 
 				// Local mode.
+
 				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
-				if(newGuiQuickButton(gui, r, "", &tbs)) {
+				if(newGuiQuickPButton(gui, r, "", &tbs)) {
 					eui->localMode = !eui->localMode;
 				}
 				rectExpand(&r, vec2(-buttonMargin));
-				drawRect(rectRound(r), eui->localMode?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_LOCAL_GLOBAL_ICON)->id);
+				drawRect(rectRound(r), eui->localMode?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture("coordIcon")->id);
 
 				// Selection mode.
+
 				for(int i = 0; i < ENTITYUI_MODE_SIZE; i++) {
 					r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
-					if(newGuiQuickButton(gui, r, "", &tbs)) {
+					if(newGuiQuickPButton(gui, r, "", &tbs)) {
 						eui->selectionMode = i;
 					}
 					rectExpand(&r, vec2(-buttonMargin));
-					drawRect(rectRound(r), eui->selectionMode==i?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_ICON_ICON)->id);
+					drawRect(rectRound(r), eui->selectionMode==i?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture("settingsIcon.png")->id);
 				}
 
 			}
@@ -2511,7 +2514,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-						newGuiQuickComboBox(gui, quickRowNext(&qr), &geom->type, geometryTypeStrings, arrayCount(geometryTypeStrings));
+						if(newGuiQuickComboBox(gui, quickRowNext(&qr), &geom->type, geometryTypeStrings, arrayCount(geometryTypeStrings))) {
+							geometryBoundingSphere(obj);
+						}
 
 						s = "BoundingRadius";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2519,22 +2524,22 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
 						newGuiQuickText(gui, quickRowNext(&qr), fillString("%f", geom->boundingSphereRadius), vec2i(-1,0));
 
+						s = "Dimension";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						int dimChanged = 0;
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->dim.x)) dimChanged = 1;
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->dim.y)) dimChanged = 2;
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->dim.z)) dimChanged = 3;
 
-						if(geom->type == GEOM_TYPE_SPHERE) {
-							s = "Radius";
-							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-							qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-							newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->r);
+						if(dimChanged) {
+							if(geom->type == GEOM_TYPE_SPHERE) {
+								float d = obj->dim.e[dimChanged-1];
+								obj->dim = vec3(d);
+							}
 
-						} else if(geom->type == GEOM_TYPE_BOX) {
-							s = "Dimension";
-							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-							qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
-							newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->dim.x);
-							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->dim.y);
-							newGuiQuickTextEdit(gui, quickRowNext(&qr), &geom->dim.z);
+							geometryBoundingSphere(obj);
 						}
 
 						s = "EmitColor";
