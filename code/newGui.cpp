@@ -468,6 +468,7 @@ struct PopupData {
 	int type;
 	int id;
 	char name[30];
+	Rect rSource;
 	Rect r;
 
 	Vec2 p;
@@ -510,6 +511,8 @@ struct NewGui {
 
 	int menuId;
 	bool menuActive;
+
+	bool forceNoClear;
 
 	// Temp vars for convenience.
 
@@ -564,8 +567,12 @@ void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws) {
 	int voidId = 0;
 
 	gui->id = 1;
-	gui->gotActiveId = voidId;
-	gui->wasActiveId = voidId;
+	if(!gui->forceNoClear) {
+		gui->gotActiveId = voidId;
+		gui->wasActiveId = voidId;
+	}
+
+	gui->forceNoClear = false;
 
 	for(int i = 0; i < Gui_Focus_Size; i++) {
 		gui->contenderId[i] = voidId;
@@ -731,6 +738,12 @@ void newGuiSetHotMouseOver(NewGui* gui, int id, Vec2 mousePos, Rect r, float z, 
 	if(pointInRectEx(mousePos, r) && !rectEmpty(r)) {
 		newGuiSetHot(gui, id, z, focus);
 	}
+}
+
+void newGuiForceActive(NewGui* gui, int id) {
+	gui->activeId = gui->menuId;
+	gui->gotActiveId = gui->menuId;
+	gui->forceNoClear = true;
 }
 
 int newGuiInputFromFocus(Input* input, int focus, bool press = true) {

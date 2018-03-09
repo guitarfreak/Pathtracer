@@ -253,7 +253,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		systemData->maxWindowDim = ws->biggestMonitorSize;
 
 		#ifndef SHIPPING_MODE
-		// makeWindowTopmost(systemData);
+		makeWindowTopmost(systemData);
 		#endif
 
 		gs->useSRGB = true;
@@ -612,7 +612,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	{
 		newGuiBegin(gui, &ad->input, ws);
-		
 	}
 
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
@@ -1152,7 +1151,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		if(ad->drawSceneWired) {
 			if(mouseWheel(gui, input) && eui->selectionState != ENTITYUI_ACTIVE) {
-				ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode+ mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
+				ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode - mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
 			}
 
 			if(input->mouseButtonPressed[2] && eui->selectionState != ENTITYUI_ACTIVE) {
@@ -1202,12 +1201,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// Insert default.
 			if(keyPressed(gui, input, KEYCODE_RETURN)) {
-				insertObject(&ad->world, defaultObject());
+				int id = insertObject(&ad->world, defaultObject());
+				if(eui->selectedObject) eui->selectedObject = id;
 			}
 
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
-				insertObject(&ad->world, eui->objectCopy);
+				int id = insertObject(&ad->world, eui->objectCopy);
+				if(eui->selectedObject) eui->selectedObject = id;
 			}
 
 
@@ -1568,7 +1569,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 					glDisable(GL_LIGHTING);
 
-					glLineWidth(1);
+					glLineWidth(0.5f);
 
 					switch(g->type) {
 						case GEOM_TYPE_BOX: {
@@ -1607,26 +1608,33 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					Camera* cam = &world->camera;
 					float boundRadius = geom->boundingSphereRadius*1.5f;
-					float uiAlpha = 0.5f;
+					float uiAlpha = 0.7f;
 
 					Vec4 rotationSegmentColor = vec4(hslToRgbFloat(vec3(0.5f,0.9f,0.5f)), 0.5f);
 					Vec4 translationVectorColor = rotationSegmentColor;
 					translationVectorColor.a = 1;
-
-					float translateLineWidth = 5;
-
-					float translationPlaneSize = boundRadius * 0.3f;
-					float rotationRingThickness = boundRadius * 0.05;
-					float translationArrowLength = boundRadius;
-					float translationArrowThickness = rotationRingThickness;
-					float translationVectorThickness = translationArrowThickness*0.5f;
-
-					float translationCenterBoxSize = boundRadius * 0.10f;
 					Vec4 translationCenterBoxColor = vec4(0.5f,1);
 					float translationCenterBoxColorMod = 0.1f;
 
-					// float scaleArrowBoxDim = boundRadius * 0.1;
-					float scaleArrowBoxDim = 1;
+
+					float distToCam = lenVec3(cam->pos - obj->pos);
+					float translateLineWidth = 5;
+
+					float translationArrowLength = distToCam * 0.2f;
+					float translationArrowThickness = distToCam * 0.008f;
+					float translationVectorThickness = translationArrowThickness*0.5f;
+
+					float translationPlaneSize = translationArrowLength * 0.25f;
+
+					float translationCenterBoxSize = distToCam * 0.015f;
+
+					float rotationRingThickness = translationArrowThickness;
+					float rotationRingRadius = translationArrowLength;
+
+					float scaleArrowBoxDim = translationCenterBoxSize;
+					float scaleArrowLineWidth = 3.0f;
+
+
 
 					if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 						Vec2 d = vec2(translationArrowThickness,translationArrowLength);
@@ -1694,7 +1702,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 diag = normVec3(edgePoint - obj->pos);
 
 							float squareDiag = sqrt(2 * (dim*dim));
-							Vec3 p = edgePoint - diag*(squareDiag/2);
+							Vec3 p = obj->pos + diag*(squareDiag/2) * 2;
+
 
 							float a = uiAlpha;
 							{
@@ -1815,6 +1824,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
 
 						float thickness = rotationRingThickness;
+						float radius = rotationRingRadius;
 						// Vec3 axis[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
 						Vec3 c[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
 
@@ -1841,7 +1851,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 								float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, axis[i], &intersection);
 								if(dist != -1) {
 									float distToObj = lenVec3(intersection - obj->pos);
-									if(valueBetween(distToObj, boundRadius-thickness, boundRadius)) {
+									if(valueBetween(distToObj, radius-thickness, radius)) {
 
 										float distToCam = -(vm*intersection).z;
 										if(distToCam < closestDistance) {
@@ -1854,22 +1864,31 @@ extern "C" APPMAINFUNCTION(appMain) {
 						} else {
 							axisIndex = eui->axisIndex;
 						}
+					
+						// Draw rings.
+
+						// Should switch to different depth buffer, but this works for now.
+						glClear(GL_DEPTH_BUFFER_BIT);
+
+						drawSphere(obj->pos, radius-thickness, vec4(0,0,0,0));
 
 						for(int i = 0; i < 3; i++) {
 							float a = uiAlpha;
-							drawRing(obj->pos, axis[i], boundRadius, thickness, vec4(c[i],a));
+							drawRing(obj->pos, axis[i], radius, thickness, vec4(c[i],a));
 						}
 
 						// Paint over hot/active ring.
 						if(axisIndex && (!eui->guiHasFocus || eui->selectionState == ENTITYUI_ACTIVE)) {
-							int i = axisIndex-1;
-							drawRing(obj->pos, axis[i], boundRadius, thickness, vec4(c[i],1));
-
 							glDisable(GL_DEPTH_TEST);
+	
+							int i = axisIndex-1;
+							drawRing(obj->pos, axis[i], radius, thickness, vec4(c[i],1));
+
 							if(eui->selectionState == ENTITYUI_ACTIVE) {
-								Vec3 left = obj->pos + normVec3(eui->objectDistanceVector)*boundRadius;
+								Vec3 left = obj->pos + normVec3(eui->objectDistanceVector)*radius;
 								drawTriangleFan(obj->pos, left, eui->currentRotationAngle, axis[i], rotationSegmentColor);
 							}
+
 							glEnable(GL_DEPTH_TEST);
 						}
 
@@ -1920,7 +1939,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 
 							glDisable(GL_DEPTH_TEST);
-							glLineWidth(5);
+							glLineWidth(scaleArrowLineWidth);
 							drawLine(obj->pos, p, vec4(color,1));
 							glLineWidth(1);
 							drawBox(p, vec3(scaleArrowBoxDim), &vm, obj->rot, vec4(color, 1));
@@ -2018,7 +2037,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gui->checkBoxSettings = checkBoxSettings(cbs, cButton, 0.5f);
 		}
 
-		ad->menuHeight = ad->fontHeight * 1.3f;
+		ad->menuHeight = ad->fontHeight * 1.5f;
 
 		// @Menu.
 		{
@@ -2027,6 +2046,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			Vec4 cMenu = vec4(0.3f,1);
 			float padding = ad->fontHeight * 1.4;
+			float border = 1;
 
 			Font* font = gui->textSettings.font;
 			char* s;
@@ -2034,8 +2054,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			drawRect(mr, cMenu);
 
 
-			TextBoxSettings tbs = gui->buttonSettings;
-			gui->buttonSettings = textBoxSettings(tbs.textSettings, boxSettings(cMenu));
+			TextBoxSettings tbs = textBoxSettings(gui->textSettings, boxSettings(cMenu));
+			TextBoxSettings tbsActive = gui->editSettings.textBoxSettings;
 
 			Rect r;
 			Vec2 p = rectTL(mr);
@@ -2044,7 +2064,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			s = "File";
 			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
 
-			if(newGuiQuickPButton(gui, r, s) || 
+			if(newGuiQuickPButton(gui, r, s, &tbs) || 
 			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
 
 				gui->popupStackCount = 0;
@@ -2057,16 +2077,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 				pd.width = ad->fontHeight * 7;
 				pd.settings = gui->boxSettings;
 				pd.border = vec2(5,5);
+				pd.rSource = r;
 
 				newGuiPopupPush(gui, pd);
 
 				gui->menuId = newGuiCurrentId(gui);
 				gui->menuActive = true;
 			}
+			if(gui->menuActive && newGuiCurrentId(gui) == gui->menuId) {
+				newGuiQuickTextBox(gui, r, s, &tbsActive);
+			}
 
 			s = "Settings";
 			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
-			if(newGuiQuickPButton(gui, r, s) || 
+			if(newGuiQuickPButton(gui, r, s, &tbs) || 
 			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
 
 				gui->popupStackCount = 0;
@@ -2079,14 +2103,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 				pd.width = ad->fontHeight * 11;
 				pd.settings = gui->boxSettings;
 				pd.border = vec2(5,5);
+				pd.rSource = r;
 
 				newGuiPopupPush(gui, pd);
 
 				gui->menuId = newGuiCurrentId(gui);
 				gui->menuActive = true;
 			}
-
-			gui->buttonSettings = tbs;
+			if(gui->menuActive && newGuiCurrentId(gui) == gui->menuId) {
+				newGuiQuickTextBox(gui, r, s, &tbsActive);
+			}
 		}
 
 
@@ -2322,11 +2348,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 							qr = quickRow(r, pad.x, 0.0f, 0.0f);
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Object")) {
-								insertObject(&ad->world, defaultObject());
+								int id = insertObject(&ad->world, defaultObject());
+								if(eui->selectedObject) eui->selectedObject = id;
 							}
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copy")) {
-								insertObject(&ad->world, eui->objectCopy);
+								int id = insertObject(&ad->world, eui->objectCopy);
+								if(eui->selectedObject) eui->selectedObject = id;
 							}
 						}
 
@@ -2589,6 +2617,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				newGuiQuickBox(gui, rPop, &gui->popupSettings);
 
+				// Overdraw borders to make transition seemless. (Dirty hack...)
+				{
+					Rect r = pd.rSource;
+					Rect lr = rect(r.left  + border, r.bottom-border*2, 
+					               r.right - border, r.bottom+border*2);
+					drawRect(rectRound(lr), gui->popupSettings.color);
+
+					float y = roundFloat(r.bottom) - 0.5f;
+					float off = textSidePadding*0.5f;
+					drawLine(vec2(lr.left + off, y), vec2(lr.right - off, y), cSeperator);
+				}
+
 				if(gui->popupSettings.borderColor.a) {
 					rectExpand(&rPop, vec2(-border*2));
 					ew -= border*2;
@@ -2672,21 +2712,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 					}
 
 					if(strCompare(pd.name, "SettingMenu")) {
-						bool close = false;
 						World* world = &ad->world;
 
 						p += vec2(textSidePadding, -topBottomPadding);
 						ew -= textSidePadding*2;
-
-
-						s = "Mouse sensitivity";
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
-						newGuiQuickText(gui, r, s, vec2i(-1,0)); 
-
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
-						newGuiQuickSlider(gui, r, &ad->mouseSpeed, 0, 2); 
-
-						p.y -= separatorHeight;
 
 						s = "Font scale";
 						char* s2 = fillString("Height: %i", ad->fontHeight);
@@ -2698,15 +2727,30 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						newGuiQuickText(gui, r, s, vec2i(-1,0)); 
 
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						gui->sliderSettings.applyAfter = true;
-						newGuiQuickSlider(gui, r, &ad->fontScale, 0.5f, 2); 
+						bool reopenPopup = false;
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						if(newGuiQuickSlider(gui, r, &ad->fontScale, 0.5f, 2)) {
+							reopenPopup = true;
+						}
 						gui->sliderSettings.applyAfter = false;
 
-						if(close) gui->popupStackCount = 0;
+						p.y -= separatorHeight;
+
+						s = "Mouse sensitivity";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						newGuiQuickText(gui, r, s, vec2i(-1,0)); 
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						newGuiQuickSlider(gui, r, &ad->mouseSpeed, 0, 2); 
+
+
+						if(reopenPopup) {
+							newGuiForceActive(gui, gui->menuId);
+							gui->popupStackCount = 0;
+							break;
+						}
 					}
-
-
 
 					gui->buttonSettings = bs;
 				}

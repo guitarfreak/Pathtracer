@@ -686,6 +686,7 @@ void CALLBACK updateInput(SystemData* sd) {
 	    if(!sd->windowIsFocused) {
 	    	for(int i = 0; i < arrayCount(input->mouseButtonPressed); i++) input->mouseButtonPressed[i] = 0;
 	    	for(int i = 0; i < arrayCount(input->mouseButtonReleased); i++) input->mouseButtonReleased[i] = 0;
+	    	input->mouseWheel = 0;
 	    }
 	    sd->setFocus = false;
 

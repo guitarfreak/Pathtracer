@@ -274,7 +274,7 @@ void deleteObject(Object* objects, int* objectCount, int* selected) {
 	}
 }
 
-void insertObject(World* world, Object obj) {
+int insertObject(World* world, Object obj) {
 	float spawnDistance = 30;
 	Camera* cam = &world->camera;
 	obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
@@ -286,6 +286,8 @@ void insertObject(World* world, Object obj) {
 	}
 
 	world->objects[world->objectCount++] = obj;
+
+	return world->objectCount;
 }
 
 
