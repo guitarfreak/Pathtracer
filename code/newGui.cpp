@@ -1087,8 +1087,8 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, void* var, int mode, T
 		}
 	}
 
-	// if(event == 3 && (leftMouse || enter)) {
-	if(event == 3 && (enter)) {
+	if(event == 3 && (leftMouse || enter)) {
+	// if(event == 3 && (enter)) {
 		if(mode == 0)      strCpy((char*)var, gui->editText);
 		else if(mode == 1) *((int*)var) = strToInt(gui->editText);
 		else if(mode == 2) *((float*)var) = strToFloat(gui->editText);
@@ -1098,7 +1098,8 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, void* var, int mode, T
 		textEditBox(gui->editText, maxTextSize, editSettings.textBoxSettings.textSettings.font, textRect, input, vec2i(-1,1), editSettings, editVars);
 	}
 
-	if(event == 3 && (escape || leftMouse)) event = 4;
+	// if(event == 3 && (escape || leftMouse)) event = 4;
+	if(event == 3 && (escape)) event = 4;
 
 	return event;
 }
@@ -1491,7 +1492,6 @@ bool newGuiQuickTextEditAllVars(NewGui* gui, Rect r, void* data, int varType, in
 	else if(varType == 1) drawTextEditBox(*intData, r, event > 0, gui->scissor, gui->editVars, set);
 	else drawTextEditBox(*floatData, r, event > 0, gui->scissor, gui->editVars, set);
 
-	// if(newGuiIsWasHotOrActive(gui)) newGuiSetCursor(gui, IDC_IBEAM);
 	if(newGuiIsHot(gui) || (newGuiIsActive(gui) && pointInRectEx(gui->input->mousePosNegative, intersect))) newGuiSetCursor(gui, IDC_IBEAM);
 
 	if(event == 3) return true;

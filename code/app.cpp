@@ -775,7 +775,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(input->keysPressed[KEYCODE_F3]) ad->captureMouseKeepCenter = true;
 					else ad->captureMouseKeepCenter = false;
 
-					POINT point;
 					GetCursorPos(&ws->lastMousePosition);
 				}
 			} else {
@@ -1150,6 +1149,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
+				eui->selectionState = ENTITYUI_INACTIVE;
+			}
+
+			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObject) {
+				eui->selectedObject = 0;
 				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
