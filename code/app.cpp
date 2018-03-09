@@ -150,14 +150,15 @@ struct AppData {
 	Texture raycastTexture;
 	Rect textureScreenRect;
 
-	bool keepUpdating;
 	bool fitToScreen;
 	bool drawSceneWired;
 
 	bool activeProcessing;
 	int threadCount;
 	ProcessPixelsData threadData[RAYTRACE_THREAD_JOB_COUNT];
-	bool waitingForThreadStop;
+
+	bool abortProcessing;
+	bool tracerFinished;
   
 	f64 processStartTime;
 	f64 processTime;
@@ -416,7 +417,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
-		ad->settings.texDim = vec2i(1280, 720);
+		// ad->settings.texDim = vec2i(1280, 720);
+		ad->settings.texDim = vec2i(768, 432);
 
 		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
 		ad->settings.sampleCountGrid = 4;
@@ -426,8 +428,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
 		// ad->threadCount = 1;
-
-		ad->keepUpdating = false;
 
 		ad->drawSceneWired = true;
 		ad->fitToScreen = true;
@@ -768,12 +768,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#if 1
 
 	{
-		// @Settings.
-
-		if(init) {
-
-		}
-
 		// Mouse capture.
 		{
 			if(!ad->captureMouse) {
@@ -864,19 +858,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 
-		if(keyPressed(gui, input, KEYCODE_SPACE) && !ad->drawSceneWired) {
-			for(int i = 0; i < ad->threadCount; i++) ad->threadData[i].stopProcessing = true;
-			ad->waitingForThreadStop = true;
-		}
+		if((keyPressed(gui, input, KEYCODE_SPACE)) && (!ad->activeProcessing && ad->drawSceneWired) && !ad->fpsMode) {
 
-		// if((input->keysPressed[KEYCODE_SPACE] || reload || init || ad->keepUpdating) && (ad->activeProcessing == false)) {
-		// if((input->keysPressed[KEYCODE_SPACE] || ad->keepUpdating || reload) && (ad->activeProcessing == false)) {
-		if((keyPressed(gui, input, KEYCODE_SPACE) || ad->keepUpdating) && 
-		   (!ad->activeProcessing && ad->drawSceneWired)
-		   && !ad->fpsMode) {
-		// if(false) {
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
+			ad->tracerFinished = false;
 
 			RaytraceSettings* settings = &ad->settings;
 
@@ -884,11 +870,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			Texture* t = &ad->raycastTexture;
 			// Vec3 black = vec3(0.2f);
-			if(!ad->keepUpdating) glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
+			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 
 			int pixelCount = settings->texDim.w*settings->texDim.h;
-			if(ad->buffer != 0) free(ad->buffer);
-			ad->buffer = mallocArray(Vec3, pixelCount);
+			reallocArraySave(Vec3, ad->buffer, pixelCount);
 
 			// Setup samples.
 			{
@@ -1016,6 +1001,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->processStartTime = ad->time;
 		}
 
+		if(keyPressed(gui, input, KEYCODE_ESCAPE) && !ad->drawSceneWired) {
+			for(int i = 0; i < ad->threadCount; i++) ad->threadData[i].stopProcessing = true;
+			ad->abortProcessing = true;
+		}
+
+		if(!ad->activeProcessing && ad->abortProcessing) {
+			ad->drawSceneWired = true;
+			ad->abortProcessing = false;
+		}
+
 		bool doneProcessing = false;
 		if(ad->activeProcessing && threadQueueFinished(threadQueue)) {
 			ad->activeProcessing = false;
@@ -1023,24 +1018,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			ad->processTime = ad->time - ad->processStartTime;
 
-			if(printRaytraceTimings) {
-				for(int i = 0; i < arrayCount(processPixelsThreadedTimings); i++) {
-					TimeStamp* t = processPixelsThreadedTimings + i;
-
-					calcTimeStamp(t);
-					printf("%i: hits: %6i, cycles: %6i\n", i, t->hits, t->cyclesOverHits);
-					*t = {};
-				}
+			if(!ad->abortProcessing) {
+				ad->tracerFinished = true;
+			} else {
+				ad->drawSceneWired = true;
+				ad->abortProcessing = false;
 			}
 		}
 
-		if((!ad->keepUpdating && ad->activeProcessing) || doneProcessing || (ad->keepUpdating && !ad->activeProcessing)) {
+		if(doneProcessing || ad->activeProcessing) {
 			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
 			glGenerateTextureMipmap(ad->raycastTexture.id);
 		}
 
+		// Calc texture rect.
 		{
-
 			Rect sr = getScreenRect(ws);
 			Rect tr = rectAddT(sr, -ad->menuHeight);
 			Vec2 sd = rectDim(tr);
@@ -1072,23 +1064,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->textureScreenRect = tr;
 		}
 
-		if(ad->waitingForThreadStop && threadQueueFinished(threadQueue)) {
-			ad->waitingForThreadStop = false;
-
-			Texture* t = &ad->raycastTexture;
-			Vec3 black = vec3(0.2f);
-			if(t->isCreated) {
-				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
-			}
-			if(ad->buffer) zeroMemory(ad->buffer, ad->raycastTexture.dim.w*ad->raycastTexture.dim.h*sizeof(Vec3));
-
-
-			ad->drawSceneWired = true;
-		}
-
 		if(keyPressed(gui, input, KEYCODE_F)) ad->fitToScreen = !ad->fitToScreen;
 	}
-
 
 	{
 		// @EntityUI code
@@ -1108,7 +1085,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			DialogData* dd = &ad->dialogData;
 			if(dd->finished) {
 				if(!dd->error) {
-					if(strCompare(dd->type, "Scene")) {
+					if(strCompare(dd->type, "SceneDialog")) {
 						if(dd->saveMode) {
 							saveScene(world, dd->result);
 							ad->sceneHasFile = true;
@@ -1119,7 +1096,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							strCpy(ad->sceneFile, dd->result);
 						}
 
-					} else if(strCompare(dd->type, "Screenshot")) {
+					} else if(strCompare(dd->type, "ScreenshotDialog")) {
 						Vec2i texDim = ad->settings.texDim;
 						int size = texDim.w * texDim.h;
 						char* intBuffer = mallocArray(char, size*3);
@@ -1210,6 +1187,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 				int id = insertObject(&ad->world, eui->objectCopy);
 				if(eui->selectedObject) eui->selectedObject = id;
 			}
+
+			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
+
+			if(keyPressed(gui, input, KEYCODE_1)) eui->selectionMode = ENTITYUI_MODE_SELECTED;
+			if(keyPressed(gui, input, KEYCODE_2)) eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
+			if(keyPressed(gui, input, KEYCODE_3)) eui->selectionMode = ENTITYUI_MODE_ROTATION;
+			if(keyPressed(gui, input, KEYCODE_4)) eui->selectionMode = ENTITYUI_MODE_SCALE;
+
 
 
 			eui->gotActive = false;
@@ -1640,7 +1625,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Vec2 d = vec2(translationArrowThickness,translationArrowLength);
 						Vec3 n = cam->pos - obj->pos;
 						Vec3 c[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
-						Vec3 colorSquares = vec3(0.7f);
+						Vec3 colorSquares = vec3(1);
 
 						Vec3 axis[3];
 						for(int i = 0; i < 3; i++) {
@@ -2060,59 +2045,106 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Rect r;
 			Vec2 p = rectTL(mr);
 
+			char* menuTitles[] = {"File", "Settings"};
+			char* menuTags[] = {"FileMenu", "SettingsMenu"};
+			float menuWidths[] = {ad->fontHeight * 7, ad->fontHeight * 11};
 
-			s = "File";
-			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
+			int menuCount = 2;
+			for(int i = 0; i < menuCount; i++) {
+				char* s = menuTitles[i];
+				r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
+				if(newGuiQuickPButton(gui, r, s, &tbs) || 
+				   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
 
-			if(newGuiQuickPButton(gui, r, s, &tbs) || 
-			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
+					gui->popupStackCount = 0;
 
-				gui->popupStackCount = 0;
+					PopupData pd = {};
+					pd.type = POPUP_TYPE_OTHER;
+					pd.id = newGuiCurrentId(gui);
+					strCpy(pd.name, menuTags[i]);
+					pd.p = rectBL(r);
+					pd.width = menuWidths[i];
+					pd.settings = gui->boxSettings;
+					pd.border = vec2(5,5);
+					pd.rSource = r;
 
-				PopupData pd = {};
-				pd.type = POPUP_TYPE_OTHER;
-				pd.id = newGuiCurrentId(gui);
-				strCpy(pd.name, "FileMenu");
-				pd.p = rectBL(r);
-				pd.width = ad->fontHeight * 7;
-				pd.settings = gui->boxSettings;
-				pd.border = vec2(5,5);
-				pd.rSource = r;
+					newGuiPopupPush(gui, pd);
 
-				newGuiPopupPush(gui, pd);
-
-				gui->menuId = newGuiCurrentId(gui);
-				gui->menuActive = true;
+					gui->menuId = newGuiCurrentId(gui);
+					gui->menuActive = true;
+				}
+				if(gui->menuActive && newGuiCurrentId(gui) == gui->menuId) {
+					newGuiQuickTextBox(gui, r, s, &tbsActive);
+				}
 			}
-			if(gui->menuActive && newGuiCurrentId(gui) == gui->menuId) {
-				newGuiQuickTextBox(gui, r, s, &tbsActive);
+
+			// @MenuButtons.
+			{
+				float buttonWidth = menuHeight;
+				float buttonOffset = ad->fontHeight*1;
+				float buttonMargin = buttonWidth * 0.4f;
+				float separatorWidth = padding*0.5f;
+				Vec4 cButtonActive = vec4(1,1);
+				Vec4 cButtonInactive = vec4(0.7f,1);
+				Vec4 cSeparator = gui->buttonSettings.boxSettings.borderColor;
+
+				p.x += buttonOffset;
+
+				EntityUI* eui = &ad->entityUI;
+
+				Rect r;
+				
+				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+				if(ad->tracerFinished) {
+					if(newGuiQuickButton(gui, r, "", &tbs)) {
+						openScreenshotDialog(&ad->dialogData);
+					}
+					rectExpand(&r, vec2(-buttonMargin));
+					drawRect(rectRound(r), cButtonActive, rect(0,0,1,1), getTexture(TEXTURE_SCREENSHOT_ICON)->id);
+				}
+
+				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+				if(newGuiQuickButton(gui, r, "", &tbs)) {
+					shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
+				}
+				rectExpand(&r, vec2(-buttonMargin));
+				drawRect(rectRound(r), cButtonActive, rect(0,0,1,1), getTexture(TEXTURE_FOLDER_ICON)->id);
+
+				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+				if(newGuiQuickButton(gui, r, "", &tbs)) {
+					ad->fitToScreen = !ad->fitToScreen;
+				}
+				rectExpand(&r, vec2(-buttonMargin));
+				drawRect(rectRound(r), ad->fitToScreen?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_FIT_TO_SCREEN_ICON)->id);
+
+				{
+					p.x += separatorWidth * 0.5f;
+					float x = roundFloat(p.x) + 0.5f;
+					float off = padding*0.2f;
+					drawLine(vec2(x, p.y - off), vec2(x, p.y-menuHeight + off), cSeparator);
+					p.x += separatorWidth * 0.5f;
+				}
+
+				// Local mode.
+				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+				if(newGuiQuickButton(gui, r, "", &tbs)) {
+					eui->localMode = !eui->localMode;
+				}
+				rectExpand(&r, vec2(-buttonMargin));
+				drawRect(rectRound(r), eui->localMode?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_ICON_ICON)->id);
+
+				// Selection mode.
+				for(int i = 0; i < ENTITYUI_MODE_SIZE; i++) {
+					r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+					if(newGuiQuickButton(gui, r, "", &tbs)) {
+						eui->selectionMode = i;
+					}
+					rectExpand(&r, vec2(-buttonMargin));
+					drawRect(rectRound(r), eui->selectionMode==i?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(TEXTURE_ICON_ICON)->id);
+				}
+
 			}
 
-			s = "Settings";
-			r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
-			if(newGuiQuickPButton(gui, r, s, &tbs) || 
-			   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
-
-				gui->popupStackCount = 0;
-
-				PopupData pd = {};
-				pd.type = POPUP_TYPE_OTHER;
-				pd.id = newGuiCurrentId(gui);
-				strCpy(pd.name, "SettingMenu");
-				pd.p = rectBL(r);
-				pd.width = ad->fontHeight * 11;
-				pd.settings = gui->boxSettings;
-				pd.border = vec2(5,5);
-				pd.rSource = r;
-
-				newGuiPopupPush(gui, pd);
-
-				gui->menuId = newGuiCurrentId(gui);
-				gui->menuActive = true;
-			}
-			if(gui->menuActive && newGuiCurrentId(gui) == gui->menuId) {
-				newGuiQuickTextBox(gui, r, s, &tbsActive);
-			}
 		}
 
 
@@ -2223,13 +2255,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
 					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
 
-					s = "FitToScreen";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, eh);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0)); 
-					quickRowNext(&qr);
-					newGuiQuickCheckBox(gui, quickRowNext(&qr), &ad->fitToScreen);
-
 					s = "TexDim";
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, 0);
@@ -2288,17 +2313,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), s2, vec2i(-1,0));
 					}
 					eh = elementHeight;
-
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, 0.0f, 0.0f);
-					if(newGuiQuickButton(gui, quickRowNext(&qr), "Screenshot")) {
-						if(!ad->activeProcessing && ad->buffer) {
-							openScreenshotDialog(&ad->dialogData);
-						}
-					}
-					if(newGuiQuickButton(gui, quickRowNext(&qr), "Open folder")) {
-						shellExecuteNoWindow(fillString("explorer.exe %s", Screenshot_Folder));
-					}
 
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2590,7 +2604,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float topBottomPadding = textSidePadding*0.4f;
 
 				float separatorHeight = eh*0.4f;
-				Vec4 cSeperator = gui->popupSettings.borderColor;
+				Vec4 cSeparator = gui->popupSettings.borderColor;
 
 
 				float elementCount;
@@ -2601,7 +2615,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					elementCount = 5;
 					separatorCount = 2;
 					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount;
-				} else if(strCompare(pd.name, "SettingMenu")) {
+				} else if(strCompare(pd.name, "SettingsMenu")) {
 					elementCount = 4;
 					separatorCount = 1;
 					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount + topBottomPadding*0.5f;
@@ -2626,7 +2640,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					float y = roundFloat(r.bottom) - 0.5f;
 					float off = textSidePadding*0.5f;
-					drawLine(vec2(lr.left + off, y), vec2(lr.right - off, y), cSeperator);
+					drawLine(vec2(lr.left + off, y), vec2(lr.right - off, y), cSeparator);
 				}
 
 				if(gui->popupSettings.borderColor.a) {
@@ -2677,7 +2691,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						{
 							p.y -= separatorHeight*0.5f;
 							Vec2 lp = vec2(p.x,roundFloat(p.y))+vec2(0,0.5f);
-							drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeperator);
+							drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeparator);
 							p.y -= separatorHeight*0.5f;
 						}
 
@@ -2698,7 +2712,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						{
 							p.y -= separatorHeight*0.5f;
 							Vec2 lp = vec2(p.x,roundFloat(p.y))-vec2(0,0.5f);
-							drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeperator);
+							drawLine(lp + vec2(textSidePadding*0.5f,0), lp + vec2(ew,0)  - vec2(textSidePadding*0.5f,0), cSeparator);
 							p.y -= separatorHeight*0.5f;
 						}
 
@@ -2711,7 +2725,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(close) gui->popupStackCount = 0;
 					}
 
-					if(strCompare(pd.name, "SettingMenu")) {
+					if(strCompare(pd.name, "SettingsMenu")) {
 						World* world = &ad->world;
 
 						p += vec2(textSidePadding, -topBottomPadding);

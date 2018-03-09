@@ -882,7 +882,7 @@ void loadScene(World* world, char* filePath) {
 
 
 void openSceneDialog(DialogData* dd, bool saveMode = false) {
-	dd->type = "Scene";
+	dd->type = "SceneDialog";
 
 	dd->saveMode = saveMode;
 	if(saveMode) {
@@ -899,7 +899,7 @@ void openSceneDialog(DialogData* dd, bool saveMode = false) {
 }
 
 void openScreenshotDialog(DialogData* dd) {
-	dd->type = "Screenshot";
+	dd->type = "ScreenshotDialog";
 
 	dd->saveMode = true;
 	strClear(dd->filePath);
