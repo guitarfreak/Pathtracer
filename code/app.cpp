@@ -1244,10 +1244,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
 
-			if(keyPressed(gui, input, KEYCODE_1)) eui->selectionMode = ENTITYUI_MODE_SELECTED;
-			if(keyPressed(gui, input, KEYCODE_2)) eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
-			if(keyPressed(gui, input, KEYCODE_3)) eui->selectionMode = ENTITYUI_MODE_ROTATION;
-			if(keyPressed(gui, input, KEYCODE_4)) eui->selectionMode = ENTITYUI_MODE_SCALE;
+			if(keyPressed(gui, input, KEYCODE_1)) eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
+			if(keyPressed(gui, input, KEYCODE_2)) eui->selectionMode = ENTITYUI_MODE_ROTATION;
+			if(keyPressed(gui, input, KEYCODE_3)) eui->selectionMode = ENTITYUI_MODE_SCALE;
 
 
 
@@ -2139,7 +2138,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			{
 				float buttonWidth = menuHeight;
 				float buttonOffset = ad->fontHeight*1;
-				float buttonMargin = buttonWidth * 0.4f;
+				float buttonMargin = buttonWidth * 0.3f;
 				float separatorWidth = padding*0.5f;
 				Vec4 cButtonActive = vec4(1,1);
 				Vec4 cButtonInactive = vec4(0.7f,1);
@@ -2199,13 +2198,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				// Selection mode.
 
+				char* icons[] = { "translationIcon.png", "rotationIcon.png", 
+								  "scalingIcon.png" };
+
 				for(int i = 0; i < ENTITYUI_MODE_SIZE; i++) {
 					r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
-					if(newGuiQuickPButton(gui, r, "", &tbs)) {
+
+					if(eui->selectionMode == i) newGuiIncrementId(gui);
+					else if(newGuiQuickPButton(gui, r, "", &tbs)) {
 						eui->selectionMode = i;
 					}
 					rectExpand(&r, vec2(-buttonMargin));
-					drawRect(rectRound(r), eui->selectionMode==i?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture("settingsIcon.png")->id);
+					drawRect(rectRound(r), eui->selectionMode==i?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(icons[i])->id);
 				}
 
 			}

@@ -703,8 +703,20 @@ void newGuiSetActive(NewGui* gui, int id, bool input, int focus = 0) {
 	}
 }
 
+bool newGuiFocusCanBeHot(NewGui* gui, int focus) {
+	Input* input = gui->input;
+	bool result = true;
+	switch(focus) {
+		case Gui_Focus_MLeft:   if(input->mouseButtonDown[0]) result = false; break;
+		case Gui_Focus_MRight:  if(input->mouseButtonDown[1]) result = false; break;
+		case Gui_Focus_MMiddle: if(input->mouseButtonDown[2]) result = false; break;
+	}
+
+	return result;
+}
+
 void newGuiSetHot(NewGui* gui, int id, float z, int focus = 0) {
-	if(!newGuiSomeoneActive(gui)) {
+	if(!newGuiSomeoneActive(gui) && newGuiFocusCanBeHot(gui, focus)) {
 		if(z > gui->contenderIdZ[focus]) {
 			gui->contenderId[focus] = id;
 			gui->contenderIdZ[focus] = z;
