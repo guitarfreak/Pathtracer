@@ -15,6 +15,7 @@
 #define allocaString(count) (char*)alloca(sizeof(char)*(count))
 
 #define zeroStruct(s, structType) zeroMemory(s, sizeof(structType));
+#define copyArray(dst, src, type, count) memCpy(dst, src, sizeof(type)*count);
 
 #define PVEC2(v) v.x, v.y
 #define PVEC3(v) v.x, v.y, v.z
@@ -96,7 +97,7 @@ void freeAndSetNullSave(void* data) {
 
 #define reallocArraySave(type, ptr, count) \
 	freeAndSetNullSave(ptr);               \
-	ptr = mallocArray(type, count);
+	ptr = mallocArray(type, (count));
 
 #define reallocStructSave(type, ptr) \
 	freeAndSetNullSave(ptr);         \
@@ -104,7 +105,7 @@ void freeAndSetNullSave(void* data) {
 
 #define reallocStringSave(ptr, count) \
 	freeAndSetNullSave(ptr);          \
-	ptr = mallocString(count);
+	ptr = mallocString((count));
 
 void freeZero(void* data) {
 	if(data) {

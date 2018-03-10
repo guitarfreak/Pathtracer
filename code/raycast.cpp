@@ -213,9 +213,6 @@ struct World {
 	int objectCount;
 	int objectCountMax;
 
-	Light* lights;
-	int lightCount;
-
 	float ambientRatio;
 	Vec3 ambientColor;
 
@@ -224,57 +221,6 @@ struct World {
 	Vec3 globalLightDir;
 	Vec3 globalLightColor;
 };
-
-
-
-
-Object defaultObject() {
-	Material m = {};
-	m.emitColor = vec3(0,0,0);
-	m.reflectionMod = 0.5f;
-
-	Object obj = {};
-	obj.pos = vec3(0,0,0);
-	obj.rot = quat();
-	obj.dim = vec3(2.5f);
-	obj.color = vec3(0.5f,0.5f,0.5f);
-	obj.material = m;
-	obj.geometry.type = GEOM_TYPE_SPHERE;
-	geometryBoundingSphere(&obj);
-	
-	return obj;
-}
-
-void deleteObject(Object* objects, int* objectCount, int* selected) {
-	objects[(*selected)-1] = objects[(*objectCount)-1];
-	(*objectCount)--;
-
-	if((*objectCount) > 0) {
-		(*selected) = mod((*selected)-1, (*objectCount));
-		(*selected)++;
-	} else {
-		(*selected) = 0;
-	}
-}
-
-int insertObject(World* world, Object obj, bool keepPosition = false) {
-	float spawnDistance = 30;
-	Camera* cam = &world->camera;
-
-	if(!keepPosition) {
-		obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
-	}
-
-	if(world->objectCount >= world->objectCountMax) {
-		world->objectCountMax *= 2;
-		reallocArraySave(Object, world->objects, world->objectCountMax);
-	}
-
-	world->objects[world->objectCount++] = obj;
-
-	return world->objectCount;
-}
-
 
 
 
@@ -651,27 +597,10 @@ void getDefaultScene(World* world) {
 	// world->defaultEmitColor = vec3(1.0f);
 	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
 	world->globalLightColor = vec3(1,1,1);
-	// world->globalLightColor = vec3(0.0f);
-
-
-	world->lightCount = 0;
-	reallocArraySave(Light, world->lights, 10);
-
-	Light l;
-
-	l = {};
-	l.type = LIGHT_TYPE_DIRECTION;
-	l.pos = normVec3(vec3(-1.5f,-1,-2.0f));
-	// l.diffuseColor = vec3(0.9,0,0);
-	l.diffuseColor = vec3(0.9f);
-	l.specularColor = vec3(1.0f);
-	l.brightness = 1.0f;
-	world->lights[world->lightCount++] = l;
 
 	world->objectCountMax = 100;
 	world->objectCount = 0;
 	reallocArraySave(Object, world->objects, world->objectCountMax);
-
 
 	Material materials[10] = {};
 	materials[0].emitColor = vec3(0,0,0);
@@ -837,7 +766,6 @@ void saveScene(World* world, char* filePath) {
 		fwrite(world, sizeof(World), 1, file);
 
 		fwrite(world->objects, sizeof(Object)*world->objectCount, 1, file);
-		fwrite(world->lights, sizeof(Light)*world->lightCount, 1, file);
 	}
 
 	fclose(file);
@@ -848,18 +776,69 @@ void loadScene(World* world, char* filePath) {
 
 	if(file) {
 		freeAndSetNullSave(world->objects);
-		freeAndSetNullSave(world->lights);
 
 		fread(world, sizeof(World), 1, file);
 
 		world->objects = mallocArray(Object, world->objectCountMax);
 		fread(world->objects, sizeof(Object)*world->objectCount, 1, file);
-
-		world->lights = mallocArray(Light, world->lightCount);
-		fread(world->lights, sizeof(Object)*world->lightCount, 1, file);
 	}
 
 	fclose(file);
+}
+
+
+
+
+Object defaultObject() {
+	Material m = {};
+	m.emitColor = vec3(0,0,0);
+	m.reflectionMod = 0.5f;
+
+	Object obj = {};
+	obj.pos = vec3(0,0,0);
+	obj.rot = quat();
+	obj.dim = vec3(3);
+	obj.color = vec3(0.5f,0.5f,0.5f);
+	obj.material = m;
+	obj.geometry.type = GEOM_TYPE_SPHERE;
+	geometryBoundingSphere(&obj);
+	
+	return obj;
+}
+
+void deleteObject(Object* objects, int* objectCount, int* selected, int* selectionState, bool switchSelected = true) {
+	objects[(*selected)-1] = objects[(*objectCount)-1];
+	(*objectCount)--;
+
+	if((*objectCount) > 0 && switchSelected) {
+		// (*selected) = mod((*selected)-1, (*objectCount));
+		// (*selected)++;
+	} else {
+		(*selected) = 0;
+		*selectionState = ENTITYUI_INACTIVE;
+	}
+}
+
+int insertObject(World* world, Object obj, bool keepPosition = false) {
+	Camera* cam = &world->camera;
+	float spawnDistance = cam->dim.w*2;
+
+	if(!keepPosition) {
+		obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
+	}
+
+	if(world->objectCount >= world->objectCountMax) {
+		world->objectCountMax *= 2;
+		Object* newObjects = mallocArray(Object, world->objectCountMax);
+		memCpy(newObjects, world->objects, sizeof(Object)*world->objectCount);
+
+		free(world->objects);
+		world->objects = newObjects;
+	}
+
+	world->objects[world->objectCount++] = obj;
+
+	return world->objectCount;
 }
 
 

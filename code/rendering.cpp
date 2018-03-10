@@ -414,8 +414,24 @@ uint checkStatusFrameBuffer(int id) {
 // Data.
 //
 
+#pragma pack(push,1)
+struct MeshVertex {
+	Vec3 p;
+	Vec3 n;
+};
+#pragma pack(pop)
+
+struct Mesh {
+	MeshVertex* vertices;
+	int vertexCount;
+};
+
 struct GraphicsState {
 	bool useSRGB;
+
+	Mesh* meshes;
+	int meshCount;
+	int meshCountMax;
 
 	Texture* textures;
 	int textureCount;
@@ -1184,25 +1200,61 @@ void drawCircle(Vec2 pos, float r, Vec4 color) {
 
 // 3D
 
-void drawLine(Vec3 p0, Vec3 p1, Vec4 color) {
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	Vec4 c = COLOR_SRGB(color);
-	glColor4f(c.r, c.g, c.b, c.a);
-	glBegin(GL_LINES);
-		glVertex3f(p0.x, p0.y, p0.z);
-		glVertex3f(p1.x, p1.y, p1.z);
-	glEnd();
-}
-
 Vec3 boxVertices[] = {
-	vec3(-0.5f, 0.5f,-0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3(-0.5f,-0.5f, 0.5f), vec3(-0.5f,-0.5f,-0.5f), 
-	vec3( 0.5f,-0.5f,-0.5f), vec3( 0.5f,-0.5f, 0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3( 0.5f, 0.5f,-0.5f), 
-	vec3(-0.5f,-0.5f,-0.5f), vec3(-0.5f,-0.5f, 0.5f), vec3( 0.5f,-0.5f, 0.5f), vec3( 0.5f,-0.5f,-0.5f), 
-	vec3( 0.5f, 0.5f,-0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3(-0.5f, 0.5f,-0.5f), 
-	vec3(-0.5f, 0.5f,-0.5f), vec3(-0.5f,-0.5f,-0.5f), vec3( 0.5f,-0.5f,-0.5f), vec3( 0.5f, 0.5f,-0.5f), 
-	vec3(-0.5f,-0.5f, 0.5f), vec3(-0.5f, 0.5f, 0.5f), vec3( 0.5f, 0.5f, 0.5f), vec3( 0.5f,-0.5f, 0.5f), 
+	vec3(-0.5f, 0.5f,-0.5f), 
+	vec3(-0.5f, 0.5f, 0.5f), 
+	vec3(-0.5f,-0.5f, 0.5f), 
+	vec3(-0.5f,-0.5f,-0.5f), 
+	vec3(-1,0,0),
+	
+	vec3( 0.5f,-0.5f,-0.5f), 
+	vec3( 0.5f,-0.5f, 0.5f), 
+	vec3( 0.5f, 0.5f, 0.5f), 
+	vec3( 0.5f, 0.5f,-0.5f), 
+	vec3(1,0,0),
+	
+	vec3(-0.5f,-0.5f,-0.5f), 
+	vec3(-0.5f,-0.5f, 0.5f), 
+	vec3( 0.5f,-0.5f, 0.5f), 
+	vec3( 0.5f,-0.5f,-0.5f), 
+	vec3(0,-1,0),
+	
+	vec3( 0.5f, 0.5f,-0.5f), 
+	vec3( 0.5f, 0.5f, 0.5f), 
+	vec3(-0.5f, 0.5f, 0.5f), 
+	vec3(-0.5f, 0.5f,-0.5f), 
+	vec3(0,1,0),
+	
+	vec3(-0.5f, 0.5f,-0.5f), 
+	vec3(-0.5f,-0.5f,-0.5f), 
+	vec3( 0.5f,-0.5f,-0.5f), 
+	vec3( 0.5f, 0.5f,-0.5f), 
+	vec3(0,0,-1),
+	
+	vec3(-0.5f,-0.5f, 0.5f), 
+	vec3(-0.5f, 0.5f, 0.5f), 
+	vec3( 0.5f, 0.5f, 0.5f), 
+	vec3( 0.5f,-0.5f, 0.5f), 
+	vec3(0,0,1),
 };
+
+void triangleSubDivVertex(MeshVertex* vertices, int* count, Vec3 a, Vec3 b, Vec3 c, int divIndex) {
+	if(divIndex == 0) {
+		Vec3 n = normVec3(a+b+c);
+		vertices[(*count)] = { a, n }; (*count) += 1;
+		vertices[(*count)] = { b, n }; (*count) += 1;
+		vertices[(*count)] = { c, n }; (*count) += 1;
+	} else {
+		Vec3 ab = normVec3((a+b)/2.0f);
+		Vec3 bc = normVec3((b+c)/2.0f);
+		Vec3 ca = normVec3((c+a)/2.0f);
+
+		triangleSubDivVertex(vertices, count, a,ab,ca,  divIndex-1);
+		triangleSubDivVertex(vertices, count, b,bc,ab,  divIndex-1);
+		triangleSubDivVertex(vertices, count, c,ca,bc,  divIndex-1);
+		triangleSubDivVertex(vertices, count, ab,bc,ca, divIndex-1);
+	}
+}
 
 Vec3 sphereVertices[] = {
 	vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  
@@ -1214,7 +1266,6 @@ Vec3 sphereVertices[] = {
 	vec3(0,0,-1), vec3(-1,0,0), vec3(0,-1,0), 
 	vec3(0,0,-1), vec3(0,-1,0), vec3(1,0,0),  
 };
-
 
 inline void pushTriangle(Vec3 v0, Vec3 v1, Vec3 v2) {
 	glVertex3f(v0.x, v0.y, v0.z);
@@ -1236,6 +1287,17 @@ inline void pushQuadAsTriangles(Vec3 v0, Vec3 v1, Vec3 v2, Vec3 v3) {
 	glVertex3f(v2.x, v2.y, v2.z);
 	glVertex3f(v3.x, v3.y, v3.z);
 	glVertex3f(v0.x, v0.y, v0.z);
+}
+
+void drawLine(Vec3 p0, Vec3 p1, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	glBegin(GL_LINES);
+		glVertex3f(p0.x, p0.y, p0.z);
+		glVertex3f(p1.x, p1.y, p1.z);
+	glEnd();
 }
 
 void drawPlane(Vec3 pos, Vec3 normal, Vec3 up, Vec2 dim, Vec4 color) {
@@ -1280,15 +1342,22 @@ void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
 	glPushMatrix();
 	glTranslatef(pos.x, pos.y, pos.z);
 	glScalef(dim.x, dim.y, dim.z);
-	glBegin(GL_QUADS);
-		int i = 0;
-		glNormal3f(-1,0,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(1,0,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,-1,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,1,0); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,0,-1); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,0,1); pushQuad(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-	glEnd();
+
+
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_CUBE];
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
+
+	glEnableClientState(GL_NORMAL_ARRAY);
+	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
+
+	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
+
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_NORMAL_ARRAY);
+
+
 	glPopMatrix();
 }
 
@@ -1360,52 +1429,54 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 	glTranslatef(pos.x, pos.y, pos.z);
 	glScalef(r, r, r);
 
-	int i = 0;
-	int div = 3;
-	glBegin(GL_TRIANGLES);
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	glEnd();
-	glPopMatrix();
+
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_SPHERE];
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
+
+	glEnableClientState(GL_NORMAL_ARRAY);
+	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
+
+	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
+
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_NORMAL_ARRAY);
 }
-
-
 
 void drawSphereRaw() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	int i = 0;
-	int div = 3;
-	glBegin(GL_TRIANGLES);
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	drawTriangleSubDiv(sphereVertices[i], sphereVertices[i+1], sphereVertices[i+2], div); i += 3;
-	glEnd();
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_SPHERE];
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
+
+	glEnableClientState(GL_NORMAL_ARRAY);
+	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
+
+	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
+
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_NORMAL_ARRAY);
 }
 
 void drawBoxRaw() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	glBegin(GL_TRIANGLES);
-		int i = 0;
-		glNormal3f(-1,0,0); pushQuadAsTriangles(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(1,0,0); pushQuadAsTriangles(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,-1,0); pushQuadAsTriangles(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,1,0); pushQuadAsTriangles(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,0,-1); pushQuadAsTriangles(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-		glNormal3f(0,0,1); pushQuadAsTriangles(boxVertices[i+0], boxVertices[i+1], boxVertices[i+2], boxVertices[i+3]); i+= 4;
-	glEnd();
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_CUBE];
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
+
+	glEnableClientState(GL_NORMAL_ARRAY);
+	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
+
+	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
+	// glDrawArrays(GL_QUADS, 0, 24);
+
+	glDisableClientState(GL_VERTEX_ARRAY);
+	glDisableClientState(GL_NORMAL_ARRAY);
 }
 
 // Bad beans.

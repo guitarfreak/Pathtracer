@@ -43,27 +43,17 @@
 
 //
 
-// enum TextureId {
-// 	// TEXTURE_RECT,
-// 	// TEXTURE_CIRCLE,
-// 	// TEXTURE_TEST,
-// 	// TEXTURE_WHITE = 0,
-// 	TEXTURE_ROUNDED_SQUARE = 0,
-// 	TEXTURE_SCREENSHOT_ICON,
-// 	TEXTURE_FOLDER_ICON,
-// 	TEXTURE_ICON_ICON,
-// 	TEXTURE_FIT_TO_SCREEN_ICON,
-// 	TEXTURE_LOCAL_GLOBAL_ICON,
-// 	TEXTURE_SIZE,
-// };
-
-
-//
-
 enum SamplerType {
 	SAMPLER_NORMAL = 0,
 	SAMPLER_NEAREST,
 	SAMPLER_SIZE,
+};
+
+enum MeshType {
+	MESH_CUBE = 0,
+	MESH_SPHERE,
+
+	MESH_SIZE,
 };
 
 //

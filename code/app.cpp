@@ -19,11 +19,14 @@
 	- Cleanup.
 
 	- Shortest distance to camera for widgets.
+	- Print out every sample coord to see if there is a loss of information.
+	- DArray.
 
 	Done Today: 
 
 	Bugs:
 	- Windows key slow sometimes.
+	- Memory leak? Flashing when drawing scene in opengl.
 
 =================================================================================
 */
@@ -288,6 +291,55 @@ extern "C" APPMAINFUNCTION(appMain) {
 		uint vao = 0;
 		glCreateVertexArrays(1, &vao);
 		glBindVertexArray(vao);
+
+		gs->meshCountMax = 10;
+		gs->meshes = getPArray(Mesh, gs->meshCountMax);
+		gs->meshCount = 0;
+
+		MeshVertex* buffer = getTArray(MeshVertex, 500);
+
+		// Box.
+		{
+			int count = 0;
+
+			for(int i = 0; i < arrayCount(boxVertices); i += 5) {
+				buffer[count++] = { boxVertices[i+0], boxVertices[i+4] };
+				buffer[count++] = { boxVertices[i+1], boxVertices[i+4] };
+				buffer[count++] = { boxVertices[i+2], boxVertices[i+4] };
+				buffer[count++] = { boxVertices[i+2], boxVertices[i+4] };
+				buffer[count++] = { boxVertices[i+3], boxVertices[i+4] };
+				buffer[count++] = { boxVertices[i+0], boxVertices[i+4] };
+			}
+
+			Mesh m = {};
+			m.vertices = getPArray(MeshVertex, count);
+			copyArray(m.vertices, buffer, MeshVertex, count);
+			m.vertexCount = count;
+
+			gs->meshes[gs->meshCount++] = m;
+		}
+
+		// Sphere.
+		{
+			int count = 0;
+			int div = 4;
+
+			triangleSubDivVertex(buffer, &count, vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div );
+			triangleSubDivVertex(buffer, &count, vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div );
+			triangleSubDivVertex(buffer, &count, vec3(0,0,1),  vec3(0,-1,0), vec3(-1,0,0), div );
+			triangleSubDivVertex(buffer, &count, vec3(0,0,1),  vec3(1,0,0),  vec3(0,-1,0), div );
+			triangleSubDivVertex(buffer, &count, vec3(0,0,-1), vec3(1,0,0),  vec3(0,1,0),  div );
+			triangleSubDivVertex(buffer, &count, vec3(0,0,-1), vec3(0,1,0),  vec3(-1,0,0), div );
+			triangleSubDivVertex(buffer, &count, vec3(0,0,-1), vec3(-1,0,0), vec3(0,-1,0), div );
+			triangleSubDivVertex(buffer, &count, vec3(0,0,-1), vec3(0,-1,0), vec3(1,0,0),  div );
+
+			Mesh m = {};
+			m.vertices = getPArray(MeshVertex, count);
+			copyArray(m.vertices, buffer, MeshVertex, count);
+			m.vertexCount = count;
+
+			gs->meshes[gs->meshCount++] = m;
+		}
 
 		// 
 		// Samplers.
@@ -1160,7 +1212,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(eui->selectedObject) {
 				// Delete.
 				if(keyPressed(gui, input, KEYCODE_DEL)) {
-					deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
+					deleteObject(world->objects, &world->objectCount, &eui->selectedObject, &eui->selectionState, false);
 				}
 
 				// Copy.
@@ -1172,7 +1224,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X)) {
 					// Copy and delete.
 					eui->objectCopy = world->objects[eui->selectedObject-1];
-					deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
+					deleteObject(world->objects, &world->objectCount, &eui->selectedObject, &eui->selectionState, false);
 				}
 			}
 
@@ -1185,7 +1237,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
 				int id = insertObject(&ad->world, eui->objectCopy, true);
-				if(eui->selectedObject) eui->selectedObject = id;
+				if(id) {
+					eui->selectedObject = id;
+				}
 			}
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
@@ -1408,15 +1462,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 		rowToColumn(&temp);
 		glLoadMatrixf(temp.e);
 
-		Vec4 lp = vec4(-world->lights[0].dir, 0);
-		glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
+		Light light;
+		light.type = LIGHT_TYPE_DIRECTION;
+		light.pos = normVec3(vec3(-1.5f,-1,-2.0f));
+		// light.diffuseColor = vec3(0.9,0,0);
+		light.diffuseColor = vec3(0.9f);
+		light.specularColor = vec3(1.0f);
+		light.brightness = 1.0f;
+
+			Vec4 lp = vec4(-light.dir, 0);
+			glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
 
 		// Vec4 lightAmbientColor = vec4(world->defaultEmitColor,1);
 		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbientColor.e);
 
 		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
-		Vec4 lightDiffuseColor = vec4(world->lights[0].diffuseColor,1);
-		glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
+			Vec4 lightDiffuseColor = vec4(light.diffuseColor,1);
+			glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
 
 		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
 		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
@@ -2519,6 +2581,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
 						if(newGuiQuickComboBox(gui, quickRowNext(&qr), &geom->type, geometryTypeStrings, arrayCount(geometryTypeStrings))) {
+
+							if(geom->type == GEOM_TYPE_SPHERE) {
+								obj->dim = vec3(max(obj->dim.x, obj->dim.y, obj->dim.z));
+							}
 							geometryBoundingSphere(obj);
 						}
 
@@ -2568,7 +2634,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							eui->objectCopy = world->objects[eui->selectedObject-1];
 						}
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
-							deleteObject(world->objects, &world->objectCount, &eui->selectedObject);
+							deleteObject(world->objects, &world->objectCount, &eui->selectedObject, &eui->selectionState);
 						}
 
 					}
