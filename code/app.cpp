@@ -2,27 +2,26 @@
 =================================================================================
 
 	ToDo:
-	- More Shapes.
-	- Simd.
-	- Ui.
-	- Entity editor.
-	- More advanced rendering techniques.
-	- Put input updating in own thread.
-	- Float not precise enough at hundreds of samples per pixel?!
-
 	- Depth of field.
-	- Reflection.
 	- Refraction.
-	
-	- Multiple selection.
+	- More advanced lighting function
+	- Clean global light and multiple lights
+	- Multiple selection
 	- Revert.
-	- Cleanup.
+	- Color picker.
+	- Clearn up ui.
+	- Have cam independent, mini window.
+	- Ellipses.
+	- Spacial data structure to speed up processing.
+	- Converge method on sampling for speed up.
+	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
+	- Clean up repetitive gui code. (Layout.)
 
-	- Shortest distance to camera for widgets.
-	- Print out every sample coord to see if there is a loss of information.
+	- Simd.
+	- Float not precise enough at hundreds of samples per pixel?!
+		- Print out every sample coord to see if there is a loss of information.
+
 	- DArray.
-
-	Done Today: 
 
 	Bugs:
 	- Windows key slow sometimes.
