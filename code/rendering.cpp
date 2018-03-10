@@ -1403,23 +1403,6 @@ void drawRing(Vec3 pos, Vec3 normal, float r, float thickness, Vec4 color) {
 	glEnd();
 }
 
-void drawTriangleSubDiv(Vec3 a, Vec3 b, Vec3 c, int divIndex) {
-	if(divIndex == 0) {
-		Vec3 n = normVec3(a+b+c);
-		glNormal3f(n.x, n.y, n.z);
-		pushTriangle(a,b,c);
-	} else {
-		Vec3 ab = normVec3((a+b)/2.0f);
-		Vec3 bc = normVec3((b+c)/2.0f);
-		Vec3 ca = normVec3((c+a)/2.0f);
-
-		drawTriangleSubDiv(a,ab,ca,  divIndex-1);
-		drawTriangleSubDiv(b,bc,ab,  divIndex-1);
-		drawTriangleSubDiv(c,ca,bc,  divIndex-1);
-		drawTriangleSubDiv(ab,bc,ca, divIndex-1);
-	}
-}
-
 void drawSphere(Vec3 pos, float r, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 	Vec4 c = COLOR_SRGB(color);
@@ -1428,7 +1411,6 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 	glPushMatrix();
 	glTranslatef(pos.x, pos.y, pos.z);
 	glScalef(r, r, r);
-
 
 	Mesh* mesh = &globalGraphicsState->meshes[MESH_SPHERE];
 
@@ -1442,6 +1424,8 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 
 	glDisableClientState(GL_VERTEX_ARRAY);
 	glDisableClientState(GL_NORMAL_ARRAY);
+
+	glPopMatrix();
 }
 
 void drawSphereRaw() {
