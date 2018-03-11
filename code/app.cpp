@@ -17,11 +17,8 @@
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Clean up repetitive gui code. (Layout.)
 
-	- Simd.
-	- Float not precise enough at hundreds of samples per pixel?!
-		- Print out every sample coord to see if there is a loss of information.
-
 	- DArray.
+	- Simd.
 
 	Bugs:
 	- Windows key slow sometimes.
@@ -521,7 +518,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 	}
-
 
 	// @AppStart.
 

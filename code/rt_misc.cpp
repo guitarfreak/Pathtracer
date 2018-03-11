@@ -1250,3 +1250,41 @@ inline float randomFloatPCG(float from, float to, float precision /* eg.: 0.01f*
 }
 
 //
+
+template <typename T>
+struct DArray {
+	T* data = 0;
+	int count = 0;
+	int reserved = 0;
+	int startSize = 2;
+
+	void resize(int newCount) {
+		int reservedCount = max(startSize, count);
+		while(reservedCount < newCount) reservedCount *= 2;
+
+		T* newData = mallocArray(T, reservedCount);
+		copyArray(newData, data, T, count);
+
+		if(data) free(data);
+		data = newData;
+		reserved = reservedCount;
+	}
+
+	void insert(T element) {
+		if(count == reserved) resize(count+1);
+
+		data[count++] = element;
+	}
+
+	void insert(T* elements, int n) {
+		if(count+n-1 >= reserved) resize(count+n);
+
+		copyArray(data+count, elements, T, n);
+		count += n;
+	}
+
+	void remove() { count--; }
+	void remove(int i) { data[i] = data[--count]; }
+	T operator[](int i) { return data[i]; }
+	T* operator+(int i) { return data + i; }
+};
