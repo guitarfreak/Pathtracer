@@ -1384,7 +1384,29 @@ void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSett
 	scissorTestScreen(getRectScissor(br, scissor));
 
 	char* text = type == SLIDER_TYPE_FLOAT ? fillString("%f", *((float*)val)) : fillString("%i", *((int*)val)) ;
-	drawText(text, rectCen(br), vec2i(0,0), *textSettings);
+	// drawText(text, rectCen(br), vec2i(0,0), *textSettings);
+
+
+	// Position text outside of slider rect.
+	Vec2 tp = rectCen(br);
+	{
+		float off = settings.heightOffset;
+		Vec2 dim = getTextDim(text, textSettings->font);
+		float l = tp.x - dim.w/2 - off;
+		float r = tp.x + dim.w/2 + off;
+		if(sr.right < l || sr.left > r) {
+			// Text fits in middle.
+			drawText(text, rectCen(br), vec2i(0,0), *textSettings);
+		} else {
+			if(rectCen(sr).x < rectCen(br).x) {
+				drawText(text, rectR(sr) + vec2(off,0), vec2i(-1,0), *textSettings);
+			} else {
+				drawText(text, rectL(sr) - vec2(off,0), vec2i(1,0), *textSettings);
+			}
+		}
+	}
+
+	// drawText(text, rectCen(br), vec2i(0,0), *textSettings);
 }
 void drawSlider(float val, Rect br, Rect sr, Rect scissor, SliderSettings settings) {
 	return drawSlider(&val, SLIDER_TYPE_FLOAT, br, sr, scissor, settings);
@@ -2361,7 +2383,8 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 			Font* font = gui->textSettings.font;
 			float fontHeight = font->height;
 			float padding = gui->comboBoxSettings.sideAlignPadding;
-			float topBottomPadding = padding*0.3f;
+			// float topBottomPadding = padding*0.3f;
+			float topBottomPadding = 0;
 
 			float eh = fontHeight * 1.2f;
 
@@ -2377,7 +2400,7 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 			clampMin(&maxWidth, POPUP_MIN_WIDTH);
 
 			float popupWidth = max(maxWidth, rectW(pd.r));
-			float popupHeight = eh * cData.count + border*2 + topBottomPadding*2;
+			float popupHeight = eh * cData.count + border*2 + topBottomPadding*2 + 1;
 
 			Rect r = rectTDim(rectT(pd.r)-vec2(0,comboboxPopupTopOffset), vec2(popupWidth, popupHeight));
 

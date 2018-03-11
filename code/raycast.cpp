@@ -209,9 +209,11 @@ char* sampleModeStrings[] = {
 struct World {
 	Camera camera;
 
-	Object* objects;
-	int objectCount;
-	int objectCountMax;
+	DArray<Object> objects;
+
+	// Object* objects;
+	// int objectCount;
+	// int objectCountMax;
 
 	float ambientRatio;
 	Vec3 ambientColor;
@@ -377,7 +379,7 @@ void processPixelsThreaded(void* data) {
 						startTimer(3);
 
 						float minDistance = FLT_MAX;
-						for(int i = 0; i < world.objectCount; i++) {
+						for(int i = 0; i < world.objects.count; i++) {
 							if(lastObjectIndex == i) continue;
 
 							Object* obj = world.objects + i;
@@ -519,12 +521,12 @@ void processPixelsThreaded(void* data) {
 }
 
 // @Duplication with processPixels.
-int castRay(Vec3 rayPos, Vec3 rayDir, Object* objects, int objectCount) {
+int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects) {
 
 	int objectIndex = -1;
 
 	float minDistance = FLT_MAX;
-	for(int i = 0; i < objectCount; i++) {
+	for(int i = 0; i < objects.count; i++) {
 		Object* obj = objects + i;
 		Geometry* g = &obj->geometry;
 
@@ -598,9 +600,7 @@ void getDefaultScene(World* world) {
 	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
 	world->globalLightColor = vec3(1,1,1);
 
-	world->objectCountMax = 100;
-	world->objectCount = 0;
-	reallocArraySave(Object, world->objects, world->objectCountMax);
+	world->objects.init();
 
 	Material materials[10] = {};
 	materials[0].emitColor = vec3(0,0,0);
@@ -620,7 +620,7 @@ void getDefaultScene(World* world) {
 	obj.material = materials[0];
 	obj.geometry.type = GEOM_TYPE_BOX;
 	obj.dim = vec3(50, 50, 0.01f);
-	world->objects[world->objectCount++] = obj;
+	world->objects.insert(obj);
 
 	// Sphere.
 
@@ -631,11 +631,11 @@ void getDefaultScene(World* world) {
 	obj.material = materials[1];
 	obj.dim = vec3(2.5f);
 	obj.geometry.type = GEOM_TYPE_SPHERE;
-	world->objects[world->objectCount++] = obj;
+	world->objects.insert(obj);
 	
 	// Calc bounding spheres.
-	for(int i = 0; i < world->objectCount; i++) {
-		geometryBoundingSphere(&world->objects[i]);
+	for(int i = 0; i < world->objects.count; i++) {
+		geometryBoundingSphere(world->objects + i);
 	}
 }
 
@@ -765,7 +765,7 @@ void saveScene(World* world, char* filePath) {
 	if(file) {
 		fwrite(world, sizeof(World), 1, file);
 
-		fwrite(world->objects, sizeof(Object)*world->objectCount, 1, file);
+		fwrite(world->objects.data, sizeof(Object)*world->objects.count, 1, file);
 	}
 
 	fclose(file);
@@ -775,12 +775,13 @@ void loadScene(World* world, char* filePath) {
 	FILE* file = fopen(filePath, "rb");
 
 	if(file) {
-		freeAndSetNullSave(world->objects);
-
+		DArray<Object> oldObjects = world->objects;
 		fread(world, sizeof(World), 1, file);
 
-		world->objects = mallocArray(Object, world->objectCountMax);
-		fread(world->objects, sizeof(Object)*world->objectCount, 1, file);
+		oldObjects.freeResize(world->objects.count);
+		oldObjects.count = world->objects.count;
+		fread(oldObjects.data, sizeof(Object)*world->objects.count, 1, file);
+		world->objects = oldObjects;
 	}
 
 	fclose(file);
@@ -806,11 +807,10 @@ Object defaultObject() {
 	return obj;
 }
 
-void deleteObject(Object* objects, int* objectCount, int* selected, int* selectionState, bool switchSelected = true) {
-	objects[(*selected)-1] = objects[(*objectCount)-1];
-	(*objectCount)--;
+void deleteObject(DArray<Object>* objects, int* selected, int* selectionState, bool switchSelected = true) {
+	objects->remove((*selected)-1);
 
-	if((*objectCount) > 0 && switchSelected) {
+	if(objects->count > 0 && switchSelected) {
 		// (*selected) = mod((*selected)-1, (*objectCount));
 		// (*selected)++;
 	} else {
@@ -827,18 +827,9 @@ int insertObject(World* world, Object obj, bool keepPosition = false) {
 		obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
 	}
 
-	if(world->objectCount >= world->objectCountMax) {
-		world->objectCountMax *= 2;
-		Object* newObjects = mallocArray(Object, world->objectCountMax);
-		memCpy(newObjects, world->objects, sizeof(Object)*world->objectCount);
+	world->objects.insert(obj);
 
-		free(world->objects);
-		world->objects = newObjects;
-	}
-
-	world->objects[world->objectCount++] = obj;
-
-	return world->objectCount;
+	return world->objects.count;
 }
 
 

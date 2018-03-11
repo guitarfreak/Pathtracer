@@ -1256,11 +1256,22 @@ struct DArray {
 	T* data = 0;
 	int count = 0;
 	int reserved = 0;
-	int startSize = 2;
+	int startSize = 100;
+
+	void init() {
+		*this = {};
+		startSize = 100;
+	}
+
+	int getReservedCount(int newCount) {
+		int reservedCount = max(startSize, reserved);
+		while(reservedCount < newCount) reservedCount *= 2;
+
+		return reservedCount;
+	}
 
 	void resize(int newCount) {
-		int reservedCount = max(startSize, count);
-		while(reservedCount < newCount) reservedCount *= 2;
+		int reservedCount = getReservedCount(newCount);
 
 		T* newData = mallocArray(T, reservedCount);
 		copyArray(newData, data, T, count);
@@ -1268,6 +1279,31 @@ struct DArray {
 		if(data) free(data);
 		data = newData;
 		reserved = reservedCount;
+	}
+
+	void copy(T* d, int n) {
+		count = 0;
+		if(n > reserved) resize(n);
+		copyArray(data, d, T, n);
+		count = n;
+	}
+
+	void dealloc() {
+		if(data) {
+			free(data);
+			count = 0;
+			data = 0;
+			reserved = 0;
+		}
+	}
+
+	void freeResize(int n) {
+		dealloc();
+		resize(n);
+	}
+
+	void clear() {
+		count = 0;
 	}
 
 	void insert(T element) {
@@ -1287,4 +1323,5 @@ struct DArray {
 	void remove(int i) { data[i] = data[--count]; }
 	T operator[](int i) { return data[i]; }
 	T* operator+(int i) { return data + i; }
+	T* at(int i) { return data + i; }
 };

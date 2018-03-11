@@ -691,7 +691,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		sd->buttonMargin = 3;
 		sd->cornerGrabSize = 20;
 
-		Vec4 cBorder = vec4(0,1);
+		Vec4 cBorder = vec4(0.21f,1);
 
 		// Vec3 cTitleBarFocusedLeft     = vec3(0.03f,0.7f,0.25f);
 		// Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.03f,-0.1f,0.1f);
@@ -716,8 +716,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec4 cButton0 = vec4(cButtons,1);
 		Vec4 cButton1 = vec4(cButtons,1);
 		Vec4 cButton2 = vec4(cButtons,1);
-
-		Vec4 cButtonOutline = cBorder;
 
 		Vec4 cText = vec4(0.9f,1);
 		if(!ws->windowHasFocus) cText = vec4(0.5f,1);
@@ -808,6 +806,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		scissorState(true);
 		setClientScissor(ws, rect(0,0,res.w,res.h));
+
+		glDisable(GL_DEPTH_TEST);
+		drawRect(rectCenDim(0,0,100000,100000), vec4(0.15f,1));
+		glEnable(GL_DEPTH_TEST);
 	}
 
 	#if 1
@@ -1188,7 +1190,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
-				int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects, ad->world.objectCount);
+				int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects);
 				if(objectIndex != -1) {
 					eui->selectedObject = objectIndex+1;
 					eui->selectionAnimState = 0;
@@ -1207,7 +1209,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(eui->selectedObject) {
 				// Delete.
 				if(keyPressed(gui, input, KEYCODE_DEL)) {
-					deleteObject(world->objects, &world->objectCount, &eui->selectedObject, &eui->selectionState, false);
+					deleteObject(&world->objects, &eui->selectedObject, &eui->selectionState, false);
 				}
 
 				// Copy.
@@ -1219,7 +1221,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X)) {
 					// Copy and delete.
 					eui->objectCopy = world->objects[eui->selectedObject-1];
-					deleteObject(world->objects, &world->objectCount, &eui->selectedObject, &eui->selectionState, false);
+					deleteObject(&world->objects, &eui->selectedObject, &eui->selectionState, false);
 				}
 			}
 
@@ -1518,7 +1520,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glPushMatrix();
 			glLoadIdentity();
 
-			for(int i = 0; i < world->objectCount; i++) {
+			for(int i = 0; i < world->objects.count; i++) {
 				Object* obj = world->objects + i;
 				Geometry* g = &obj->geometry;
 				Material* m = &obj->material;
@@ -2025,22 +2027,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(ad->entityUI.selectionState == ENTITYUI_ACTIVE) gui->hotId[Gui_Focus_MLeft] = 0;
 
 		{
+			// @GuiSettings
+
 			float fontHeight = ad->fontHeight;
 			Font* font = getFont(ad->fontFile, ad->fontHeight, ad->fontFileBold, ad->fontFileItalic);
 			
-			// Dark.
-			Vec4 cText = vec4(1,1);
-			Vec4 cBackground = vec4(0.3f,1);
-			Vec4 cEdit = vec4(0.2f,1);
-			Vec4 cButton = vec4(0.4f,1);
-			Vec4 cOutline = vec4(0.5f,1);
+			// #6a6a6a // hightlight outline
+			// highlight outline 0.41f
 
-			// Bright.
-			// Vec4 cText = vec4(0,1);
-			// Vec4 cBackground = vec4(1,1);
-			// Vec4 cEdit = vec4(0.9f,1);
-			// Vec4 cButton = vec4(0.7f,1);
-			// Vec4 cOutline = vec4(0.1f,1);
+			Vec4 cText = vec4(1,1);
+			Vec4 cBackground = vec4(0.33f,1);
+			Vec4 cEdit = vec4(0.23f,1);
+			Vec4 cOutline = vec4(0.19f,1);
+			Vec4 cButton = vec4(0.42f,1);
 
 			float panelRounding = 7;
 			float buttonRounding = 4;
@@ -2063,10 +2062,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			etbs.boxSettings.roundedCorner = 0;
 			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, vec4(0.5f,0.2,0,1), vec4(0,1,1,1), textPadding);
 			float sw = fontHeight*1.0f;
-			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, 4, cButton, vec4(0,0,0,0));
+			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, fontHeight*0.27f, cButton, vec4(0,0,0,0));
 
-			// ScrollRegionSettings scrollSettings;
-			gui->popupSettings = boxSettings(cEdit, 0, cOutline);
+			gui->popupSettings = boxSettings(cBackground, 0, cOutline);
 			gui->comboBoxSettings = textBoxSettings(gui->textSettings, boxSettings(cEdit, 0, cOutline), textPadding);
 
 			BoxSettings cbs = boxSettings(cEdit, panelRounding, cOutline);
@@ -2080,7 +2078,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			float menuHeight = ad->menuHeight;
 			Rect mr = rectRSetB(rectTLDim(0,0, ws->clientRes.w, ws->clientRes.h), menuHeight);
 
-			Vec4 cMenu = vec4(0.3f,1);
+			Vec4 cMenu = vec4(0.27f,1);
 			float padding = ad->fontHeight * 1.4;
 			float border = 1;
 
@@ -2091,7 +2089,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 			TextBoxSettings tbs = textBoxSettings(gui->textSettings, boxSettings(cMenu));
-			TextBoxSettings tbsActive = gui->editSettings.textBoxSettings;
+			TextBoxSettings tbsActive = gui->textBoxSettings;
 
 			Rect r;
 			Vec2 p = rectTL(mr);
@@ -2308,15 +2306,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 					World* world = &ad->world;
 
 					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, vec4(0, 1));
-					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings(vec4(0,0.4f,0.6f,0.5f)));
+
+					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings());
+					float headerHeight = eh * 1.2f;
+					float separatorHeight = font->height * 0.3f;
+					Vec4 cSeparator = gui->editSettings.textBoxSettings.boxSettings.borderColor;
 
 					Rect r;
 					char* s;
 					QuickRow qr;
 
 
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
 					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
 
 					s = "TexDim";
@@ -2350,10 +2351,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
 					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMax);
 
+					{
+						glLineWidth(1);
+						p.y -= separatorHeight/2;
+						drawLineH(p, p + vec2(ew,0), cSeparator);
+						p.y -= separatorHeight/2;
+					}
 
+					// 
 
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
 					newGuiQuickTextBox(gui, r, "<b>Statistics<b>", vec2i(0,0), &headerSettings);
 
 					eh = font->height;
@@ -2378,6 +2385,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 					}
 					eh = elementHeight;
 
+					{
+						glLineWidth(1);
+						p.y -= separatorHeight/2;
+						drawLineH(p, p + vec2(ew,0), cSeparator);
+						p.y -= separatorHeight/2;
+					}
+
+					//
 
 					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
@@ -2417,7 +2432,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-						newGuiQuickText(gui, quickRowNext(&qr), fillString("%i", world->objectCount), vec2i(1,0));
+						newGuiQuickText(gui, quickRowNext(&qr), fillString("%i", world->objects.count), vec2i(1,0));
 
 						{
 							float spawnDistance = 30;
@@ -2449,6 +2464,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Right panel.
 		#if 1
+		if(ad->entityUI.selectedObject)
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
 
@@ -2490,6 +2506,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float elementWidth = rectW(pri);
 				Vec2 padding = vec2(panelMargin-1, panelMargin-1);
 
+				float headerHeight = elementHeight * 1.2f;
+
 				Vec2 p = rectTL(pri);
 				float eh = elementHeight;
 				float ew = elementWidth;
@@ -2497,7 +2515,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				{
 					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, vec4(0, 1));
-					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings(vec4(0,0.4f,0.6f,0.5f)));
+					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings());
 
 					Rect r;
 					char* s;
@@ -2512,31 +2530,22 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Geometry* geom = &obj->geometry;
 					Material* mat = &obj->material;
 
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
 					
-					float leftRightButtonWidth = eh * 1.2f;
-					if(eui->selectedObject) {
-						r = rectExpand(r, vec2(0,-eh*0.2f));
-						qr = quickRow(r, pad.x, leftRightButtonWidth, 0, leftRightButtonWidth);
-					} else {
-						r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
-						qr = quickRow(r, pad.x, 0);
-					}
+					float leftRightButtonWidth = eh * 1.5f;
+					r = rectExpand(r, vec2(0,-eh*0.2f));
+					qr = quickRow(r, pad.x, leftRightButtonWidth, 0, leftRightButtonWidth);
 
-					if(eui->selectedObject) {
-						if(newGuiQuickButton(gui, quickRowNext(&qr), "◄")) {
-							eui->selectedObject = mod(eui->selectedObject-2, world->objectCount);
-							eui->selectedObject++;
-						}
+					if(newGuiQuickButton(gui, quickRowNext(&qr), "◄")) {
+						eui->selectedObject = mod(eui->selectedObject-2, world->objects.count);
+						eui->selectedObject++;
 					}
 
 					newGuiQuickTextBox(gui, quickRowNext(&qr), "<b>Entities<b>", vec2i(0,0), &headerSettings);
 
-					if(eui->selectedObject) {
-						if(newGuiQuickButton(gui, quickRowNext(&qr), "►")) {
-							eui->selectedObject = mod(eui->selectedObject, world->objectCount);
-							eui->selectedObject++;
-						}
+					if(newGuiQuickButton(gui, quickRowNext(&qr), "►")) {
+						eui->selectedObject = mod(eui->selectedObject, world->objects.count);
+						eui->selectedObject++;
 					}
 
 
@@ -2633,7 +2642,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							eui->objectCopy = world->objects[eui->selectedObject-1];
 						}
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
-							deleteObject(world->objects, &world->objectCount, &eui->selectedObject, &eui->selectionState);
+							deleteObject(&world->objects, &eui->selectedObject, &eui->selectionState);
 						}
 
 					}

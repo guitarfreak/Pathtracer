@@ -822,6 +822,17 @@ void drawLine(Vec2 p0, Vec2 p1, Vec4 color) {
 	glEnd();
 }
 
+void drawLineH(Vec2 p0, Vec2 p1, Vec4 color, bool roundUp = false) {
+	float off = roundUp?0.5f:-0.5f;
+	drawLine(roundVec2(p0)+vec2(0, off), 
+	         roundVec2(p1)+vec2(0, off), color);
+}
+void drawLineV(Vec2 p0, Vec2 p1, Vec4 color, bool roundUp = false) {
+	float off = roundUp?0.5f:-0.5f;
+	drawLine(roundVec2(p0)+vec2(off, 0), 
+	         roundVec2(p1)+vec2(off, 0), color);
+}
+
 void drawLineNewOff(Vec2 p0, Vec2 p1, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
