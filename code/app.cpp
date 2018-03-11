@@ -9,7 +9,6 @@
 	- Multiple selection
 	- Revert.
 	- Color picker.
-	- Clearn up ui.
 	- Have cam independent, mini window.
 	- Ellipses.
 	- Spacial data structure to speed up processing.
@@ -23,6 +22,8 @@
 	Bugs:
 	- Windows key slow sometimes.
 	- Memory leak? Flashing when drawing scene in opengl.
+	- glGenerateTextureMipmap(ad->raycastTexture.id) clears screen to black so we have to 
+	  draw the background again.
 
 =================================================================================
 */
@@ -656,7 +657,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	NewGui* gui = &ad->gui;
 
 	{
-		newGuiBegin(gui, &ad->input, ws);
+		newGuiBegin(gui, &ad->input, ws, ad->dt);
 	}
 
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
@@ -808,7 +809,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		setClientScissor(ws, rect(0,0,res.w,res.h));
 
 		glDisable(GL_DEPTH_TEST);
-		drawRect(rectCenDim(0,0,100000,100000), vec4(0.15f,1));
+		drawRect(rectTLDim(0,0,ws->windowRes.w, ws->windowRes.h), vec4(0.15f,1));
 		glEnable(GL_DEPTH_TEST);
 	}
 
@@ -1105,6 +1106,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 				ad->textureScreenRect = ad->textureScreenRectFitted;
 			}
 
+			glDisable(GL_DEPTH_TEST);
+			drawRect(rectTLDim(0,0,ws->windowRes.w, ws->windowRes.h), vec4(0.15f,1));
+			glEnable(GL_DEPTH_TEST);
+
 			if(!ad->drawSceneWired) {
 				glDepthMask(false);
 				drawRect(ad->textureScreenRect, vec4(1,1,1,1), rect(0,0,1,1), ad->raycastTexture.id);
@@ -1116,7 +1121,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	{
-		// @EntityUI code
+		// @EntityUI
 
 		World* world = &ad->world;
 		EntityUI* eui = &ad->entityUI;
@@ -2041,6 +2046,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Vec4 cOutline = vec4(0.19f,1);
 			Vec4 cButton = vec4(0.42f,1);
 
+			Vec4 cEditCursor = cText;
+			Vec4 cEditSelection = vec4(hslToRgbFloat(0.6f,0.4f,0.4f),1);
+
 			float panelRounding = 7;
 			float buttonRounding = 4;
 
@@ -2060,11 +2068,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			TextBoxSettings etbs = gui->textBoxSettings;
 			etbs.boxSettings.color = cEdit;
 			etbs.boxSettings.roundedCorner = 0;
-			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, vec4(0.5f,0.2,0,1), vec4(0,1,1,1), textPadding);
+			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, cEditSelection, cEditCursor, 6, textPadding);
+
 			float sw = fontHeight*1.0f;
 			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, fontHeight*0.27f, cButton, vec4(0,0,0,0));
 
 			gui->popupSettings = boxSettings(cBackground, 0, cOutline);
+
 			gui->comboBoxSettings = textBoxSettings(gui->textSettings, boxSettings(cEdit, 0, cOutline), textPadding);
 
 			BoxSettings cbs = boxSettings(cEdit, panelRounding, cOutline);
@@ -2220,6 +2230,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec2 panelOffset = vec2(0,ad->menuHeight);
 		float panelMargin = roundFloat(ad->fontHeight*0.3f);
+		float panelBorder = roundFloat(ad->fontHeight*0.5f);
 		float panelWidthMax = ws->clientRes.w*0.5f;
 		float panelWidthMin = 100;
 
@@ -2262,8 +2273,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// Resize panel width.
 			{
-				float border = panelMargin;
-				Rect r = rectRSetL(rectPanelLeft, border);
+				Rect r = rectRSetL(rectPanelLeft, panelBorder);
 
 				int result = newGuiGoDragAction(gui, r, gui->zLevel, Gui_Focus_MLeft);
 				if(result == 1) {
@@ -2288,7 +2298,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			{
 				newGuiScissorPush(gui, rectExpand(rectPanelLeft, vec2(-2)));
 
-				Rect pri = rectExpand(rectPanelLeft, -vec2(panelMargin*2));
+				Rect pri = rectExpand(rectPanelLeft, -vec2(panelBorder*2));
 
 				Font* font = gui->textSettings.font;
 
@@ -2316,43 +2326,47 @@ extern "C" APPMAINFUNCTION(appMain) {
 					char* s;
 					QuickRow qr;
 
+					//
 
 					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
 					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
 
-					s = "TexDim";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.w);
-					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.h);
+					{
+						char* labels[] = {"TexDim", "SampleMode", "SampleGridDim", "SampleCellCount", "MaxRayBounces"};
+						int labelIndex = 0;
+						float labelsMaxWidth = 0;
+						for(int i = 0; i < arrayCount(labels); i++) {
+							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
+						}
 
-					s = "SampleMode";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickComboBox(gui, quickRowNext(&qr), &settings->sampleMode, sampleModeStrings, arrayCount(sampleModeStrings));
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.w);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.h);
 
-					s = "SampleGridDim";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickComboBox(gui, quickRowNext(&qr), &settings->sampleMode, sampleModeStrings, arrayCount(sampleModeStrings));
 
-					s = "SampleCellCount";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
 
-					s = "MaxRayBounces";
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-					newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
-					newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMax);
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMax);
+					}
 
 					{
-						glLineWidth(1);
 						p.y -= separatorHeight/2;
 						drawLineH(p, p + vec2(ew,0), cSeparator);
 						p.y -= separatorHeight/2;
@@ -2364,25 +2378,32 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickTextBox(gui, r, "<b>Statistics<b>", vec2i(0,0), &headerSettings);
 
 					eh = font->height;
-					char* stats[] = {
-						"Pixel count", fillString("%i.", settings->texDim.x * settings->texDim.h),
-						"Samples per pixel", fillString("%i.", ad->settings.sampleCount), 
-						"Total samples", fillString("%i.", settings->texDim.x * settings->texDim.h * ad->settings.sampleCount), 
-						"Total time", fillString("%fs", (float)ad->processTime),
-						"Time per pixel", fillString("%fms", (float)(ad->processTime/(settings->texDim.x*settings->texDim.y)*1000000)),
-					};
 
-					for(int i = 0; i < arrayCount(stats); i += 2) {
-						char* s1 = stats[i];
-						char* s2 = stats[i+1];
+					{
+						char* labels[] = {"Pixel count", "Samples per pixel", "Total samples", "Total time", "Time per pixel"};
+						int labelIndex = 0;
+						float labelsMaxWidth = 0;
+						for(int i = 0; i < arrayCount(labels); i++) {
+							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
+						}
 
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s1, font).w, 0, getTextDim(s2, font).w);
+						char* stats[] = {
+							fillString("%i.", settings->texDim.x * settings->texDim.h),
+							fillString("%i.", ad->settings.sampleCount), 
+							fillString("%i.", settings->texDim.x * settings->texDim.h * ad->settings.sampleCount), 
+							fillString("%fs", (float)ad->processTime),
+							fillString("%fms", (float)(ad->processTime/(settings->texDim.x*settings->texDim.y)*1000000)),
+						};
 
-						newGuiQuickText(gui, quickRowNext(&qr), s1, vec2i(-1,0));
-						quickRowNext(&qr);
-						newGuiQuickText(gui, quickRowNext(&qr), s2, vec2i(-1,0));
+						for(int i = 0; i < arrayCount(stats); i ++) {
+							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+							qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+
+							newGuiQuickText(gui, quickRowNext(&qr), labels[i], vec2i(-1,0));
+							newGuiQuickText(gui, quickRowNext(&qr), stats[i], vec2i(1,0));
+						}
 					}
+
 					eh = elementHeight;
 
 					{
@@ -2398,40 +2419,40 @@ extern "C" APPMAINFUNCTION(appMain) {
 					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
 					newGuiQuickTextBox(gui, r, "<b>Scene<b>", vec2i(0,0), &headerSettings);
 
-
 					{
 						World* world = &ad->world;
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						s = "Cam pos";
+						char* labels[] = {"Cam pos", "Cam rot", "Cam Fov", "ObjectCount"};
+						int labelIndex = 0;
+						float labelsMaxWidth = 0;
+						for(int i = 0; i < arrayCount(labels); i++) {
+							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
+						}
+
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->pos.x);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->pos.y);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->pos.z);
 
-						s = "Cam rot";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->rot.x);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &cam->rot.y);
 
-						s = "Cam Fov";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->camera.fov, 20, 150);
 
 
-
-
-						s = "ObjectCount";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickText(gui, quickRowNext(&qr), fillString("%i", world->objects.count), vec2i(1,0));
 
 						{
@@ -2453,9 +2474,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					}
 
+					//
+
 				}
 
-				ad->panelHeightLeft = rectPanelLeft.top - p.y - pad.y + panelMargin;
+				ad->panelHeightLeft = rectPanelLeft.top - p.y - pad.y + panelBorder;
 
 				newGuiScissorPop(gui);
 			}
@@ -2470,8 +2493,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// Resize panel width.
 			{
-				float border = panelMargin;
-				Rect r = rectRSetR(rectPanelRight, border);
+				Rect r = rectRSetR(rectPanelRight, panelBorder);
 
 				int result = newGuiGoDragAction(gui, r, gui->zLevel, Gui_Focus_MLeft);
 				if(result == 1) {
@@ -2498,7 +2520,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			{
 				newGuiScissorPush(gui, rectExpand(rectPanelRight, vec2(-2)));
 
-				Rect pri = rectExpand(rectPanelRight, -vec2(panelMargin*2));
+				Rect pri = rectExpand(rectPanelRight, -vec2(panelBorder*2));
 
 				Font* font = gui->textSettings.font;
 
@@ -2548,46 +2570,46 @@ extern "C" APPMAINFUNCTION(appMain) {
 						eui->selectedObject++;
 					}
 
+					{
+						char* labels[] = {"Id", "Position", "Rotation", "Color", "Type", "BRadius", "Dimension", "EmitColor", "Reflection"};
+						int labelIndex = 0;
+						float labelsMaxWidth = 0;
+						for(int i = 0; i < arrayCount(labels); i++) {
+							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
+						}
 
-					if(eui->selectedObject) {
-
-						s = "Id";
 						t = fillString("%i", eui->selectedObject-1);
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, getTextDim(t, font).w);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, getTextDim(t, font).w);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickText(gui, quickRowNext(&qr), t, vec2i(-1,0));
 
-						s = "Position";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.x);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.y);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.z);
 
-						s = "Rotation";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						float cols[] = {getTextDim(s, font).w, 0,0,0,0};
+						float cols[] = {labelsMaxWidth, 0,0,0,0};
 						qr = quickRow(r, pad.x, cols, arrayCount(cols));
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.w);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.x);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.y);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.z);
 
-						s = "Color";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.r);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.g);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.b);
 
-						s = "Type";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						if(newGuiQuickComboBox(gui, quickRowNext(&qr), &geom->type, geometryTypeStrings, arrayCount(geometryTypeStrings))) {
 
 							if(geom->type == GEOM_TYPE_SPHERE) {
@@ -2596,16 +2618,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 							geometryBoundingSphere(obj);
 						}
 
-						s = "BoundingRadius";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickText(gui, quickRowNext(&qr), fillString("%f", geom->boundingSphereRadius), vec2i(-1,0));
 
-						s = "Dimension";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						int dimChanged = 0;
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->dim.x)) dimChanged = 1;
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->dim.y)) dimChanged = 2;
@@ -2620,18 +2640,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 							geometryBoundingSphere(obj);
 						}
 
-						s = "EmitColor";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0,0,0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.r);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.g);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.b);
 
-						s = "Reflection";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, getTextDim(s, font).w, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), s, vec2i(-1,0));
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickSlider(gui, quickRowNext(&qr), &mat->reflectionMod, 0, 1);
 
 
@@ -2644,12 +2662,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
 							deleteObject(&world->objects, &eui->selectedObject, &eui->selectionState);
 						}
-
 					}
 
 				}
 
-				ad->panelHeightRight = rectPanelRight.top - p.y - pad.y + panelMargin;
+				ad->panelHeightRight = rectPanelRight.top - p.y - pad.y + panelBorder;
 
 				newGuiScissorPop(gui);
 			}

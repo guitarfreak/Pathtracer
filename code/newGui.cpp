@@ -278,6 +278,9 @@ struct TextEditVars {
 	Vec2 scrollOffset;
 
 	bool cursorChanged;
+
+	float dt;
+	float cursorTimer;
 };
 
 struct BoxSettings {
@@ -347,6 +350,7 @@ struct TextEditSettings {
 
 	Vec4 colorSelection;
 	Vec4 colorCursor;
+	float cursorFlashingSpeed;
 
 	float textOffset;
 };
@@ -485,9 +489,6 @@ struct ComboBoxData {
 	bool finished;
 };
 
-// ComboBoxData comboBoxData() {
-
-// }
 
 struct NewGui {
 	int id;
@@ -505,6 +506,7 @@ struct NewGui {
 
 	Input* input;
 	WindowSettings* windowSettings;
+	float dt;
 
 	Vec4 colorModHot;
 	Vec4 colorModActive;
@@ -563,7 +565,7 @@ struct NewGui {
 
 LayoutData* newGuiLayoutPush(NewGui* gui, LayoutData ld);
 LayoutData* newGuiLayoutPop(NewGui* gui, bool updateY = true);
-void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws) {
+void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws, float dt = 0) {
 	int voidId = 0;
 
 	gui->id = 1;
@@ -590,6 +592,7 @@ void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws) {
 
 	gui->input = input;
 	gui->windowSettings = ws;
+	gui->dt = dt;
 
 	gui->currentCursor = IDC_ARROW;
 
@@ -1341,7 +1344,10 @@ void drawTextEditBox(char* text, Rect textRect, bool active, Rect scissor, TextE
 			cRect = rectTrans(cRect, vec2(2,0)); // Small offset for looks.
 		}
 
-		drawBox(cRect, scissor, boxSettings(editSettings.colorCursor));
+		Vec4 cCursor = editSettings.colorCursor;
+		cCursor.a = (cos(editVars.cursorTimer) + 1)/2.0f;
+
+		drawBox(cRect, scissor, boxSettings(cCursor));
 	}
 
 	scissorTestScreen(scissor);
@@ -1522,6 +1528,7 @@ bool newGuiQuickTextEditAllVars(NewGui* gui, Rect r, void* data, int varType, in
 
 	if(event == 0) set.textBoxSettings.boxSettings.color += newGuiColorMod(gui);
 
+	gui->editVars.dt = gui->dt;
 	if(varType == 0) drawTextEditBox(charData, r, event > 0, gui->scissor, gui->editVars, set);
 	else if(varType == 1) drawTextEditBox(*intData, r, event > 0, gui->scissor, gui->editVars, set);
 	else drawTextEditBox(*floatData, r, event > 0, gui->scissor, gui->editVars, set);
@@ -1902,8 +1909,8 @@ bool newGuiQuickComboBox(NewGui* gui, Rect r, int* index, char** strings, int st
 }
 
 
-TextEditSettings textEditSettings(TextBoxSettings textSettings, Vec4 defaultTextColor, char* textBuffer, int flags, float cursorWidth, float cursorHeightMod, Vec4 colorSelection, Vec4 colorCursor, float textOffset) {
-	return {textSettings, defaultTextColor, textBuffer, flags, cursorWidth, cursorHeightMod, "", colorSelection, colorCursor, textOffset};
+TextEditSettings textEditSettings(TextBoxSettings textSettings, Vec4 defaultTextColor, char* textBuffer, int flags, float cursorWidth, float cursorHeightMod, Vec4 colorSelection, Vec4 colorCursor, float cursorFlashingSpeed, float textOffset) {
+	return {textSettings, defaultTextColor, textBuffer, flags, cursorWidth, cursorHeightMod, "", colorSelection, colorCursor, cursorFlashingSpeed, textOffset};
 }
 
 char* textSelectionToString(char* text, int index1, int index2) {
@@ -1946,8 +1953,6 @@ void textEditBox(char* text, int textMaxSize, Font* font, Rect textRect, Input* 
 	if(input->mouseButtonDown[0]) {
 		cursorIndex = mouseIndex;
 	}
-
-
 
 	bool left = input->keysPressed[KEYCODE_LEFT];
 	bool right = input->keysPressed[KEYCODE_RIGHT];
@@ -2154,9 +2159,8 @@ void textEditBox(char* text, int textMaxSize, Font* font, Rect textRect, Input* 
 	tev->cursorIndex = cursorIndex;
 	tev->markerIndex = markerIndex;
 
-	// // Cursor.
-	// // tev->cursorTime += tes.dt * tes.cursorSpeed;
-	// // Vec4 cmod = vec4(0,cos(tev->cursorTime)*tes.cursorColorMod - tes.cursorColorMod,0,0);
+	tev->cursorTimer += tev->dt*tes.cursorFlashingSpeed;
+	if(tev->cursorChanged || input->mouseButtonPressed[0]) tev->cursorTimer = 0;
 }
 
 struct GuiWindowSettings {
@@ -2400,7 +2404,7 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 			clampMin(&maxWidth, POPUP_MIN_WIDTH);
 
 			float popupWidth = max(maxWidth, rectW(pd.r));
-			float popupHeight = eh * cData.count + border*2 + topBottomPadding*2 + 1;
+			float popupHeight = eh * cData.count + border*2 + topBottomPadding*2;
 
 			Rect r = rectTDim(rectT(pd.r)-vec2(0,comboboxPopupTopOffset), vec2(popupWidth, popupHeight));
 
@@ -2418,18 +2422,21 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 
 			float ew = rectW(lr);
 
-
 			Vec4 cButton = gui->popupSettings.color;
-			TextBoxSettings bs = textBoxSettings(gui->buttonSettings.textSettings, boxSettings(cButton));
-			bs.sideAlignPadding = padding;
+			TextBoxSettings tbs = textBoxSettings(gui->buttonSettings.textSettings, boxSettings());
+			tbs.sideAlignPadding = padding;
+
+			BoxSettings bs = boxSettings(cButton);
+			BoxSettings bsSelected = gui->editSettings.textBoxSettings.boxSettings;
 
 			for(int i = 0; i < cData.count; i++) {
-				bs.boxSettings.color = gui->popupSettings.color;
-				if(cData.index == i) bs.boxSettings.color += newGuiHotActiveColorMod(true, false);
+				bool selected = cData.index == i;
+				tbs.boxSettings = selected ? bsSelected : bs;
 
 				Rect br = rectTLDim(p, vec2(ew, eh)); p.y -= eh;
+				if(selected) br = rectExpand(br, vec2(-padding*0.5f,0));
 
-				if(newGuiQuickButton(gui, br, cData.strings[i], vec2i(-1,0), &bs)) {
+				if(newGuiQuickButton(gui, br, cData.strings[i], vec2i(-1,0), &tbs)) {
 					gui->comboBoxData.index = i;
 					gui->comboBoxData.finished = true;
 
