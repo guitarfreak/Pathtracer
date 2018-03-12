@@ -666,9 +666,9 @@ enum EntityTranslateMode {
 };
 
 struct EntityUI {
-	Object objectCopy;
-
 	int selectedObject;
+
+	Object objectCopy;
 
 	int selectionMode;
 	int selectionState;

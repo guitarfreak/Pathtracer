@@ -492,7 +492,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// ad->threadCount = 1;
 
 		ad->drawSceneWired = true;
-		ad->fitToScreen = true;
+		ad->fitToScreen = false;
 
 		ad->settings.randomDirectionCount = 20000;
 
