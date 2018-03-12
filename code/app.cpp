@@ -4,11 +4,11 @@
 	ToDo:
 	- Depth of field.
 	- Refraction.
-	- More advanced lighting function
 	- Clean global light and multiple lights
 	- Multiple selection
 	- Revert.
 	- Color picker.
+	- More advanced lighting function
 	- Have cam independent, mini window.
 	- Ellipses.
 	- Spacial data structure to speed up processing.
@@ -16,7 +16,6 @@
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Clean up repetitive gui code. (Layout.)
 
-	- DArray.
 	- Simd.
 
 	Bugs:
@@ -78,6 +77,17 @@ MemoryBlock* globalMemory;
 
 
 
+struct AppColors {
+	Vec4 text = vec4(1,1);
+	Vec4 button = vec4(0.42f,1);
+	Vec4 background = vec4(0.33f,1);
+	Vec4 menu = vec4(0.27f,1);
+	Vec4 edit = vec4(0.23f,1);
+	Vec4 border = vec4(0.21f,1);
+	Vec4 outline = vec4(0.19f,1);
+	Vec4 outlineBright = vec4(0.41f,1);
+};
+
 struct AppData {
 
 	// General.
@@ -115,11 +125,14 @@ struct AppData {
 
 	// App.
 
+	AppColors colors;
+
 	char* fontFile;
 	char* fontFileBold;
 	char* fontFileItalic;
 	int fontHeight;
 	float fontScale;
+	int menuFontHeight;
 
 	NewGui gui;
 	float panelHeightLeft;
@@ -131,9 +144,11 @@ struct AppData {
 	float panelAlpha;
 	float panelAlphaFadeState;
 
-	Font* font;
-
 	float menuHeight;
+
+	Rect menuRect;
+	Rect panelLeftRect;
+	Rect panelRightRect;
 
 	// 
 
@@ -413,7 +428,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				at.windowRect = rectCenDim(center, dim*0.85f);
 
 				at.mouseSpeed = 1;
-				at.fontScale = 1;
+				at.fontScale = 0.95;
 				at.panelWidthLeft = systemData->fontHeight*15;
 				at.panelWidthRight = systemData->fontHeight*15;
 				strClear(at.sceneFile);
@@ -598,8 +613,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	if(input->keysPressed[KEYCODE_ESCAPE]) {
 		if(ws->fullscreen) {
 			if(input->keysPressed[KEYCODE_ESCAPE]) setWindowMode(windowHandle, ws, WINDOW_MODE_WINDOWED);
-		} else {
-			// *isRunning = false;
 		}
 	}
 
@@ -679,11 +692,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		if(!systemData->mouseInClient && !mouseInClientArea(windowHandle)) systemData->ncTestRegion = 0;
 
-		char* titleText = fillString("<b>%s<b>", App_Name);
-
+		char* titleText = App_Name;
 		if(ad->sceneHasFile) {
-			char* sceneFileName = getFileNameFromPath(ad->sceneFile);
-			titleText = fillString("%s - %s", titleText, sceneFileName);
+			titleText = fillString("%s", ad->sceneFile);
 		}
 
 		sd->normalTitleHeight = sd->fontHeight*1.4f;
@@ -692,34 +703,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 		sd->buttonMargin = 3;
 		sd->cornerGrabSize = 20;
 
-		Vec4 cBorder = vec4(0.21f,1);
+		Vec4 cBorder = ad->colors.border;
 
-		// Vec3 cTitleBarFocusedLeft     = vec3(0.03f,0.7f,0.25f);
-		// Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.03f,-0.1f,0.1f);
-		// Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft  + vec3(0, -1, -0.1f);
-		// Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight + vec3(0, -1, -0.1f);
+		Vec4 cButtons = vec4(0.6f,1);
+		Vec4 cButtonsHot = vec4(1.0f,1);
 
-		Vec3 cTitleBarFocusedLeft     = vec3(0.62f,0.2f,0.15f);
-		Vec3 cTitleBarFocusedRight    = cTitleBarFocusedLeft  + vec3(0.00f,0.0f,0.15f);
-		Vec3 cTitleBarNotFocusedLeft  = cTitleBarFocusedLeft;
-		Vec3 cTitleBarNotFocusedRight = cTitleBarFocusedRight;
+		Vec4 cButton0 = cButtons;
+		Vec4 cButton1 = cButtons;
+		Vec4 cButton2 = cButtons;
 
-		Vec4 cTitleBarLeft, cTitleBarRight;
-		if(!ws->windowHasFocus) {
-			cTitleBarLeft = vec4(hslToRgbFloat(cTitleBarNotFocusedLeft),1);
-			cTitleBarRight = vec4(hslToRgbFloat(cTitleBarNotFocusedRight),1);
-		} else {
-			cTitleBarLeft = vec4(hslToRgbFloat(cTitleBarFocusedLeft),1);
-			cTitleBarRight = vec4(hslToRgbFloat(cTitleBarFocusedRight),1);
-		}
-
-		float cButtons = 0.7f;
-		Vec4 cButton0 = vec4(cButtons,1);
-		Vec4 cButton1 = vec4(cButtons,1);
-		Vec4 cButton2 = vec4(cButtons,1);
-
-		Vec4 cText = vec4(0.9f,1);
-		if(!ws->windowHasFocus) cText = vec4(0.5f,1);
+		Vec4 cText = vec4(0.85f,1);
+		if(!ws->windowHasFocus) cText = vec4(0.6f,1);
 
 		Vec4 cTextShadow = vec4(0,1);
 
@@ -728,15 +722,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		glDepthMask(false);
 
+		// Background
 		drawRect(ws->windowRect, cBorder);
 
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glBlendEquation(GL_FUNC_ADD);
 
-		setSRGB(false);
-		drawRectNewColoredW(ws->titleRect, cTitleBarLeft, cTitleBarRight);
-		setSRGB(true);
+		// Titlebar
+		drawRect(ws->titleRect, ad->colors.background);
 
 		{
 			glLineWidth(1);
@@ -746,9 +740,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glLineWidth(1);
 		}
 
-		if(sd->ncTestRegion == HTMINBUTTON) cButton0.rgb += vec3(0.4f);
-		if(sd->ncTestRegion == HTMAXBUTTON) cButton1.rgb += vec3(0.4f);
-		if(sd->ncTestRegion == HTCLOSE)     cButton2.rgb += vec3(0.4f);
+		if(sd->ncTestRegion == HTMINBUTTON) cButton0 = cButtonsHot;
+		if(sd->ncTestRegion == HTMAXBUTTON) cButton1 = cButtonsHot;
+		if(sd->ncTestRegion == HTCLOSE)     cButton2 = cButtonsHot;
 
 		{
 			glLineWidth(1);
@@ -786,7 +780,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			scissorTest(rect(r.left,0,r.right,ws->windowRes.h));
 			scissorState();
 
-			drawText(titleText, tp, vec2i(-1,0), ts);
+			// drawText(titleText, tp, vec2i(-1,0), ts);
+			drawText(fillString("<b>%s<b>", titleText), tp, vec2i(-1,0), ts);
 
 			scissorState(false);
 		}
@@ -819,7 +814,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Mouse capture.
 		{
 			if(!ad->captureMouse) {
-				if((input->keysPressed[KEYCODE_F3] || mouseButtonPressedRight(gui, input)) && ad->drawSceneWired) {
+				bool mouseOverUI = pointInRectEx(input->mousePosNegative, ad->menuRect) ||
+								   pointInRectEx(input->mousePosNegative, ad->panelLeftRect) || 
+								   pointInRectEx(input->mousePosNegative, ad->panelRightRect);
+
+				if((input->keysPressed[KEYCODE_F3] || (mouseButtonPressedRight(gui, input) && !mouseOverUI)) && ad->drawSceneWired) {
 					ad->captureMouse = true;
 
 					if(input->keysPressed[KEYCODE_F3]) ad->captureMouseKeepCenter = true;
@@ -838,7 +837,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		if(!ad->activeProcessing && ad->drawSceneWired)
 		{
-			ad->fpsMode = (ad->captureMouse || input->mouseButtonDown[1]) && windowHasFocus(windowHandle);
+			ad->fpsMode = ad->captureMouse && windowHasFocus(windowHandle);
 			if(ad->fpsMode) {
 				if(ad->captureMouseKeepCenter) {
 					int w,h;
@@ -2037,16 +2036,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			float fontHeight = ad->fontHeight;
 			Font* font = getFont(ad->fontFile, ad->fontHeight, ad->fontFileBold, ad->fontFileItalic);
 			
-			// #6a6a6a // hightlight outline
-			// highlight outline 0.41f
+			AppColors c = ad->colors;
 
-			Vec4 cText = vec4(1,1);
-			Vec4 cBackground = vec4(0.33f,1);
-			Vec4 cEdit = vec4(0.23f,1);
-			Vec4 cOutline = vec4(0.19f,1);
-			Vec4 cButton = vec4(0.42f,1);
-
-			Vec4 cEditCursor = cText;
+			Vec4 cEditCursor = c.text;
 			Vec4 cEditSelection = vec4(hslToRgbFloat(0.6f,0.4f,0.4f),1);
 
 			float panelRounding = 7;
@@ -2054,10 +2046,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			float textPadding = font->height*0.4f;
 
-			BoxSettings bs = boxSettings(cBackground, 0, cOutline);
-			TextSettings ts = textSettings(font, cText);
+			BoxSettings bs = boxSettings(c.background, 0, c.outline);
+			TextSettings ts = textSettings(font, c.text);
 
-			BoxSettings bous = boxSettings(cButton, buttonRounding, cOutline);
+			BoxSettings bous = boxSettings(c.button, buttonRounding, c.outline);
 			TextBoxSettings bus = textBoxSettings(ts, bous);
 
 			gui->textSettings = ts;
@@ -2066,40 +2058,48 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gui->buttonSettings = bus;
 
 			TextBoxSettings etbs = gui->textBoxSettings;
-			etbs.boxSettings.color = cEdit;
+			etbs.boxSettings.color = c.edit;
 			etbs.boxSettings.roundedCorner = 0;
 			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, cEditSelection, cEditCursor, 6, textPadding);
 
 			float sw = fontHeight*1.0f;
-			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, fontHeight*0.27f, cButton, vec4(0,0,0,0));
+			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, fontHeight*0.27f, c.button, vec4(0,0,0,0));
 
-			gui->popupSettings = boxSettings(cBackground, 0, cOutline);
+			gui->popupSettings = boxSettings(c.background, 0, c.outline);
 
-			gui->comboBoxSettings = textBoxSettings(gui->textSettings, boxSettings(cEdit, 0, cOutline), textPadding);
+			gui->comboBoxSettings = textBoxSettings(gui->textSettings, boxSettings(c.edit, 0, c.outline), textPadding);
 
-			BoxSettings cbs = boxSettings(cEdit, panelRounding, cOutline);
-			gui->checkBoxSettings = checkBoxSettings(cbs, cButton, 0.5f);
+			BoxSettings cbs = boxSettings(c.edit, panelRounding, c.outline);
+			gui->checkBoxSettings = checkBoxSettings(cbs, c.button, 0.5f);
 		}
 
-		ad->menuHeight = ad->fontHeight * 1.5f;
 
 		// @Menu.
 		{
-			float menuHeight = ad->menuHeight;
-			Rect mr = rectRSetB(rectTLDim(0,0, ws->clientRes.w, ws->clientRes.h), menuHeight);
-
-			Vec4 cMenu = vec4(0.27f,1);
+			int fontHeight = roundInt(ad->fontHeight * 1.1f);
+			float menuHeight = fontHeight * 1.5f;
 			float padding = ad->fontHeight * 1.4;
 			float border = 1;
+			Vec4 cMenu = ad->colors.menu;
 
-			Font* font = gui->textSettings.font;
+			Font* font = getFont(ad->fontFile, fontHeight, ad->fontFileBold, ad->fontFileItalic);
+
+			Rect mr = rectRSetB(rectTLDim(0,0, ws->clientRes.w, ws->clientRes.h), menuHeight);
+
+			ad->menuHeight = menuHeight;
+			ad->menuFontHeight;
+			ad->menuRect = mr;
+
+
 			char* s;
 
 			drawRect(mr, cMenu);
 
-
 			TextBoxSettings tbs = textBoxSettings(gui->textSettings, boxSettings(cMenu));
 			TextBoxSettings tbsActive = gui->textBoxSettings;
+			tbs.textSettings.font = font;
+			tbsActive.textSettings.font = font;
+
 
 			Rect r;
 			Vec2 p = rectTL(mr);
@@ -2112,6 +2112,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			for(int i = 0; i < menuCount; i++) {
 				char* s = menuTitles[i];
 				r = rectTLDim(p, vec2(getTextDim(s, font).w + padding, menuHeight)); p.x += rectW(r);
+
 				if(newGuiQuickPButton(gui, r, s, &tbs) || 
 				   (gui->menuActive && pointInRectEx(input->mousePosNegative, r) && gui->menuId != newGuiCurrentId(gui))) {
 
@@ -2140,7 +2141,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// @MenuButtons.
 			{
 				float buttonWidth = menuHeight;
-				float buttonOffset = ad->fontHeight*1;
+				float buttonOffset = fontHeight*1;
 				float buttonMargin = buttonWidth * 0.3f;
 				float separatorWidth = padding*0.5f;
 				Vec4 cButtonActive = vec4(1,1);
@@ -2241,10 +2242,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		panelDim = vec2(ad->panelWidthLeft,ad->panelHeightLeft);
 		Rect rectPanelLeft = rectTLDim(vec2(panelOffset.x,-panelOffset.y), panelDim);
+		ad->panelLeftRect = rectPanelLeft;
 
 		Vec2i res = ws->clientRes;
 		panelDim = vec2(ad->panelWidthRight,ad->panelHeightRight);
 		Rect rectPanelRight = rectTRDim(vec2(res.w,0) + vec2(-panelOffset.x,-panelOffset.y), panelDim);
+		ad->panelRightRect = rectPanelRight;
 
 		// Panel fade animation.
 		{

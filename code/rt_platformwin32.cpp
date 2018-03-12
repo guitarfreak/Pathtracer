@@ -798,11 +798,13 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     systemData->windowClass = windowClass;
     systemData->windowHandle = CreateWindowEx(0, windowClass.lpszClassName, "", ws->style, wx,wy,ww,wh, 0, 0, systemData->instance, 0);
 
-    if(!systemData->windowHandle) {
+    HWND windowHandle = systemData->windowHandle;
+
+    if(!windowHandle) {
         DWORD errorCode = GetLastError();
     }
 
-	SetFocus(systemData->windowHandle);
+	SetFocus(windowHandle);
 	systemData->windowIsFocused = true;
 
     PIXELFORMATDESCRIPTOR pixelFormatDescriptor =
@@ -828,7 +830,7 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
         0, 0, 0
     };    
     
-    HDC deviceContext = GetDC(systemData->windowHandle);
+    HDC deviceContext = GetDC(windowHandle);
     systemData->deviceContext = deviceContext;
     int pixelFormat;
     pixelFormat = ChoosePixelFormat(deviceContext, &pixelFormatDescriptor);
@@ -850,14 +852,14 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     RAWINPUTDEVICE Rid[1];
     Rid[0].usUsagePage = HID_USAGE_PAGE_GENERIC; 
     Rid[0].usUsage = HID_USAGE_GENERIC_MOUSE; 
-    Rid[0].hwndTarget = systemData->windowHandle;
+    Rid[0].hwndTarget = windowHandle;
     Rid[0].dwFlags = RIDEV_INPUTSINK;   
     // Rid[0].dwFlags = 0;   
     bool r = RegisterRawInputDevices(Rid, 1, sizeof(Rid[0]));
     assert(r);
 
     systemData->mainFiber = ConvertThreadToFiber(0);
-    SetWindowLongPtr(systemData->windowHandle, GWLP_USERDATA, (LONG_PTR)systemData);
+    SetWindowLongPtr(windowHandle, GWLP_USERDATA, (LONG_PTR)systemData);
     systemData->messageFiber = CreateFiber(0, (PFIBER_START_ROUTINE)updateInput, systemData);
 
     SYSTEM_INFO sysinfo;
@@ -872,10 +874,10 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     	char* rs = MAKEINTRESOURCE(1);
 
     	HANDLE hbicon = LoadImage(GetModuleHandle(0), rs, IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
-    	if(hbicon) SendMessage(systemData->windowHandle, WM_SETICON, ICON_BIG, (LPARAM)hbicon);
+    	if(hbicon) SendMessage(windowHandle, WM_SETICON, ICON_BIG, (LPARAM)hbicon);
 
     	HANDLE hsicon = LoadImage(GetModuleHandle(0), rs, IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), 0);
-    	if(hsicon) SendMessage(systemData->windowHandle, WM_SETICON, ICON_SMALL, (LPARAM)hsicon);
+    	if(hsicon) SendMessage(windowHandle, WM_SETICON, ICON_SMALL, (LPARAM)hsicon);
     }
 
     // Set minimal sleep timer resolution.
@@ -886,7 +888,12 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     	if(error != TIMERR_NOERROR) printf("Timer error.\n");
     }
 
-	systemData->fontHeight = getSystemFontHeight(systemData->windowHandle);
+	systemData->fontHeight = getSystemFontHeight(windowHandle);
+
+	// SetWindowLong(windowHandle, GWL_EXSTYLE,
+		// GetWindowLong(windowHandle, GWL_EXSTYLE) | WS_EX_LAYERED);
+	// SetLayeredWindowAttributes(windowHandle, 0, (255 * 70) / 100, LWA_ALPHA);
+	// SetLayeredWindowAttributes(windowHandle, RGB(255,255,255), 255, LWA_COLORKEY);
 
 }
 

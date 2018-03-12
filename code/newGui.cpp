@@ -581,9 +581,9 @@ void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws, float dt = 0) {
 		gui->contenderIdZ[i] = voidId;
 	}
 
-	if(gui->activeId != 0) {
-		for(int i = 0; i < Gui_Focus_Size; i++) gui->hotId[i] = voidId;
-	}
+	// if(gui->activeId != 0) {
+	// 	for(int i = 0; i < Gui_Focus_Size; i++) gui->hotId[i] = voidId;
+	// }
 
 	gui->zLevel = 0;
 
@@ -719,7 +719,8 @@ bool newGuiFocusCanBeHot(NewGui* gui, int focus) {
 }
 
 void newGuiSetHot(NewGui* gui, int id, float z, int focus = 0) {
-	if(!newGuiSomeoneActive(gui) && newGuiFocusCanBeHot(gui, focus)) {
+	// if(!newGuiSomeoneActive(gui) && newGuiFocusCanBeHot(gui, focus)) {
+	if(newGuiFocusCanBeHot(gui, focus)) {
 		if(z > gui->contenderIdZ[focus]) {
 			gui->contenderId[focus] = id;
 			gui->contenderIdZ[focus] = z;
@@ -1103,7 +1104,6 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, void* var, int mode, T
 	}
 
 	if(event == 3 && (leftMouse || enter)) {
-	// if(event == 3 && (enter)) {
 		if(mode == 0)      strCpy((char*)var, gui->editText);
 		else if(mode == 1) *((int*)var) = strToInt(gui->editText);
 		else if(mode == 2) *((float*)var) = strToFloat(gui->editText);
@@ -1113,7 +1113,6 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, void* var, int mode, T
 		textEditBox(gui->editText, maxTextSize, editSettings.textBoxSettings.textSettings.font, textRect, input, vec2i(-1,1), editSettings, editVars);
 	}
 
-	// if(event == 3 && (escape || leftMouse)) event = 4;
 	if(event == 3 && (escape)) event = 4;
 
 	return event;
@@ -1127,45 +1126,6 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, int* number, TextEditS
 int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, float* number, TextEditSettings editSettings) {
 	return newGuiGoTextEdit(gui, textRect, z, number, EDIT_MODE_FLOAT, editSettings, &gui->editVars, 0);
 }
-
-
-
-// int asdf(NewGui* gui, Rect textRect, float z, void* var, int mode, TextEditSettings editSettings, TextEditVars* editVars, int maxTextSize) {
-// 	Input* input = gui->input;
-
-// 	maxTextSize = min(maxTextSize, arrayCount(gui->editText));
-
-// 	bool leftMouse = input->mouseButtonPressed[0] && !pointInRectEx(input->mousePosNegative, textRect);
-// 	bool enter = input->keysPressed[KEYCODE_RETURN];
-// 	bool escape = input->keysPressed[KEYCODE_ESCAPE];
-
-// 	bool releaseEvent = leftMouse || enter || escape;
-
-// 	int event = newGuiGoDragAction(gui, textRect, z, input->mouseButtonPressed[0], releaseEvent, Gui_Focus_MLeft);
-
-// 	if(event == 1) {
-// 		gui->editVars.scrollOffset = vec2(0,0);
-// 		if(mode == EDIT_MODE_CHAR)      strCpy(gui->editText, (char*)var);
-// 		else if(mode == EDIT_MODE_INT) strCpy(gui->editText, fillString("%i", *((int*)var)));
-// 		else if(mode == EDIT_MODE_FLOAT) strCpy(gui->editText, fillString("%f", *((float*)var)));
-// 	}
-
-// 	// if(event == 3 && (leftMouse || enter)) {
-// 	if(event == 3 && (enter)) {
-// 		if(mode == 0)      strCpy((char*)var, gui->editText);
-// 		else if(mode == 1) *((int*)var) = strToInt(gui->editText);
-// 		else if(mode == 2) *((float*)var) = strToFloat(gui->editText);
-// 	}
-
-// 	if(event == 1 || event == 2) {
-// 		textEditBox(gui->editText, maxTextSize, editSettings.textBoxSettings.textSettings.font, textRect, input, vec2i(-1,1), editSettings, editVars);
-// 	}
-
-// 	if(event == 3 && (escape || leftMouse)) event = 4;
-
-// 	return event;
-// }
-
 
 
 Rect newGuiCalcSlider(float value, Rect br, float size, float min, float max, bool vertical) {
@@ -1584,14 +1544,14 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 		int event;
 		flagSet(&edSet.flags, ESETTINGS_START_RIGHT);
 		event = newGuiGoTextEdit(gui, intersect, gui->zLevel, val, typeIsInt?EDIT_MODE_INT:EDIT_MODE_FLOAT, edSet, &gui->editVars, 0, true);
-		// if(event == 1) {
-			// gui->editVars.cursorIndex = 
-		// }
 		if(event != 0) {
 			drawTextEditBox(val, typeIsInt?EDIT_MODE_INT:EDIT_MODE_FLOAT, r, event > 0, gui->scissor, gui->editVars, edSet);
 			editMode = true;
 			if(event == 3) result = true;
 		}
+
+		if(editMode && event != 3) return false;
+		else if(editMode && event == 3) return true;
 	}
 
 	// Mouse Wheel / Arrow Keys.
@@ -1688,6 +1648,7 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 	
 		result = true;
 	}
+
 	return result;
 }
 
