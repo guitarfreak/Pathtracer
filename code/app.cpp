@@ -479,7 +479,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->entityUI.snapGridSize = 1;
 		ad->entityUI.snapGridDim = 100;
 
-		ad->entityUI.objectCopies.insert(defaultObject());
+		ad->entityUI.objectCopies.push(defaultObject());
 
 		ad->fontFile       = getPStringCpy("LiberationSans-Regular.ttf");
 		ad->fontFileBold   = getPStringCpy("LiberationSans-Bold.ttf");
@@ -512,7 +512,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		   fileExists(appSessionSettings.sceneFile)) {
 			strCpy(ad->sceneFile, appSessionSettings.sceneFile);
 			ad->sceneHasFile = true;
-			loadScene(&ad->world, ad->sceneFile);
+			loadScene(&ad->world, ad->sceneFile, &ad->entityUI);
 		} else {
 			ad->sceneHasFile = false;
 			getDefaultScene(&ad->world);
@@ -1148,7 +1148,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							ad->sceneHasFile = true;
 							strCpy(ad->sceneFile, dd->result);
 						} else {
-							loadScene(world, dd->result);
+							loadScene(world, dd->result, eui);
 							ad->sceneHasFile = true;
 							strCpy(ad->sceneFile, dd->result);
 						}
@@ -1211,12 +1211,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 							eui->selectedObjects.remove(i);
 						} else {
 							// Select.
-							eui->selectedObjects.insert(objectIndex);
+							eui->selectedObjects.push(objectIndex);
 							eui->selectionAnimState = 0;
 						}
 					} else {
 						eui->selectedObjects.clear();
-						eui->selectedObjects.insert(objectIndex);
+						eui->selectedObjects.push(objectIndex);
 						eui->selectionAnimState = 0;
 					}
 
@@ -1232,6 +1232,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
 				eui->selectionState = ENTITYUI_INACTIVE;
+				if(!eui->positionChanged) {
+					historyAdd(&eui->history, &world->objects, &eui->selectedObjects, COMMAND_TYPE_EDIT);
+				}
+
+				eui->positionChanged = false;
 			}
 
 			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count) {
@@ -1260,7 +1265,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
-				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, true);
+				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, &eui->history, true);
 			}
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
@@ -1269,7 +1274,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(keyPressed(gui, input, KEYCODE_2)) eui->selectionMode = ENTITYUI_MODE_ROTATION;
 			if(keyPressed(gui, input, KEYCODE_3)) eui->selectionMode = ENTITYUI_MODE_SCALE;
 
+			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Y)) {
+				historyChange(&eui->history, world);
+			}
 
+			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Z)) {
+				historyChange(&eui->history, world, false);
+			}
 
 			eui->gotActive = false;
 
@@ -1303,7 +1314,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 								Object* obj = world->objects + eui->selectedObjects[i];
 								Vec3 offset = obj->pos - pos;
 
-								eui->objectCenterOffsets.insert(offset);
+								eui->objectCenterOffsets.push(offset);
 							}
 						}
 					}
@@ -1383,6 +1394,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 offset = obj->pos - pos;
 						}
 					}
+
+					eui->positionChanged = eui->startPos == pos;
 
 				} else {
 
@@ -2523,11 +2536,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 							qr = quickRow(r, pad.x, 0.0f, 0.0f);
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Object")) {
-								insertObject(&ad->world, defaultObject(), &eui->selectedObjects);
+								insertObject(&ad->world, defaultObject(), &eui->selectedObjects, &eui->history);
 							}
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copies")) {
-								insertObjects(&ad->world, &eui->objectCopies, &eui->selectedObjects);
+								insertObjects(&ad->world, &eui->objectCopies, &eui->selectedObjects, &eui->history);
 							}
 						}
 

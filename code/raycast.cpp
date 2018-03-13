@@ -48,6 +48,8 @@ struct Light {
 };
 
 struct Object {
+	int id;
+
 	Vec3 pos;
 	Quat rot;
 	Vec3 dim;
@@ -600,7 +602,7 @@ void getDefaultScene(World* world) {
 	obj.material = materials[0];
 	obj.geometry.type = GEOM_TYPE_BOX;
 	obj.dim = vec3(50, 50, 0.01f);
-	world->objects.insert(obj);
+	world->objects.push(obj);
 
 	// Sphere.
 
@@ -611,7 +613,7 @@ void getDefaultScene(World* world) {
 	obj.material = materials[1];
 	obj.dim = vec3(5.0f);
 	obj.geometry.type = GEOM_TYPE_SPHERE;
-	world->objects.insert(obj);
+	world->objects.push(obj);
 	
 	// Calc bounding spheres.
 	for(int i = 0; i < world->objects.count; i++) {
@@ -641,6 +643,146 @@ enum EntityTranslateMode {
 	TRANSLATE_MODE_CENTER,
 };
 
+// Add selection modification.
+enum CommandType {
+	COMMAND_TYPE_EDIT = 0,
+	COMMAND_TYPE_INSERT,
+	COMMAND_TYPE_REMOVE,
+
+	COMMAND_TYPE_SIZE,
+};
+
+struct HistoryData {
+	int index;
+	DArray<char> buffer;
+	DArray<int> offsets;
+
+	// Edit.
+	// DArray<Object> objects;
+
+	// // Insert. 
+	// Object* array;
+
+	// // Remove
+	// Object* array;
+
+	// // Selection.
+	// int* array;
+};
+
+void historyAdd(HistoryData* hd, DArray<Object>* objects, DArray<int>* selected, int type) {
+
+	// This is not good. At least make a macro or something.
+
+	// Reset buffers to index position;
+	if(hd->index > 0) {
+		hd->offsets.count = hd->index;
+		hd->buffer.count = hd->offsets[hd->index-1];
+	}
+
+	int* dType = (int*)hd->buffer.retrieve(sizeof(int));
+	*dType = type;
+
+	switch(type) {
+		case COMMAND_TYPE_EDIT: {
+			int count = selected->count;
+			int totalSize = sizeof(int) + sizeof(Object)*count + sizeof(int)*count;
+
+			char* d = hd->buffer.retrieve(totalSize);
+
+			int* dCount = (int*)d; d += sizeof(int);
+			Object* dObjects = (Object*)d; d += sizeof(Object) * count;
+			int* dIndexes = (int*)d; d += sizeof(int) * count;
+
+			*dCount = count;
+
+			for(int i = 0; i < count; i++) {
+				int index = selected->at(i);
+
+				Object obj = objects->at(index);
+				dObjects[i] = obj;
+				dIndexes[i] = index;
+			}
+
+			int offsetSize = sizeof(int) + totalSize;
+			int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+			hd->offsets.push(offsetBefore + offsetSize);
+		} break;
+
+		// case COMMAND_TYPE_INSERT: {
+		// 	int count = selected->count;
+		// 	int totalSize = sizeof(int);
+
+		// 	char* d = hd->buffer.retrieve(totalSize);
+
+		// 	int* dCount = (int*)d; d += sizeof(int);
+		// 	*dCount = count;
+
+		// 	int offsetSize = sizeof(int) + totalSize;
+		// 	int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+		// 	hd->offsets.push(offsetBefore + offsetSize);
+		// } break;
+
+		// case COMMAND_TYPE_REMOVE: {
+		// 	cd.count = selected->count;
+		// 	cd.indexes = (int*)hd->byteBuffer.retrieve(sizeof(int)*cd.count);
+		// } break;
+	}
+
+	hd->index++;
+}
+
+void historyChange(HistoryData* hd, World* world, bool undo = true) {
+// 	int currentIndex;
+// 	if(undo) {
+// 		if(hd->index <= 1) return;
+
+// 		hd->index--;
+// 		currentIndex = hd->index - 1;
+// 	} else {
+// 		if(hd->index == hd->offsets.count) return;
+
+// 		currentIndex = hd->index;
+// 		hd->index++;
+// 	}
+
+// 	int offset, size;
+// 	if(currentIndex == 0) {
+// 		offset = 0;
+// 		size = hd->offsets[currentIndex];
+// 	} else {
+// 		offset = hd->offsets[currentIndex-1];
+// 		size = hd->offsets[currentIndex] - offset;
+// 	}
+
+// 	char* d = hd->buffer.data + offset;
+// 	int type = *((int*)d); d += sizeof(int);
+
+// 	switch(type) {
+// 		case COMMAND_TYPE_EDIT: {
+// 			int count = *((int*)d); d += sizeof(int);
+// 			Object* objects = (Object*)d; d += sizeof(Object)*count;
+// 			int* indexes = (int*)d; d += sizeof(int)*count;
+
+// 			for(int i = 0; i < count; i++) {
+// 				int index = indexes[i];
+// 				world->objects[index] = objects[i];
+// 			}
+// 		} break;
+
+// 		// case COMMAND_TYPE_INSERT: {
+// 		// 	int count = *((int*)d); d += sizeof(int);
+
+// 		// 	for(int i = 0; i < count; i++) {
+// 		// 		int index = indexes[i];
+// 		// 		world->objects[index] = objects[i];
+// 		// 	}
+// 		// }
+
+// 		default: break;
+// 	}
+}
+
 struct EntityUI {
 	DArray<int> selectedObjects;
 	DArray<Object> objectCopies;
@@ -648,6 +790,8 @@ struct EntityUI {
 	// For multiple selection.
 	DArray<Vec3> objectCenterOffsets;
 	Object multiChangeObject;
+
+	HistoryData history;
 
 	int selectionMode;
 	int selectionState;
@@ -670,6 +814,7 @@ struct EntityUI {
 
 	// Translation mode.
 
+	bool positionChanged;
 	Vec3 startPos;
 	Vec3 centerOffset;
 	float centerDistanceToCam;
@@ -752,7 +897,7 @@ void saveScene(World* world, char* filePath) {
 	fclose(file);
 }
 
-void loadScene(World* world, char* filePath) {
+void loadScene(World* world, char* filePath, EntityUI* eui) {
 	FILE* file = fopen(filePath, "rb");
 
 	if(file) {
@@ -766,6 +911,14 @@ void loadScene(World* world, char* filePath) {
 	}
 
 	fclose(file);
+
+	// // Insert all objects to history at start.
+	// for(int i = 0; i < world->objects.count; i++) {
+	// 	eui->selectedObjects.push(i);
+	// }
+	// historyAdd(&eui->history, &world->objects, &eui->selectedObjects, COMMAND_TYPE_EDIT);
+
+	eui->selectedObjects.clear();
 }
 
 
@@ -811,11 +964,11 @@ void deleteObjects(DArray<Object>* objects, DArray<int>* selected, int* selectio
 void copyObjects(DArray<Object>* objects, DArray<Object>* copies, DArray<int>* selected) {
 	copies->clear();
 	for(int i = 0; i < selected->count; i++) {
-		copies->insert(objects->at(selected->at(i)));
+		copies->push(objects->at(selected->at(i)));
 	}
 }
 
-void insertObject(World* world, Object obj, DArray<int>* selected, bool keepPosition = false) {
+void insertObject(World* world, Object obj, DArray<int>* selected, HistoryData* hd, bool keepPosition = false) {
 	Camera* cam = &world->camera;
 	float spawnDistance = cam->dim.w*2;
 
@@ -823,13 +976,13 @@ void insertObject(World* world, Object obj, DArray<int>* selected, bool keepPosi
 		obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
 	}
 
-	world->objects.insert(obj);
+	world->objects.push(obj);
 
 	selected->clear();
-	selected->insert(world->objects.count-1);
+	selected->push(world->objects.count-1);
 }
 
-void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, bool keepPosition = false) {
+void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, HistoryData* hd, bool keepPosition = false) {
 	if(copies->empty()) return;
 
 	Camera* cam = &world->camera;
@@ -841,11 +994,11 @@ void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, 
 		}
 	}
 
-	world->objects.insert(copies);
+	world->objects.push(copies);
 
 	selected->clear();
 	for(int i = 0; i < copies->count; i++) {
-		selected->insert(world->objects.count-1 + (i - (copies->count-1)));
+		selected->push(world->objects.count-1 + (i - (copies->count-1)));
 	}
 }
 

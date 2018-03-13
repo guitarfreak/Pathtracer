@@ -673,7 +673,6 @@ void CALLBACK updateInput(SystemData* sd) {
 	            case WM_CLOSE: 
 	            case WM_QUIT: 
 	            	input->closeWindow = true;
-	            	printf("Close!\n");
 	            	break;
 
 	            default: {

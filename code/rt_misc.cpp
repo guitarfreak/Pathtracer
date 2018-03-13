@@ -1303,21 +1303,21 @@ struct DArray {
 		resize(n);
 	}
 
-	void insert(T element) {
+	void push(T element) {
 		if(count == reserved) resize(count+1);
 
 		data[count++] = element;
 	}
 
-	void insert(T* elements, int n) {
+	void push(T* elements, int n) {
 		if(count+n-1 >= reserved) resize(count+n);
 
 		copyArray(data+count, elements, T, n);
 		count += n;
 	}
 
-	void insert(DArray* array) {
-		insert(array->data, array->count);
+	void push(DArray* array) {
+		push(array->data, array->count);
 	}
 
 	int find(T value) {
@@ -1328,11 +1328,21 @@ struct DArray {
 		return 0;
 	}
 
+	T* retrieve(int addedCount) {
+		if(count+addedCount-1 >= reserved) resize(count+addedCount);
+
+		T* p = data + count;
+		count += addedCount;
+
+		return p;
+	}
+
 	void clear()           { count = 0; }
 	T    first()           { return data[0]; }
 	T    last()            { return data[count-1]; }
 	bool empty()           { return count == 0; };
-	void remove()          { count--; }
+	T    pop()             { return data[--count]; }
+	void pop(int n)        { count -= n; }
 	void remove(int i)     { data[i] = data[--count]; }
 	T&   operator[](int i) { return data[i]; }
 	T&   at(int i)         { return data[i]; }
