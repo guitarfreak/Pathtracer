@@ -289,6 +289,8 @@ struct BoxSettings {
 	Vec4 borderColor;
 	float borderSize; // Not used yet.
 	Vec2 padding;
+
+	float vertGradientOffset;
 };
 
 BoxSettings boxSettings(Vec4 color, float roundedCorner, Vec4 borderColor) {
@@ -374,6 +376,8 @@ struct SliderSettings {
 	float defaultvalue;
 	
 	bool applyAfter;
+
+	Vec4 borderColor;
 };
 
 SliderSettings sliderSettings(TextBoxSettings textBoxSettings, float size, float minSize, float lineWidth, float rounding, float heightOffset, Vec4 color, Vec4 lineColor) {
@@ -1243,12 +1247,25 @@ void drawBox(Rect r, Rect scissor, BoxSettings settings, bool round = true) {
 		r.bottom = roundFloat(r.bottom);
 	}
 
+	bool hasBorder = settings.borderColor.a != 0 ? true : false;
+	int borderSize = 1;
+
 	if(settings.color.a != 0) {
-		drawRectRounded(r, settings.color, settings.roundedCorner);
-	}		
-	glLineWidth(1);
-	if(settings.borderColor.a != 0) {
-		drawRectRoundedOutlined(r, settings.color, settings.borderColor, settings.roundedCorner);
+		if(settings.vertGradientOffset) {
+			setSRGB(false);
+			float colorOffset = 0.1f;
+			Vec4 off = vec4(settings.vertGradientOffset, 0);
+			drawRectNewColoredH(r, settings.color - off, settings.color + off);
+			setSRGB(true);
+		} else {
+			Rect br = r;
+			if(hasBorder) br = rectExpand(br, -vec2(borderSize*2));
+			drawRectRounded(br, settings.color, settings.roundedCorner);
+		}
+	}
+	if(hasBorder) {
+		glLineWidth(1);
+		drawRectRoundedOutline(r, settings.borderColor, settings.roundedCorner);
 	}
 }
 
@@ -1344,14 +1361,15 @@ void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSett
 		drawLine(rectL(br), rectR(br), settings.lineColor);
 	}
 
-	drawBox(sr, scissor, boxSettings(settings.color, settings.rounding));
 
-	// scissorTestScreen(rectExpand(scissor, vec2(-1,-1)));
-	scissorTestScreen(getRectScissor(br, scissor));
+	BoxSettings sliderBoxSettings = boxSettings(settings.color, settings.rounding, settings.borderColor);
+	drawBox(sr, scissor, sliderBoxSettings);
+	// drawBox(sr, scissor, boxSettings(settings.color, settings.rounding));
+
+	scissorTestScreen(rectExpand(getRectScissor(br, scissor), vec2(-2,-2)));
+	// scissorTestScreen(getRectScissor(br, scissor));
 
 	char* text = type == SLIDER_TYPE_FLOAT ? fillString("%f", *((float*)val)) : fillString("%i", *((int*)val)) ;
-	// drawText(text, rectCen(br), vec2i(0,0), *textSettings);
-
 
 	// Position text outside of slider rect.
 	Vec2 tp = rectCen(br);
@@ -1371,8 +1389,6 @@ void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSett
 			}
 		}
 	}
-
-	// drawText(text, rectCen(br), vec2i(0,0), *textSettings);
 }
 void drawSlider(float val, Rect br, Rect sr, Rect scissor, SliderSettings settings) {
 	return drawSlider(&val, SLIDER_TYPE_FLOAT, br, sr, scissor, settings);
@@ -1417,6 +1433,7 @@ bool _newGuiQuickButton(NewGui* gui, Rect r, char* text, Vec2i align, TextBoxSet
 
 	TextBoxSettings set = settings == 0 ? gui->buttonSettings : *settings;
 	set.boxSettings.color += highlightOnActive?newGuiColorModB(gui):newGuiColorMod(gui);
+
 	drawTextBox(r, text, align, gui->scissor, set);
 
 	if(newGuiIsHot(gui)) newGuiSetCursor(gui, IDC_HAND);

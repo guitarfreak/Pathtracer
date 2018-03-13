@@ -15,14 +15,21 @@
 	- Converge method on sampling for speed up.
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Clean up repetitive gui code. (Layout.)
+	- Handle non ascii text.
+	- Some way to disable buttons and such.
+	- Turning while dragging is glitchy.
+	- Drag region selection.
+	- Gradient on button.
+	- Cleartype font rendering.
 
 	- Simd.
 
 	Bugs:
-	- Windows key slow sometimes.
+	- Windows key slow often.
 	- Memory leak? Flashing when drawing scene in opengl.
 	- glGenerateTextureMipmap(ad->raycastTexture.id) clears screen to black so we have to 
 	  draw the background again.
+	- Saving sometimes crashes. Hard to debug...
 
 =================================================================================
 */
@@ -270,7 +277,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		systemData->maxWindowDim = ws->biggestMonitorSize;
 
 		#ifndef SHIPPING_MODE
-		makeWindowTopmost(systemData);
+		if(!IsDebuggerPresent()) {
+			makeWindowTopmost(systemData);
+		}
 		#endif
 
 		gs->useSRGB = true;
@@ -470,7 +479,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->entityUI.snapGridSize = 1;
 		ad->entityUI.snapGridDim = 100;
 
-		ad->entityUI.objectCopy = defaultObject();
+		ad->entityUI.objectCopies.insert(defaultObject());
 
 		ad->fontFile       = getPStringCpy("LiberationSans-Regular.ttf");
 		ad->fontFileBold   = getPStringCpy("LiberationSans-Bold.ttf");
@@ -1128,10 +1137,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		eui->guiHasFocus = guiHotMouseClick(gui);
 
-		if(!ad->drawSceneWired) {
-			eui->selectedObject = 0;
-		}
-
 		// @Dialogs.
 		{
 			DialogData* dd = &ad->dialogData;
@@ -1183,6 +1188,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode - mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
 			}
 
+			if(eui->selectedObjects.count > 1) eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
+
 			if(input->keysDown[KEYCODE_SHIFT]) {
 				eui->snappingEnabled = true;
 			} else {
@@ -1191,56 +1198,69 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// @Selection.
 
+			bool multipleSelectionMode = input->keysDown[KEYCODE_CTRL];
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
 				int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects);
 				if(objectIndex != -1) {
-					eui->selectedObject = objectIndex+1;
-					eui->selectionAnimState = 0;
-				} else eui->selectedObject = 0;
+					if(multipleSelectionMode) {
+						if(isObjectSelected(eui, objectIndex)) {
+							// Deselect.
+							int i = eui->selectedObjects.find(objectIndex)-1;
+							eui->selectedObjects.remove(i);
+						} else {
+							// Select.
+							eui->selectedObjects.insert(objectIndex);
+							eui->selectionAnimState = 0;
+						}
+					} else {
+						eui->selectedObjects.clear();
+						eui->selectedObjects.insert(objectIndex);
+						eui->selectionAnimState = 0;
+					}
+
+					eui->selectionChanged = true;
+				} else {
+					if(!multipleSelectionMode) {
+						eui->selectedObjects.clear();
+						eui->selectionState = ENTITYUI_INACTIVE;
+						eui->selectionChanged = true;
+					}
+				}
 			}
 
 			if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
 				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
-			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObject) {
-				eui->selectedObject = 0;
+			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count) {
+				eui->selectedObjects.clear();
 				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
-			if(eui->selectedObject) {
+			if(eui->selectedObjects.count) {
 				// Delete.
 				if(keyPressed(gui, input, KEYCODE_DEL)) {
-					deleteObject(&world->objects, &eui->selectedObject, &eui->selectionState, false);
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, false);
 				}
 
 				// Copy.
 				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_C)) {
-					eui->objectCopy = world->objects[eui->selectedObject-1];
+					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
 				}
 
 				// Cut.
 				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X)) {
 					// Copy and delete.
-					eui->objectCopy = world->objects[eui->selectedObject-1];
-					deleteObject(&world->objects, &eui->selectedObject, &eui->selectionState, false);
+					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, false);
 				}
-			}
-
-			// Insert default.
-			if(keyPressed(gui, input, KEYCODE_RETURN)) {
-				int id = insertObject(&ad->world, defaultObject());
-				if(eui->selectedObject) eui->selectedObject = id;
 			}
 
 			// Insert.
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
-				int id = insertObject(&ad->world, eui->objectCopy, true);
-				if(id) {
-					eui->selectedObject = id;
-				}
+				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, true);
 			}
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
@@ -1258,51 +1278,70 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->gotActive = true;
 			}
 
-
 			if(eui->selectionState == ENTITYUI_ACTIVE) {
 
-				Object* obj = ad->world.objects + (eui->selectedObject-1);
 				Camera* cam = &ad->world.camera;
 				Vec3 rayPos = cam->pos;
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
+				bool multipleSelection = eui->selectedObjects.count > 1;
+
 				if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 
+					Vec3 pos;
+					if(!multipleSelection) {
+						Object* obj = ad->world.objects + eui->selectedObjects.first();
+						pos = obj->pos;
+					} else {
+						pos = selectedObjectsGetCenter(&world->objects, &eui->selectedObjects);
+
+						// Get offset from all selected objects to center.
+						if(eui->gotActive) {
+							eui->objectCenterOffsets.clear();
+
+							for(int i = 0; i < eui->selectedObjects.count; i++) {
+								Object* obj = world->objects + eui->selectedObjects[i];
+								Vec3 offset = obj->pos - pos;
+
+								eui->objectCenterOffsets.insert(offset);
+							}
+						}
+					}
+
 					if(eui->translateMode == TRANSLATE_MODE_AXIS) {
-						Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
+						Vec3 cameraOnAxis = projectPointOnLine(pos, eui->axis, cam->pos);
 						Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
 
 						Vec3 planeIntersection;
-						float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+						float distance = linePlaneIntersection(rayPos, rayDir, pos, planeNormal, &planeIntersection);
 						if(distance != -1) {
-							Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
+							Vec3 linePointOnAxis = projectPointOnLine(pos, eui->axis, planeIntersection);
 
 							// Init.
 							if(eui->gotActive) {
-								eui->objectDistanceVector = obj->pos - linePointOnAxis;
-								eui->startPos = obj->pos;
+								eui->objectDistanceVector = pos - linePointOnAxis;
+								eui->startPos = pos;
 							}
 
-							obj->pos = linePointOnAxis + eui->objectDistanceVector;
+							pos = linePointOnAxis + eui->objectDistanceVector;
 						}
 
 					} else if(eui->translateMode == TRANSLATE_MODE_PLANE) {
 						Vec3 planeNormal = eui->axis;
 
 						Vec3 planeIntersection;
-						float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+						float distance = linePlaneIntersection(rayPos, rayDir, pos, planeNormal, &planeIntersection);
 						if(distance != -1) {
 
 							// Init.
 							if(eui->gotActive) {
-								eui->objectDistanceVector = obj->pos - planeIntersection;
-								eui->startPos = obj->pos;
+								eui->objectDistanceVector = pos - planeIntersection;
+								eui->startPos = pos;
 							}
 
-							obj->pos = planeIntersection + eui->objectDistanceVector;
+							pos = planeIntersection + eui->objectDistanceVector;
 						}
 					} else if(eui->translateMode == TRANSLATE_MODE_CENTER) {
-						Vec3 pos = obj->pos + eui->centerOffset;
 						Vec3 pp = cam->pos + cam->ovecs.dir * eui->centerDistanceToCam + eui->centerOffset;
 
 						Vec3 planeIntersection;
@@ -1312,10 +1351,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 							// Init.
 							if(eui->gotActive) {
 								eui->objectDistanceVector = eui->centerOffset;
-								eui->startPos = obj->pos;
+								eui->startPos = pos;
 							}
 
-							obj->pos = planeIntersection - eui->objectDistanceVector;
+							pos = planeIntersection - eui->objectDistanceVector;
 						}
 					}
 
@@ -1323,90 +1362,106 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						// We always snap every axis to keep it simple.
 						for(int i = 0; i < 3; i++) {
-							Vec3 p = projectPointOnLine(eui->startPos, eui->axes[i], obj->pos);
+							Vec3 p = projectPointOnLine(eui->startPos, eui->axes[i], pos);
 							float length = lenVec3(p - eui->startPos);
 							float snappedLength = roundMod(length, eui->snapGridSize);
 							float lengthDiff = length - snappedLength;
 
 							if(dot(p - eui->startPos, eui->axes[i]) > 0) lengthDiff *= -1;
 
-							obj->pos += eui->axes[i]*lengthDiff;
+							pos += eui->axes[i]*lengthDiff;
 						}
 					}
-				}
 
-				if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
-
-					Vec3 intersection;
-					float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, eui->axis, &intersection);
-					if(dist != -1) {
-						float distToObj = lenVec3(intersection - obj->pos);
-
-						if(eui->gotActive) {
-							eui->startRot = obj->rot;
-							eui->objectDistanceVector = normVec3(intersection - obj->pos);
+					if(!multipleSelection) {
+						Object* obj = ad->world.objects + eui->selectedObjects.first();
+						obj->pos = pos;
+					} else {
+						for(int i = 0; i < eui->selectedObjects.count; i++) {
+							Object* obj = world->objects + eui->selectedObjects[i];
+							obj->pos = pos + eui->objectCenterOffsets[i];
+							Vec3 offset = obj->pos - pos;
 						}
-
-						Vec3 start = eui->objectDistanceVector;
-						Vec3 end = normVec3(intersection - obj->pos);
-
-						Vec3 a = cross(start, end);
-						float len = lenVec3(a);
-						if(dot(normVec3(a), eui->axis) < 0) len *= -1;
-						float angle = asin(len);
-						if(dot(start, end) < 0) {
-							if(angle > 0) angle = M_PI_2 + M_PI_2-angle;
-							else angle = -M_PI_2 - (M_PI_2-abs(angle));
-						}
-
-						if(eui->snappingEnabled) angle = roundMod(angle, M_PI_4);
-
-						obj->rot = quat(angle, eui->axis)*eui->startRot;
-
-						eui->currentRotationAngle = angle;
 					}
-				}
 
-				if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
+				} else {
 
-					Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
-					Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
+					Object* obj = ad->world.objects + eui->selectedObjects.first();
 
-					Vec3 planeIntersection;
-					float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
-					if(distance != -1) {
-						Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
+					if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
 
-						if(eui->gotActive) {
-							eui->objectDistanceVector = obj->pos - linePointOnAxis;
+						Vec3 intersection;
+						float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, eui->axis, &intersection);
+						if(dist != -1) {
+							float distToObj = lenVec3(intersection - obj->pos);
 
-							eui->startDim = obj->dim.e[eui->axisIndex-1];
+							if(eui->gotActive) {
+								eui->startRot = obj->rot;
+								eui->objectDistanceVector = normVec3(intersection - obj->pos);
+							}
+
+							Vec3 start = eui->objectDistanceVector;
+							Vec3 end = normVec3(intersection - obj->pos);
+
+							Vec3 a = cross(start, end);
+							float len = lenVec3(a);
+							if(dot(normVec3(a), eui->axis) < 0) len *= -1;
+							float angle = asin(len);
+							if(dot(start, end) < 0) {
+								if(angle > 0) angle = M_PI_2 + M_PI_2-angle;
+								else angle = -M_PI_2 - (M_PI_2-abs(angle));
+							}
+
+							if(eui->snappingEnabled) angle = roundMod(angle, M_PI_4);
+
+							obj->rot = quat(angle, eui->axis)*eui->startRot;
+
+							eui->currentRotationAngle = angle;
 						}
+					}
 
-						float oldLength = lenVec3(eui->objectDistanceVector);
-						float newLength = lenVec3(obj->pos - linePointOnAxis);
+					if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
 
-						float currentAxisLength = eui->startDim + (newLength - oldLength)*2;
+						Vec3 cameraOnAxis = projectPointOnLine(obj->pos, eui->axis, cam->pos);
+						Vec3 planeNormal = normVec3(cam->pos - cameraOnAxis);
 
-						currentAxisLength = clampMin(currentAxisLength, 0);
-						if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
+						Vec3 planeIntersection;
+						float distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, &planeIntersection);
+						if(distance != -1) {
+							Vec3 linePointOnAxis = projectPointOnLine(obj->pos, eui->axis, planeIntersection);
 
-						if(eui->snappingEnabled) {
-							currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
+							if(eui->gotActive) {
+								eui->objectDistanceVector = obj->pos - linePointOnAxis;
+
+								eui->startDim = obj->dim.e[eui->axisIndex-1];
+							}
+
+							float oldLength = lenVec3(eui->objectDistanceVector);
+							float newLength = lenVec3(obj->pos - linePointOnAxis);
+
+							float currentAxisLength = eui->startDim + (newLength - oldLength)*2;
+
+							currentAxisLength = clampMin(currentAxisLength, 0);
+							if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
+
+							if(eui->snappingEnabled) {
+								currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
+							}
+
+							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
+								// obj->dim = vec3(currentAxisLength*0.5f);
+								obj->dim = vec3(currentAxisLength);
+							} else if(obj->geometry.type == GEOM_TYPE_BOX) {
+								obj->dim.e[eui->axisIndex-1] = currentAxisLength;
+							}
+
+							geometryBoundingSphere(obj);
 						}
-
-						if(obj->geometry.type == GEOM_TYPE_SPHERE) {
-							// obj->dim = vec3(currentAxisLength*0.5f);
-							obj->dim = vec3(currentAxisLength);
-						} else if(obj->geometry.type == GEOM_TYPE_BOX) {
-							obj->dim.e[eui->axisIndex-1] = currentAxisLength;
-						}
-
-						geometryBoundingSphere(obj);
 					}
 				}
 
 			}
+
 		}
 	}
 
@@ -1415,6 +1470,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		World* world = &ad->world;
 		Camera* cam = &ad->world.camera;
 		Vec2 d = cam->dim;
+
+		float animSpeed = 3;
+		ad->entityUI.selectionAnimState += ad->dt * animSpeed;
 
 		Rect tr = ad->textureScreenRectFitted;
 
@@ -1524,8 +1582,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glPushMatrix();
 			glLoadIdentity();
 
-			for(int i = 0; i < world->objects.count; i++) {
-				Object* obj = world->objects + i;
+			for(int objectIndex = 0; objectIndex < world->objects.count; objectIndex++) {
+				Object* obj = world->objects + objectIndex;
 				Geometry* g = &obj->geometry;
 				Material* m = &obj->material;
 
@@ -1567,7 +1625,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				// Draw ui grid.
 
-				if(i == ad->entityUI.selectedObject-1) {
+				if(isObjectSelected(&ad->entityUI, objectIndex)) {
 
 					{
 						Mat4 tm = translationMatrix(obj->pos);
@@ -1586,8 +1644,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					// Color fading animation on selection.
 					{
-						float animSpeed = 3;
-						ad->entityUI.selectionAnimState += ad->dt * animSpeed;
 						float percent = (cos(ad->entityUI.selectionAnimState)+1)/2.0f;
 
 						Vec4 faceColors[] = { vec4(0,0,0,1), vec4(1,0,1,1), vec4(1,1,1,1) };
@@ -1638,17 +1694,22 @@ extern "C" APPMAINFUNCTION(appMain) {
 			{
 				EntityUI* eui = &ad->entityUI;
 
-				if(eui->selectedObject) {
-					Object* obj = world->objects + eui->selectedObject-1;
-					Geometry* geom = &obj->geometry;
+				if(!eui->selectedObjects.empty()) {
+					Object* object = world->objects + eui->selectedObjects.first();
+					Geometry* geom = &object->geometry;
+					Camera* cam = &world->camera;
 
-					// Ugh. Make sure to not draw anything after this.
-					// glClear(GL_DEPTH_BUFFER_BIT);
+					Vec3 pos = object->pos;
+					Quat rot = object->rot;
+					Vec3 dim = object->dim;
+
+					bool multipleSelection = eui->selectedObjects.count > 1;
+					if(multipleSelection) {
+						pos = selectedObjectsGetCenter(&world->objects, &eui->selectedObjects);
+					}
+
 					glDisable(GL_LIGHTING);
 
-					// Draw Gizmo.
-
-					Camera* cam = &world->camera;
 					float boundRadius = geom->boundingSphereRadius*1.5f;
 					float uiAlpha = 0.7f;
 
@@ -1659,7 +1720,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					float translationCenterBoxColorMod = 0.1f;
 
 
-					float distToCam = lenVec3(cam->pos - obj->pos);
+					float distToCam = lenVec3(cam->pos - pos);
 					float translateLineWidth = 5;
 
 					float translationArrowLength = distToCam * 0.2f;
@@ -1676,11 +1737,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 					float scaleArrowBoxDim = translationCenterBoxSize;
 					float scaleArrowLineWidth = 3.0f;
 
-
+					//
 
 					if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 						Vec2 d = vec2(translationArrowThickness,translationArrowLength);
-						Vec3 n = cam->pos - obj->pos;
+						Vec3 n = cam->pos - pos;
 						Vec3 c[] = { vec3(1,0,0), vec3(0,1,0), vec3(0,0,1) };
 						Vec3 colorSquares = vec3(1);
 
@@ -1689,7 +1750,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 a = vec3(0,0,0);
 							a.e[i] = 1;
 
-							if(eui->localMode) a = obj->rot * a;
+							if(eui->localMode) a = rot * a;
 
 							if(dot(a, n) < 0) a *= -1;
 							axis[i] = a;
@@ -1710,7 +1771,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							float a = uiAlpha;
 							{
-								Vec3 pp = obj->pos + axis[i]*d.h*0.5f;
+								Vec3 pp = pos + axis[i]*d.h*0.5f;
 								// Getting right angle with two cross products.
 								Vec3 pn = normVec3(cross( cross(axis[i], n), axis[i])); 
 
@@ -1729,7 +1790,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 									if(i == eui->axisIndex-1) a = 1;
 							}
 
-							drawArrow(obj->pos, obj->pos + axis[i]*d.h, n, d.w, vec4(c[i],a));
+							drawArrow(pos, pos + axis[i]*d.h, n, d.w, vec4(c[i],a));
 						}
 
 						// Move plane.
@@ -1740,11 +1801,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							// Whatever.
 							float dim = translationPlaneSize;
-							Vec3 edgePoint = obj->pos + axis[(i+1)%3]*d.h + axis[(i+2)%3]*d.h;
-							Vec3 diag = normVec3(edgePoint - obj->pos);
+							Vec3 edgePoint = pos + axis[(i+1)%3]*d.h + axis[(i+2)%3]*d.h;
+							Vec3 diag = normVec3(edgePoint - pos);
 
 							float squareDiag = sqrt(2 * (dim*dim));
-							Vec3 p = obj->pos + diag*(squareDiag/2) * 2;
+							Vec3 p = pos + diag*(squareDiag/2) * 2;
 
 
 							float a = uiAlpha;
@@ -1778,9 +1839,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							{
 								Vec3 intersection;
-								bool result = boxRaycastRotated(cam->pos, rayDir, obj->pos, vec3(translationCenterBoxSize), obj->rot, &intersection);
+								bool result = boxRaycastRotated(cam->pos, rayDir, pos, vec3(translationCenterBoxSize), rot, &intersection);
 								if(result) {
-									eui->centerOffset = intersection - obj->pos;
+									eui->centerOffset = intersection - pos;
 									centerIndex = 1;
 
 									contenderId = widgetId;
@@ -1795,9 +1856,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 
 							if(eui->localMode) {
-								drawBox(obj->pos, vec3(translationCenterBoxSize), &vm, obj->rot, color);
+								drawBox(pos, vec3(translationCenterBoxSize), &vm, rot, color);
 							} else {
-								drawBox(obj->pos, vec3(translationCenterBoxSize), &vm, quat(), color);
+								drawBox(pos, vec3(translationCenterBoxSize), &vm, quat(), color);
 							}
 						}
 
@@ -1808,15 +1869,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							glLineWidth(translateLineWidth);
 
-							drawArrow(eui->startPos, obj->pos, n, translationVectorThickness, translationVectorColor);
+							drawArrow(eui->startPos, pos, n, translationVectorThickness, translationVectorColor);
 
 							{
 								Vec3 globalAxis[] = {vec3(1,0,0), vec3(0,1,0), vec3(0,0,1)};
 								float l[3];
 								for(int i = 0; i < 3; i++) {
-									if(dot(globalAxis[i], eui->startPos-obj->pos) > 0) globalAxis[i] *= -1;
+									if(dot(globalAxis[i], eui->startPos-pos) > 0) globalAxis[i] *= -1;
 
-									l[i] = lenVec3(projectPointOnLine(eui->startPos, globalAxis[i], obj->pos) - eui->startPos);		
+									l[i] = lenVec3(projectPointOnLine(eui->startPos, globalAxis[i], pos) - eui->startPos);		
 								}
 
 								Vec3 p = eui->startPos;
@@ -1837,8 +1898,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(eui->selectionState != ENTITYUI_ACTIVE) {
 							if(axisIndex || planeIndex || centerIndex) {
 								if(centerIndex) {
-									eui->axis = cam->pos - obj->pos;
-									eui->centerDistanceToCam = lenVec3(vectorToCam(obj->pos, cam));
+									eui->axis = cam->pos - pos;
+									eui->centerDistanceToCam = lenVec3(vectorToCam(pos, cam));
 									eui->selectionState = ENTITYUI_HOT;
 									eui->translateMode = TRANSLATE_MODE_CENTER;
 								} else if(planeIndex) {
@@ -1863,7 +1924,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						eui->hotId = contenderId;
 					}
 
-					if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
+					if(eui->selectionMode == ENTITYUI_MODE_ROTATION && !multipleSelection) {
 
 						float thickness = rotationRingThickness;
 						float radius = rotationRingRadius;
@@ -1875,7 +1936,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							Vec3 a = vec3(0,0,0);
 							a.e[i] = 1;
 
-							if(eui->localMode) a = obj->rot * a;
+							if(eui->localMode) a = rot * a;
 
 							// if(dot(a, n) < 0) a *= -1;
 							axis[i] = a;
@@ -1890,9 +1951,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(eui->selectionState != ENTITYUI_ACTIVE) {
 							for(int i = 0; i < 3; i++) {
 								Vec3 intersection;
-								float dist = linePlaneIntersection(cam->pos, rayDir, obj->pos, axis[i], &intersection);
+								float dist = linePlaneIntersection(cam->pos, rayDir, pos, axis[i], &intersection);
 								if(dist != -1) {
-									float distToObj = lenVec3(intersection - obj->pos);
+									float distToObj = lenVec3(intersection - pos);
 									if(valueBetween(distToObj, radius-thickness, radius)) {
 
 										float distToCam = -(vm*intersection).z;
@@ -1912,11 +1973,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 						// Should switch to different depth buffer, but this works for now.
 						glClear(GL_DEPTH_BUFFER_BIT);
 
-						drawSphere(obj->pos, radius-thickness, vec4(0,0,0,0));
+						drawSphere(pos, radius-thickness, vec4(0,0,0,0));
 
 						for(int i = 0; i < 3; i++) {
 							float a = uiAlpha;
-							drawRing(obj->pos, axis[i], radius, thickness, vec4(c[i],a));
+							drawRing(pos, axis[i], radius, thickness, vec4(c[i],a));
 						}
 
 						// Paint over hot/active ring.
@@ -1924,11 +1985,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 							glDisable(GL_DEPTH_TEST);
 	
 							int i = axisIndex-1;
-							drawRing(obj->pos, axis[i], radius, thickness, vec4(c[i],1));
+							drawRing(pos, axis[i], radius, thickness, vec4(c[i],1));
 
 							if(eui->selectionState == ENTITYUI_ACTIVE) {
-								Vec3 left = obj->pos + normVec3(eui->objectDistanceVector)*radius;
-								drawTriangleFan(obj->pos, left, eui->currentRotationAngle, axis[i], rotationSegmentColor);
+								Vec3 left = pos + normVec3(eui->objectDistanceVector)*radius;
+								drawTriangleFan(pos, left, eui->currentRotationAngle, axis[i], rotationSegmentColor);
 							}
 
 							glEnable(GL_DEPTH_TEST);
@@ -1947,7 +2008,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 					}
 
-					if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
+					if(eui->selectionMode == ENTITYUI_MODE_SCALE && !multipleSelection) {
 
 						Vec3 c[] = { vec3(0.9f,0,0), vec3(0,0.9f,0), vec3(0,0,0.9f) };
 
@@ -1956,21 +2017,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 						for(int i = 0; i < 3; i++) {
 							Vec3 color = c[i];
 
-							float arrowLength = obj->dim.e[i]/2 + scaleArrowBoxDim;
+							float arrowLength = dim.e[i]/2 + scaleArrowBoxDim;
 
 							Vec3 axis = vec3(0,0,0);
 							axis.e[i] = 1;
-							axis = obj->rot*axis;
-							if(dot(axis, cam->pos - obj->pos) < 0) axis *= -1;
-							Vec3 p = obj->pos + axis * arrowLength;
+							axis = rot*axis;
+							if(dot(axis, cam->pos - pos) < 0) axis *= -1;
+							Vec3 p = pos + axis * arrowLength;
 
 							if(eui->selectionState != ENTITYUI_ACTIVE) {
 								Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
 								Vec3 intersection;
-								bool result = boxRaycastRotated(cam->pos, rayDir, p, vec3(scaleArrowBoxDim), obj->rot, &intersection);
+								bool result = boxRaycastRotated(cam->pos, rayDir, p, vec3(scaleArrowBoxDim), rot, &intersection);
 								if(result) {
 									hotAxisIndex = i+1;
-									hotAxis = normVec3(p - obj->pos);
+									hotAxis = normVec3(p - pos);
 									eui->centerOffset = intersection - p;
 
 									if(!eui->guiHasFocus)
@@ -1982,9 +2043,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							glDisable(GL_DEPTH_TEST);
 							glLineWidth(scaleArrowLineWidth);
-							drawLine(obj->pos, p, vec4(color,1));
+							drawLine(pos, p, vec4(color,1));
 							glLineWidth(1);
-							drawBox(p, vec3(scaleArrowBoxDim), &vm, obj->rot, vec4(color, 1));
+							drawBox(p, vec3(scaleArrowBoxDim), &vm, rot, vec4(color, 1));
 							glEnable(GL_DEPTH_TEST);
 						}
 
@@ -2041,9 +2102,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Vec4 cEditCursor = c.text;
 			Vec4 cEditSelection = vec4(hslToRgbFloat(0.6f,0.4f,0.4f),1);
 
-			float panelRounding = 7;
-			float buttonRounding = 4;
-
+			float buttonRounding = ad->fontHeight * 0.3;
 			float textPadding = font->height*0.4f;
 
 			BoxSettings bs = boxSettings(c.background, 0, c.outline);
@@ -2063,13 +2122,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gui->editSettings = textEditSettings(etbs, vec4(0,0,0,0), gui->editText, ESETTINGS_SINGLE_LINE | ESETTINGS_START_RIGHT, 1, 1.1f, cEditSelection, cEditCursor, 6, textPadding);
 
 			float sw = fontHeight*1.0f;
-			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, fontHeight*0.27f, c.button, vec4(0,0,0,0));
+			gui->sliderSettings = sliderSettings(etbs, sw, sw, 0, 0, fontHeight*0.20f, c.button, vec4(0,0,0,0));
+			gui->sliderSettings.borderColor = c.outline;
 
 			gui->popupSettings = boxSettings(c.background, 0, c.outline);
 
 			gui->comboBoxSettings = textBoxSettings(gui->textSettings, boxSettings(c.edit, 0, c.outline), textPadding);
 
-			BoxSettings cbs = boxSettings(c.edit, panelRounding, c.outline);
+			BoxSettings cbs = boxSettings(c.edit, buttonRounding, c.outline);
 			gui->checkBoxSettings = checkBoxSettings(cbs, c.button, 0.5f);
 		}
 
@@ -2459,19 +2519,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), fillString("%i", world->objects.count), vec2i(1,0));
 
 						{
-							float spawnDistance = 30;
-
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 							qr = quickRow(r, pad.x, 0.0f, 0.0f);
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Object")) {
-								int id = insertObject(&ad->world, defaultObject());
-								if(eui->selectedObject) eui->selectedObject = id;
+								insertObject(&ad->world, defaultObject(), &eui->selectedObjects);
 							}
 
-							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copy")) {
-								int id = insertObject(&ad->world, eui->objectCopy, true);
-								if(eui->selectedObject) eui->selectedObject = id;
+							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copies")) {
+								insertObjects(&ad->world, &eui->objectCopies, &eui->selectedObjects);
 							}
 						}
 
@@ -2490,7 +2546,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Right panel.
 		#if 1
-		if(ad->entityUI.selectedObject)
+		if(ad->entityUI.selectedObjects.count)
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
 
@@ -2538,6 +2594,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float ew = elementWidth;
 				Vec2 pad = padding;
 
+
 				{
 					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, vec4(0, 1));
 					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings());
@@ -2547,13 +2604,53 @@ extern "C" APPMAINFUNCTION(appMain) {
 					char* t;
 					QuickRow qr;
 
-
 					RaytraceSettings* settings = &ad->settings;
 					World* world = &ad->world;
 					EntityUI* eui = &ad->entityUI;
-					Object* obj = ad->world.objects + (eui->selectedObject-1);
-					Geometry* geom = &obj->geometry;
-					Material* mat = &obj->material;
+
+					bool multipleSelection = eui->selectedObjects.count > 1;
+
+					// if(eui->selectionChanged) {
+					{
+						eui->multiChangeObject = {};
+						eui->selectionChanged = false;
+
+						Object o = world->objects[eui->selectedObjects[0]];
+
+						// Find values that are identical on all selected objects.
+						for(int i = 1; i < eui->selectedObjects.count; i++) {
+							Object* obj = world->objects + eui->selectedObjects[i];
+							if(o.pos.x != obj->pos.x) o.pos.x = 0;
+							if(o.pos.y != obj->pos.y) o.pos.y = 0;
+							if(o.pos.z != obj->pos.z) o.pos.z = 0;
+							if(o.rot.w != obj->rot.w) o.rot.w = 0;
+							if(o.rot.x != obj->rot.x) o.rot.x = 0;
+							if(o.rot.y != obj->rot.y) o.rot.y = 0;
+							if(o.rot.z != obj->rot.z) o.rot.z = 0;
+							if(o.dim.x != obj->dim.x) o.dim.x = 0;
+							if(o.dim.y != obj->dim.y) o.dim.y = 0;
+							if(o.dim.z != obj->dim.z) o.dim.z = 0;
+							if(o.color.r != obj->color.r) o.color.r = 0;
+							if(o.color.g != obj->color.g) o.color.g = 0;
+							if(o.color.b != obj->color.b) o.color.b = 0;
+							if(o.geometry.type != obj->geometry.type) o.geometry.type = 0;
+							if(o.material.emitColor.r != obj->material.emitColor.r) o.material.emitColor.r = 0;
+							if(o.material.emitColor.g != obj->material.emitColor.g) o.material.emitColor.g = 0;
+							if(o.material.emitColor.b != obj->material.emitColor.b) o.material.emitColor.b = 0;
+							if(o.material.reflectionMod != obj->material.reflectionMod) o.material.reflectionMod = 0;
+						}
+
+						eui->multiChangeObject = o;
+					}
+
+					Object* obj;
+					if(multipleSelection) obj = &eui->multiChangeObject;
+					else obj = world->objects + eui->selectedObjects.first();
+
+					// Offset and size of value that changes for multiple selection.
+					Vec2i offSize = vec2i(0,0);
+
+					//
 
 					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
 					
@@ -2561,62 +2658,62 @@ extern "C" APPMAINFUNCTION(appMain) {
 					r = rectExpand(r, vec2(0,-eh*0.2f));
 					qr = quickRow(r, pad.x, leftRightButtonWidth, 0, leftRightButtonWidth);
 
-					if(newGuiQuickButton(gui, quickRowNext(&qr), "◄")) {
-						eui->selectedObject = mod(eui->selectedObject-2, world->objects.count);
-						eui->selectedObject++;
-					}
+					if(!multipleSelection) {
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "◄")) {
+							eui->selectedObjects[0] = mod(eui->selectedObjects[0]-1, world->objects.count);
+						}
+					} else quickRowNext(&qr);
 
-					newGuiQuickTextBox(gui, quickRowNext(&qr), "<b>Entities<b>", vec2i(0,0), &headerSettings);
+					char* headerString = "<b>Entities<b>";
+					if(!multipleSelection) headerString = fillString("<b>Entity (%i)<b>", eui->selectedObjects.first());
+					newGuiQuickTextBox(gui, quickRowNext(&qr), headerString, vec2i(0,0), &headerSettings);
 
-					if(newGuiQuickButton(gui, quickRowNext(&qr), "►")) {
-						eui->selectedObject = mod(eui->selectedObject, world->objects.count);
-						eui->selectedObject++;
-					}
+					if(!multipleSelection) {
+						if(newGuiQuickButton(gui, quickRowNext(&qr), "►")) {
+							eui->selectedObjects[0] = mod(eui->selectedObjects[0]+1, world->objects.count);
+						}
+					} else quickRowNext(&qr);
 
 					{
-						char* labels[] = {"Id", "Position", "Rotation", "Color", "Type", "BRadius", "Dimension", "EmitColor", "Reflection"};
+						char* labels[] = {"Position", "Rotation", "Color", "Type", "BRadius", "Dimension", "EmitColor", "Reflection"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
 							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
 						}
 
-						t = fillString("%i", eui->selectedObject-1);
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, getTextDim(t, font).w);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickText(gui, quickRowNext(&qr), t, vec2i(-1,0));
-
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.x);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.y);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.z);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.x)) offSize = memberOffsetSize(Object, pos.x);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.y)) offSize = memberOffsetSize(Object, pos.y);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.z)) offSize = memberOffsetSize(Object, pos.z);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						float cols[] = {labelsMaxWidth, 0,0,0,0};
 						qr = quickRow(r, pad.x, cols, arrayCount(cols));
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.w);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.x);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.y);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.z);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.w)) offSize = memberOffsetSize(Object, rot.w);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.x)) offSize = memberOffsetSize(Object, rot.x);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.y)) offSize = memberOffsetSize(Object, rot.y);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.z)) offSize = memberOffsetSize(Object, rot.z);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.r);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.g);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.b);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.r)) offSize = memberOffsetSize(Object, color.r);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.g)) offSize = memberOffsetSize(Object, color.g);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.b)) offSize = memberOffsetSize(Object, color.b);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						if(newGuiQuickComboBox(gui, quickRowNext(&qr), &geom->type, geometryTypeStrings, arrayCount(geometryTypeStrings))) {
+						if(newGuiQuickComboBox(gui, quickRowNext(&qr), &obj->geometry.type, geometryTypeStrings, arrayCount(geometryTypeStrings))) {
+							offSize = memberOffsetSize(Object, geometry.type);
 
-							if(geom->type == GEOM_TYPE_SPHERE) {
+							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
 								obj->dim = vec3(max(obj->dim.x, obj->dim.y, obj->dim.z));
+								offSize = memberOffsetSize(Object, dim);
 							}
 							geometryBoundingSphere(obj);
 						}
@@ -2624,7 +2721,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickText(gui, quickRowNext(&qr), fillString("%f", geom->boundingSphereRadius), vec2i(-1,0));
+						newGuiQuickText(gui, quickRowNext(&qr), fillString("%f", obj->geometry.boundingSphereRadius), vec2i(-1,0));
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -2635,10 +2732,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->dim.z)) dimChanged = 3;
 
 						if(dimChanged) {
-							if(geom->type == GEOM_TYPE_SPHERE) {
+							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
 								float d = obj->dim.e[dimChanged-1];
 								obj->dim = vec3(d);
+								offSize = memberOffsetSize(Object, dim);
 							}
+
+							if(dimChanged == 1) offSize = memberOffsetSize(Object, dim.x);
+							if(dimChanged == 2) offSize = memberOffsetSize(Object, dim.y);
+							if(dimChanged == 3) offSize = memberOffsetSize(Object, dim.z);
 
 							geometryBoundingSphere(obj);
 						}
@@ -2646,24 +2748,36 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.r);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.g);
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &mat->emitColor.b);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->material.emitColor.r)) offSize = memberOffsetSize(Object, material.emitColor.r);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->material.emitColor.g)) offSize = memberOffsetSize(Object, material.emitColor.g);
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->material.emitColor.b)) offSize = memberOffsetSize(Object, material.emitColor.b);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &mat->reflectionMod, 0, 1);
+						if(newGuiQuickSlider(gui, quickRowNext(&qr), &obj->material.reflectionMod, 0, 1)) offSize = memberOffsetSize(Object, material.reflectionMod);
 
 
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, 0.0f, 0.0f);
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Copy")) {
-							eui->objectCopy = world->objects[eui->selectedObject-1];
+							copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
 						}
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
-							deleteObject(&world->objects, &eui->selectedObject, &eui->selectionState);
+							deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, true);
+						}
+
+
+						// Set value of all objects to the value that changed.
+						if(multipleSelection && offSize.y) {
+							int offset = offSize.x;
+							int size = offSize.y;
+
+							for(int i = 0; i < eui->selectedObjects.count; i++) {
+								Object* o = world->objects + eui->selectedObjects[i];
+								memCpy((char*)(o) + offset, (char*)(obj) + offset, size);
+							}
 						}
 					}
 

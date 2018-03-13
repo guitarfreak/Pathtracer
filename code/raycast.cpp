@@ -30,28 +30,6 @@ struct Geometry {
 	float boundingSphereRadius;
 };
 
-// Vec3 geometryGetDim(Geometry* geom) {
-// 	switch(geom->type) {
-// 		case GEOM_TYPE_SPHERE: return vec3(geom->r*2);
-// 		case GEOM_TYPE_BOX: return geom->dim;
-// 	}
-// 	return vec3(0,0,0);
-// }
-
-// void geometrySetDim(Geometry* geom, Vec3 dim) {
-// 	switch(geom->type) {
-// 		case GEOM_TYPE_SPHERE: geom->r = dim.x/2; return;
-// 		case GEOM_TYPE_BOX: geom->dim = dim; return;
-// 	}
-// }
-
-// void geometrySetDim(Geometry* geom, float length, int axisIndex) {
-// 	switch(geom->type) {
-// 		case GEOM_TYPE_SPHERE: geom->r = length/2; return;
-// 		case GEOM_TYPE_BOX: geom->dim.e[axisIndex] = length; return;
-// 	}
-// }
-
 enum {
 	LIGHT_TYPE_DIRECTION = 0,
 	LIGHT_TYPE_POINT,
@@ -77,6 +55,8 @@ struct Object {
 	Vec3 color;
 	Geometry geometry;
 	Material material;
+
+	bool markedForDeletion;
 };
 
 float lineShapeIntersection(Vec3 lp, Vec3 ld, Object* obj, Vec3* reflectionPos, Vec3* reflectionNormal) {
@@ -627,9 +607,9 @@ void getDefaultScene(World* world) {
 	obj = {};
 	obj.pos = vec3(0,0,zLevel);
 	obj.rot = quat();
-	obj.color = vec3(0.3f,0.5f,0.8f);
+	obj.color = vec3(0.7f,0.7f,0.7f);
 	obj.material = materials[1];
-	obj.dim = vec3(2.5f);
+	obj.dim = vec3(5.0f);
 	obj.geometry.type = GEOM_TYPE_SPHERE;
 	world->objects.insert(obj);
 	
@@ -641,11 +621,7 @@ void getDefaultScene(World* world) {
 
 
 
-
-
-
 enum EntitySelectionMode {
-	// ENTITYUI_MODE_SELECTED = 0,
 	ENTITYUI_MODE_TRANSLATION = 0,
 	ENTITYUI_MODE_ROTATION,
 	ENTITYUI_MODE_SCALE,
@@ -666,14 +642,19 @@ enum EntityTranslateMode {
 };
 
 struct EntityUI {
-	int selectedObject;
+	DArray<int> selectedObjects;
+	DArray<Object> objectCopies;
 
-	Object objectCopy;
+	// For multiple selection.
+	DArray<Vec3> objectCenterOffsets;
+	Object multiChangeObject;
 
 	int selectionMode;
 	int selectionState;
 	bool gotActive;
 	int hotId;
+
+	bool selectionChanged;
 
 	bool guiHasFocus;
 
@@ -690,9 +671,9 @@ struct EntityUI {
 	// Translation mode.
 
 	Vec3 startPos;
-	int translateMode;
 	Vec3 centerOffset;
 	float centerDistanceToCam;
+	int translateMode;
 	Vec3 axes[3];
 
 	// Rotation mode.
@@ -807,19 +788,34 @@ Object defaultObject() {
 	return obj;
 }
 
-void deleteObject(DArray<Object>* objects, int* selected, int* selectionState, bool switchSelected = true) {
-	objects->remove((*selected)-1);
+void deleteObjects(DArray<Object>* objects, DArray<int>* selected, int* selectionState, bool switchSelected = true) {
+	for(int i = 0; i < selected->count; i++) {
+		objects->at(selected->at(i)).markedForDeletion = true;
+	}
 
-	if(objects->count > 0 && switchSelected) {
-		// (*selected) = mod((*selected)-1, (*objectCount));
-		// (*selected)++;
-	} else {
-		(*selected) = 0;
+	for(int i = 0; i < objects->count; i++) {
+		if(objects->at(i).markedForDeletion) {
+			objects->remove(i);
+			i--;
+		}
+	}
+
+	if(selected->count > 1 || !switchSelected || objects->empty()) {
+		selected->clear();
 		*selectionState = ENTITYUI_INACTIVE;
+	} else if(!objects->empty()) {
+		selected->at(0) = mod(selected->at(0), objects->count);
 	}
 }
 
-int insertObject(World* world, Object obj, bool keepPosition = false) {
+void copyObjects(DArray<Object>* objects, DArray<Object>* copies, DArray<int>* selected) {
+	copies->clear();
+	for(int i = 0; i < selected->count; i++) {
+		copies->insert(objects->at(selected->at(i)));
+	}
+}
+
+void insertObject(World* world, Object obj, DArray<int>* selected, bool keepPosition = false) {
 	Camera* cam = &world->camera;
 	float spawnDistance = cam->dim.w*2;
 
@@ -829,12 +825,52 @@ int insertObject(World* world, Object obj, bool keepPosition = false) {
 
 	world->objects.insert(obj);
 
-	return world->objects.count;
+	selected->clear();
+	selected->insert(world->objects.count-1);
 }
 
+void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, bool keepPosition = false) {
+	if(copies->empty()) return;
 
+	Camera* cam = &world->camera;
+	float spawnDistance = cam->dim.w*2;
 
+	if(copies->count == 1) {
+		if(!keepPosition) {
+			copies->atr(0)->pos = cam->pos + cam->ovecs.dir * spawnDistance;
+		}
+	}
 
+	world->objects.insert(copies);
+
+	selected->clear();
+	for(int i = 0; i < copies->count; i++) {
+		selected->insert(world->objects.count-1 + (i - (copies->count-1)));
+	}
+}
+
+bool isObjectSelected(EntityUI* eui, int index) {
+	bool selected = false;
+	for(int i = 0; i < eui->selectedObjects.count; i++) {
+		if(index == eui->selectedObjects[i]) {
+			selected = true;
+			break;
+		}
+	}
+
+	return selected;
+}
+
+Vec3 selectedObjectsGetCenter(DArray<Object>* objects, DArray<int>* selected) {
+	Vec3 center = vec3(0,0,0);
+	for(int i = 0; i < selected->count; i++) {
+		Object* obj = objects->atr(selected->at(i));
+		center += obj->pos;
+	}
+	center = center / selected->count;
+
+	return center;
+}
 
 void openSceneDialog(DialogData* dd, bool saveMode = false) {
 	dd->type = "SceneDialog";

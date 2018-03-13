@@ -6,6 +6,7 @@
 #define arrayCount(array) (sizeof(array) / sizeof((array)[0]))
 #define addPointer(ptr, int) ptr = (char*)ptr + (int)
 #define memberSize(type, member) sizeof(((type *)0)->member)
+#define memberOffsetSize(type, member) vec2i(offsetof(type, member), memberSize(type, member))
 #define mallocArray(type, count) (type*)malloc(sizeof(type)*(count))
 #define mallocStruct(type) (type*)malloc(sizeof(type))
 #define mallocString(count) (char*)malloc(sizeof(char)*(count))
@@ -1302,10 +1303,6 @@ struct DArray {
 		resize(n);
 	}
 
-	void clear() {
-		count = 0;
-	}
-
 	void insert(T element) {
 		if(count == reserved) resize(count+1);
 
@@ -1319,9 +1316,26 @@ struct DArray {
 		count += n;
 	}
 
-	void remove() { count--; }
-	void remove(int i) { data[i] = data[--count]; }
-	T operator[](int i) { return data[i]; }
-	T* operator+(int i) { return data + i; }
-	T* at(int i) { return data + i; }
+	void insert(DArray* array) {
+		insert(array->data, array->count);
+	}
+
+	int find(T value) {
+		for(int i = 0; i < count; i++) {
+			if(value == data[i]) return i+1;
+		}
+
+		return 0;
+	}
+
+	void clear()           { count = 0; }
+	T    first()           { return data[0]; }
+	T    last()            { return data[count-1]; }
+	bool empty()           { return count == 0; };
+	void remove()          { count--; }
+	void remove(int i)     { data[i] = data[--count]; }
+	T&   operator[](int i) { return data[i]; }
+	T&   at(int i)         { return data[i]; }
+	T*   operator+(int i)  { return data + i; }
+	T*   atr(int i)        { return data + i; }
 };
