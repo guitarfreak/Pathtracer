@@ -520,6 +520,8 @@ struct NewGui {
 
 	bool forceNoClear;
 
+	bool disable;
+
 	// Temp vars for convenience.
 
 	Vec2 mouseAnchor, mouseAnchor2;
@@ -583,6 +585,10 @@ void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws, float dt = 0) {
 	for(int i = 0; i < Gui_Focus_Size; i++) {
 		gui->contenderId[i] = voidId;
 		gui->contenderIdZ[i] = voidId;
+	}
+
+	if(gui->disable) {
+		for(int i = 0; i < Gui_Focus_Size; i++) gui->hotId[i] = voidId;
 	}
 
 	// if(gui->activeId != 0) {

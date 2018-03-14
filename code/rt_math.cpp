@@ -2755,6 +2755,26 @@ Quat operator*(Quat a, Quat b) {
 	return r;
 }
 
+// Does not make sense. Only used internally once.
+Quat operator-(Quat a, Quat b) {
+	Quat r;
+	r.w = a.w - b.w;
+	r.x = a.x - b.x;
+	r.y = a.y - b.y;
+	r.z = a.z - b.z;
+
+	return r;
+}
+Quat operator+(Quat a, Quat b) {
+	Quat r;
+	r.w = a.w + b.w;
+	r.x = a.x + b.x;
+	r.y = a.y + b.y;
+	r.z = a.z + b.z;
+
+	return r;
+}
+
 void quatRotationMatrix(Mat4* m, Quat q) {
 	float w = q.w, x = q.x, y = q.y, z = q.z;
 	float x2 = x*x, y2 = y*y, z2 = z*z;

@@ -652,122 +652,137 @@ enum CommandType {
 	COMMAND_TYPE_SIZE,
 };
 
-struct HistoryData {
-	int index;
-	DArray<char> buffer;
-	DArray<int> offsets;
-
-	// Edit.
-	// DArray<Object> objects;
-
-	// // Insert. 
-	// Object* array;
-
-	// // Remove
-	// Object* array;
-
-	// // Selection.
-	// int* array;
+struct HistoryCommand {
+	int type;
+	int count;
 };
 
-void historyAdd(HistoryData* hd, DArray<Object>* objects, DArray<int>* selected, int type) {
+// struct HistoryData {
+// 	int index;
+// 	DArray<HistoryCommand> commands;
 
-	// This is not good. At least make a macro or something.
+// 	DArray<Object> objects;
+// 	int objectIndex;
+// 	DArray<int> objectOffsets;
 
-	// Reset buffers to index position;
-	if(hd->index > 0) {
-		hd->offsets.count = hd->index;
-		hd->buffer.count = hd->offsets[hd->index-1];
-	}
+// 	DArray<Object> objects2;
+// 	int object2Index;
+// 	DArray<int> object2Offsets;
 
-	int* dType = (int*)hd->buffer.retrieve(sizeof(int));
-	*dType = type;
+// 	DArray<int> selected;
+// 	int selectedIndex;
+// 	DArray<int> selectedOffsets;
+// };
 
-	switch(type) {
-		case COMMAND_TYPE_EDIT: {
-			int count = selected->count;
-			int totalSize = sizeof(int) + sizeof(Object)*count + sizeof(int)*count;
+// void historyInit(HistoryData* hd, DArray<Object>* objects) {
+	// hd->index = 0;
+	// hd->commands.clear();
+	// hd->objects.clear();
+	// hd->objectOffsets.clear();
+	// hd->selected.clear();
+	// hd->selectedOffsets.clear();
 
-			char* d = hd->buffer.retrieve(totalSize);
+	// for(int i = 0; i < objects->count; i++) objects->at(i).id = i;
+	// hd->objects.push(objects);
+	// hd->objectOffsets.push(0);
+	// hd->objectOffsets.push(objects->count);
+	// hd->objectIndex = 1;
 
-			int* dCount = (int*)d; d += sizeof(int);
-			Object* dObjects = (Object*)d; d += sizeof(Object) * count;
-			int* dIndexes = (int*)d; d += sizeof(int) * count;
+	// hd->selectedOffsets.push(0);
+	// hd->selectedIndex = 0;
+// }
 
-			*dCount = count;
-
-			for(int i = 0; i < count; i++) {
-				int index = selected->at(i);
-
-				Object obj = objects->at(index);
-				dObjects[i] = obj;
-				dIndexes[i] = index;
-			}
-
-			int offsetSize = sizeof(int) + totalSize;
-			int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
-			hd->offsets.push(offsetBefore + offsetSize);
-		} break;
-
-		// case COMMAND_TYPE_INSERT: {
-		// 	int count = selected->count;
-		// 	int totalSize = sizeof(int);
-
-		// 	char* d = hd->buffer.retrieve(totalSize);
-
-		// 	int* dCount = (int*)d; d += sizeof(int);
-		// 	*dCount = count;
-
-		// 	int offsetSize = sizeof(int) + totalSize;
-		// 	int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
-		// 	hd->offsets.push(offsetBefore + offsetSize);
-		// } break;
-
-		// case COMMAND_TYPE_REMOVE: {
-		// 	cd.count = selected->count;
-		// 	cd.indexes = (int*)hd->byteBuffer.retrieve(sizeof(int)*cd.count);
-		// } break;
-	}
-
-	hd->index++;
-}
-
-void historyChange(HistoryData* hd, World* world, bool undo = true) {
-// 	int currentIndex;
-// 	if(undo) {
-// 		if(hd->index <= 1) return;
-
-// 		hd->index--;
-// 		currentIndex = hd->index - 1;
-// 	} else {
-// 		if(hd->index == hd->offsets.count) return;
-
-// 		currentIndex = hd->index;
-// 		hd->index++;
-// 	}
-
-// 	int offset, size;
-// 	if(currentIndex == 0) {
-// 		offset = 0;
-// 		size = hd->offsets[currentIndex];
-// 	} else {
-// 		offset = hd->offsets[currentIndex-1];
-// 		size = hd->offsets[currentIndex] - offset;
-// 	}
-
-// 	char* d = hd->buffer.data + offset;
-// 	int type = *((int*)d); d += sizeof(int);
+// void historyAdd(HistoryData* hd, DArray<Object>* objects, DArray<int>* selected, int type) {
 
 // 	switch(type) {
 // 		case COMMAND_TYPE_EDIT: {
-// 			int count = *((int*)d); d += sizeof(int);
-// 			Object* objects = (Object*)d; d += sizeof(Object)*count;
-// 			int* indexes = (int*)d; d += sizeof(int)*count;
+// 			int currentIndex = hd->index;
+// 			hd->index++;
+
+// 			int count = selected->count;
+
+// 			HistoryCommand hc = { type, count };
+// 			hd->commands.push(hc);
 
 // 			for(int i = 0; i < count; i++) {
-// 				int index = indexes[i];
-// 				world->objects[index] = objects[i];
+// 				int index = selected->at(i);
+// 				Object obj = objects->at(index);
+// 				obj.id = index;
+
+// 				hd->objects.push(obj);
 // 			}
+
+// 			int offsetBefor = hd->objectOffsets.last();
+// 			hd->objectOffsets.push(offsetBefor + count);
+// 			hd->objectIndex++;
+
+// 		} break;
+
+// 		// case COMMAND_TYPE_INSERT: {
+// 		// 	int count = selected->count;
+// 		// 	int totalSize = sizeof(int);
+
+// 		// 	char* d = hd->buffer.retrieve(totalSize);
+
+// 		// 	int* dCount = (int*)d; d += sizeof(int);
+// 		// 	*dCount = count;
+
+// 		// 	int offsetSize = sizeof(int) + totalSize;
+// 		// 	int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+// 		// 	hd->offsets.push(offsetBefore + offsetSize);
+// 		// } break;
+
+// 		// case COMMAND_TYPE_REMOVE: {
+// 		// 	cd.count = selected->count;
+// 		// 	cd.indexes = (int*)hd->byteBuffer.retrieve(sizeof(int)*cd.count);
+// 		// } break;
+// 	}
+// }
+
+// void historyChange(HistoryData* hd, World* world, bool undo = true) {
+
+// 	int currentIndex;
+// 	if(undo) {
+// 		if(hd->index == 0) return;
+
+// 		hd->index--;
+// 		currentIndex = hd->index;
+// 	} else {
+// 		// if(hd->index == hd->offsets.count) return;
+
+// 		// currentIndex = hd->index;
+// 		// hd->index++;
+// 	}
+
+// 	// int offset, size;
+// 	// if(currentIndex == 0) {
+// 	// 	offset = 0;
+// 	// 	size = hd->offsets[currentIndex];
+// 	// } else {
+// 	// 	offset = hd->offsets[currentIndex-1];
+// 	// 	size = hd->offsets[currentIndex] - offset;
+// 	// }
+
+// 	HistoryCommand hc = hd->commands[currentIndex];
+// 	int count = hc.count;
+
+// 	switch(hc.type) {
+// 		case COMMAND_TYPE_EDIT: {
+
+// 			hd->objectIndex--;
+// 			int oi = hd->objectIndex;
+// 			int offset = hd->objectOffsets[oi-1];
+// 			int count = hd->objectOffsets[oi] - hd->objectOffsets[oi-1];
+
+// 			for(int i = 0; i < count; i++) {
+// 				// world->objects
+// 				Object obj = hd->objects[offset+i];
+// 				int id = obj.id;
+				
+// 			}
+
+
+
 // 		} break;
 
 // 		// case COMMAND_TYPE_INSERT: {
@@ -781,17 +796,58 @@ void historyChange(HistoryData* hd, World* world, bool undo = true) {
 
 // 		default: break;
 // 	}
+// }
+
+struct HistoryData {
+	int index;
+	DArray<char> buffer;
+	DArray<int> offsets;
+
+	// Temp.
+
+	DArray<Object> objectsPreMod;
+	DArray<Object> temp;
+};
+
+Object objectDiff(Object o0, Object o1) {
+	Object diff = {};
+
+	diff.pos = o0.pos - o1.pos;
+	diff.rot = o0.rot - o1.rot;
+	diff.dim = o0.dim - o1.dim;
+	diff.color = o0.color - o1.color;
+	diff.geometry.type = o0.geometry.type - o1.geometry.type;
+	diff.geometry.boundingSphereRadius = o0.geometry.boundingSphereRadius - o1.geometry.boundingSphereRadius;
+	diff.material.emitColor = o0.material.emitColor - o1.material.emitColor;
+	diff.material.reflectionMod = o0.material.reflectionMod - o1.material.reflectionMod;
+
+	return diff;
 }
 
+Object objectAdd(Object obj, Object diff) {
+	obj.pos = obj.pos + diff.pos;
+	obj.rot = obj.rot + diff.rot;
+	obj.dim = obj.dim + diff.dim;
+	obj.color = obj.color + diff.color;
+	obj.geometry.type = obj.geometry.type + diff.geometry.type;
+	obj.geometry.boundingSphereRadius = obj.geometry.boundingSphereRadius + diff.geometry.boundingSphereRadius;
+	obj.material.emitColor = obj.material.emitColor + diff.material.emitColor;
+	obj.material.reflectionMod = obj.material.reflectionMod + diff.material.reflectionMod;
+
+	return obj;
+}
+
+
+
 struct EntityUI {
+	HistoryData history;
+
 	DArray<int> selectedObjects;
 	DArray<Object> objectCopies;
 
 	// For multiple selection.
 	DArray<Vec3> objectCenterOffsets;
 	Object multiChangeObject;
-
-	HistoryData history;
 
 	int selectionMode;
 	int selectionState;
@@ -911,16 +967,175 @@ void loadScene(World* world, char* filePath, EntityUI* eui) {
 	}
 
 	fclose(file);
-
-	// // Insert all objects to history at start.
-	// for(int i = 0; i < world->objects.count; i++) {
-	// 	eui->selectedObjects.push(i);
-	// }
-	// historyAdd(&eui->history, &world->objects, &eui->selectedObjects, COMMAND_TYPE_EDIT);
-
-	eui->selectedObjects.clear();
 }
 
+
+
+void historyEdit(HistoryData* hd, DArray<int>* selected) {
+
+	int type = COMMAND_TYPE_EDIT;
+
+	// Reset buffers to index position;
+	hd->offsets.count = hd->index;
+	hd->buffer.count = hd->index == 0 ? 0 : hd->offsets[hd->index-1];
+
+	int* dType = (int*)hd->buffer.retrieve(sizeof(int));
+	*dType = type;
+
+	switch(type) {
+		case COMMAND_TYPE_EDIT: {
+			int count = selected->count;
+			int totalSize = sizeof(int) + sizeof(Object)*count;
+
+			char* d = hd->buffer.retrieve(totalSize);
+			int* dCount = (int*)d; d += sizeof(int);
+			Object* dObjects = (Object*)d; d += sizeof(Object) * count;
+
+			*dCount = count;
+			for(int i = 0; i < count; i++) {
+				Object obj = hd->objectsPreMod[i];
+				obj.id = selected->at(i);
+
+				dObjects[i] = obj;
+			}
+
+			int offsetSize = sizeof(int) + totalSize;
+			int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+			hd->offsets.push(offsetBefore + offsetSize);
+		} break;
+
+		// case COMMAND_TYPE_INSERT: {
+		// 	int count = selected->count;
+		// 	int totalSize = sizeof(int);
+
+		// 	char* d = hd->buffer.retrieve(totalSize);
+
+		// 	int* dCount = (int*)d; d += sizeof(int);
+		// 	*dCount = count;
+
+		// 	int offsetSize = sizeof(int) + totalSize;
+		// 	int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+		// 	hd->offsets.push(offsetBefore + offsetSize);
+		// } break;
+
+		// case COMMAND_TYPE_REMOVE: {
+		// 	cd.count = selected->count;
+		// 	cd.indexes = (int*)hd->byteBuffer.retrieve(sizeof(int)*cd.count);
+		// } break;
+	}
+
+	hd->index++;
+}
+
+void historyInsert(HistoryData* hd, DArray<Object>* copies) {
+
+	int type = COMMAND_TYPE_INSERT;
+
+	// Reset buffers to index position;
+	hd->offsets.count = hd->index;
+	hd->buffer.count = hd->index == 0 ? 0 : hd->offsets[hd->index-1];
+
+	int* dType = (int*)hd->buffer.retrieve(sizeof(int));
+	*dType = type;
+
+	switch(type) {
+		case COMMAND_TYPE_INSERT: {
+			int count = copies->count;
+			int totalSize = sizeof(int) + sizeof(Object)*count;
+
+			char* d = hd->buffer.retrieve(totalSize);
+			int* dCount = (int*)d; d += sizeof(int);
+			Object* dObjects = (Object*)d; d += sizeof(Object) * count;
+
+			*dCount = count;
+			for(int i = 0; i < count; i++) {
+				Object obj = copies->at(i);
+				dObjects[i] = obj;
+			}
+
+			int offsetSize = sizeof(int) + totalSize;
+			int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+			hd->offsets.push(offsetBefore + offsetSize);
+		} break;
+
+		// case COMMAND_TYPE_INSERT: {
+		// 	int count = selected->count;
+		// 	int totalSize = sizeof(int);
+
+		// 	char* d = hd->buffer.retrieve(totalSize);
+
+		// 	int* dCount = (int*)d; d += sizeof(int);
+		// 	*dCount = count;
+
+		// 	int offsetSize = sizeof(int) + totalSize;
+		// 	int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+		// 	hd->offsets.push(offsetBefore + offsetSize);
+		// } break;
+
+		// case COMMAND_TYPE_REMOVE: {
+		// 	cd.count = selected->count;
+		// 	cd.indexes = (int*)hd->byteBuffer.retrieve(sizeof(int)*cd.count);
+		// } break;
+	}
+
+	hd->index++;
+}
+
+void historyChange(HistoryData* hd, World* world, DArray<int>* selected, bool undo = true) {
+	int currentIndex;
+	if(undo) {
+		if(hd->index == 0) return;
+
+		currentIndex = hd->index-1;
+		hd->index--;
+	} else {
+		if(hd->index == hd->offsets.count) return;
+
+		currentIndex = hd->index;
+		hd->index++;
+	}
+
+	int offset, size;
+	if(currentIndex == 0) {
+		offset = 0;
+		size = hd->offsets[currentIndex];
+	} else {
+		offset = hd->offsets[currentIndex-1];
+		size = hd->offsets[currentIndex] - offset;
+	}
+
+	char* d = hd->buffer.data + offset;
+	int type = *((int*)d); d += sizeof(int);
+
+	switch(type) {
+		case COMMAND_TYPE_EDIT: {
+			int count = *((int*)d); d += sizeof(int);
+			Object* objects = (Object*)d; d += sizeof(Object)*count;
+
+			for(int i = 0; i < count; i++) {
+				Object obj = objects[i];
+				int index = obj.id;
+
+				if(undo) world->objects[index] = objectAdd(world->objects[index], objects[i]);
+				else world->objects[index] = objectDiff(world->objects[index], objects[i]);
+			}
+		} break;
+
+		case COMMAND_TYPE_INSERT: {
+			int count = *((int*)d); d += sizeof(int);
+			Object* objects = (Object*)d; d += sizeof(Object)*count;
+
+			if(undo) {
+				world->objects.pop(count);
+				// selected->clear();
+			} else {
+				world->objects.push(objects, count);
+			}
+		} break;
+
+		default: break;
+	}
+}
 
 
 
@@ -978,6 +1193,10 @@ void insertObject(World* world, Object obj, DArray<int>* selected, HistoryData* 
 
 	world->objects.push(obj);
 
+	hd->temp.clear();
+	hd->temp.push(obj);
+	historyInsert(hd, &hd->temp);
+
 	selected->clear();
 	selected->push(world->objects.count-1);
 }
@@ -996,10 +1215,12 @@ void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, 
 
 	world->objects.push(copies);
 
+	historyInsert(hd, copies);
+
 	selected->clear();
-	for(int i = 0; i < copies->count; i++) {
-		selected->push(world->objects.count-1 + (i - (copies->count-1)));
-	}
+	// for(int i = 0; i < copies->count; i++) {
+	// 	selected->push(world->objects.count-1 + (i - (copies->count-1)));
+	// }
 }
 
 bool isObjectSelected(EntityUI* eui, int index) {
@@ -1056,3 +1277,4 @@ void openScreenshotDialog(DialogData* dd) {
 
     HANDLE thread = CreateThread(0, 0, openDialogProc, dd, 0, 0);
 }
+

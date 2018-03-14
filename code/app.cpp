@@ -1174,12 +1174,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 				dd->finished = false;
 				gui->activeId = 0;
 				ws->dontUpdateCursor = false;
+				gui->disable = false;
 			}
 
 			// If active dialog, disable everything.
 			if(dd->active) {
 				ws->dontUpdateCursor = true;
 				gui->activeId = -1;
+				gui->disable = true;
 			}
 		}
 
@@ -1230,15 +1232,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			if(input->mouseButtonReleased[0] && eui->selectionState == ENTITYUI_ACTIVE) {
-				eui->selectionState = ENTITYUI_INACTIVE;
-				if(!eui->positionChanged) {
-					historyAdd(&eui->history, &world->objects, &eui->selectedObjects, COMMAND_TYPE_EDIT);
-				}
-
-				eui->positionChanged = false;
-			}
-
 			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count) {
 				eui->selectedObjects.clear();
 				eui->selectionState = ENTITYUI_INACTIVE;
@@ -1262,10 +1255,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, false);
 				}
 			}
-
 			// Insert.
+			bool insert = false;
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
-				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, &eui->history, true);
+				insert = true;
 			}
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
@@ -1275,11 +1268,30 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(keyPressed(gui, input, KEYCODE_3)) eui->selectionMode = ENTITYUI_MODE_SCALE;
 
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Y)) {
-				historyChange(&eui->history, world);
+				historyChange(&eui->history, world, &eui->selectedObjects);
 			}
 
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Z)) {
-				historyChange(&eui->history, world, false);
+				historyChange(&eui->history, world, &eui->selectedObjects, false);
+			}
+
+			if((input->mouseButtonReleased[0] || insert) && eui->selectionState == ENTITYUI_ACTIVE) {
+				eui->selectionState = ENTITYUI_INACTIVE;
+				if(!eui->positionChanged) {
+
+					for(int i = 0; i < eui->history.objectsPreMod.count; i++) {
+						Object objAfterMod = world->objects[eui->selectedObjects[i]];
+						eui->history.objectsPreMod[i] = objectDiff(eui->history.objectsPreMod[i], objAfterMod);
+					}
+
+					historyEdit(&eui->history, &eui->selectedObjects);
+				}
+
+				eui->positionChanged = false;
+			}
+
+			if(insert) {
+				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, &eui->history, true);
 			}
 
 			eui->gotActive = false;
@@ -1296,6 +1308,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
 				bool multipleSelection = eui->selectedObjects.count > 1;
+
+				// Save all the objects before modifying them.
+				if(eui->gotActive) {
+					eui->history.objectsPreMod.clear();
+					for(int i = 0; i < eui->selectedObjects.count; i++) {
+						Object obj = world->objects[eui->selectedObjects[i]];
+						eui->history.objectsPreMod.push(obj);
+					}
+				}
 
 				if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
 
