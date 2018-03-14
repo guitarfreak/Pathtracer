@@ -44,6 +44,7 @@
 #define GL_RENDERBUFFER                   0x8D41
 #define GL_DEPTH_STENCIL                  0x84F9
 #define GL_DEPTH24_STENCIL8               0x88F0
+#define GL_DEPTH32F_STENCIL8              0x8CAD
 #define GL_DEBUG_OUTPUT_SYNCHRONOUS       0x8242
 #define GL_DEBUG_SEVERITY_HIGH            0x9146
 #define GL_DEBUG_SEVERITY_MEDIUM          0x9147

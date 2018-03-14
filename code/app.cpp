@@ -395,7 +395,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, msaa);
 			attachToFrameBuffer(FRAMEBUFFER_2dMsaa, FRAMEBUFFER_SLOT_DEPTH, GL_DEPTH_COMPONENT32F, 0, 0, msaa);
 			attachToFrameBuffer(FRAMEBUFFER_2dNoMsaa, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0);
+
 			attachToFrameBuffer(FRAMEBUFFER_2dPanels, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8_ALPHA8, 0, 0, msaa);
+			attachToFrameBuffer(FRAMEBUFFER_2dPanels, FRAMEBUFFER_SLOT_DEPTH_STENCIL, GL_DEPTH32F_STENCIL8, 0, 0, msaa);
 
 			attachToFrameBuffer(FRAMEBUFFER_ScreenShot, FRAMEBUFFER_SLOT_COLOR, GL_SRGB8, 0, 0);
 
@@ -664,7 +666,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		glClearColor(0,0,0,0);
 		bindFrameBuffer(FRAMEBUFFER_2dPanels);
-		glClear(GL_COLOR_BUFFER_BIT);
+		glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
 
 		glClearColor(0,0,0,1);
@@ -1240,7 +1242,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(eui->selectedObjects.count) {
 				// Delete.
 				if(keyPressed(gui, input, KEYCODE_DEL)) {
-					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, false);
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, false);
 				}
 
 				// Copy.
@@ -1252,7 +1254,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X)) {
 					// Copy and delete.
 					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
-					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, false);
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, false);
 				}
 			}
 			// Insert.
@@ -1269,10 +1271,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Y)) {
 				historyChange(&eui->history, world, &eui->selectedObjects);
+				eui->selectedObjects.clear();
+				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Z)) {
 				historyChange(&eui->history, world, &eui->selectedObjects, false);
+				eui->selectedObjects.clear();
+				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
 			if((input->mouseButtonReleased[0] || insert) && eui->selectionState == ENTITYUI_ACTIVE) {
@@ -2143,6 +2149,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			TextSettings ts = textSettings(font, c.text);
 
 			BoxSettings bous = boxSettings(c.button, buttonRounding, c.outline);
+			bous.vertGradientOffset = 0.1f;
 			TextBoxSettings bus = textBoxSettings(ts, bous);
 
 			gui->textSettings = ts;
@@ -2240,7 +2247,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float separatorWidth = padding*0.5f;
 				Vec4 cButtonActive = vec4(1,1);
 				Vec4 cButtonInactive = vec4(0.7f,1);
-				Vec4 cSeparator = gui->buttonSettings.boxSettings.borderColor;
+				// Vec4 cSeparator = gui->buttonSettings.boxSettings.borderColor;
+				Vec4 cSeparator = ad->colors.outlineBright;
 
 				p.x += buttonOffset;
 
@@ -2250,13 +2258,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 				
 				// Make Screenshot.
 
-				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
-				if(ad->tracerFinished) {
+				{
+					r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+					if(!ad->tracerFinished) gui->setInactive = true;
+
+					Vec4 c = gui->setInactive ? cButtonInactive : cButtonActive;
+
 					if(newGuiQuickButton(gui, r, "", &tbs)) {
 						openScreenshotDialog(&ad->dialogData);
 					}
 					rectExpand(&r, vec2(-buttonMargin));
-					drawRect(rectRound(r), cButtonActive, rect(0,0,1,1), getTexture("screenshotIcon.png")->id);
+
+					drawRect(rectRound(r), c, rect(0,0,1,1), getTexture("screenshotIcon.png")->id);
 				}
 
 				// Open Folder.
@@ -2301,6 +2314,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				for(int i = 0; i < ENTITYUI_MODE_SIZE; i++) {
 					r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+
+					bool multipleSelection = eui->selectedObjects.count > 1;
+
+					if(multipleSelection && (i == ENTITYUI_MODE_ROTATION || i == ENTITYUI_MODE_SCALE)) {
+						gui->setInactive = true;
+					}
 
 					if(eui->selectionMode == i) newGuiIncrementId(gui);
 					else if(newGuiQuickPButton(gui, r, "", &tbs)) {
@@ -2366,6 +2385,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Left panel.
 		#if 1
 		{
+			glDisable(GL_DEPTH_TEST);
+
 			newGuiSetHotAllMouseOver(gui, rectPanelLeft, gui->zLevel);
 
 			// Resize panel width.
@@ -2799,7 +2820,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
 						}
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
-							deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, true);
+							deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, true);
 						}
 
 
@@ -3023,6 +3044,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		newGuiEnd(gui);
 	}
 	#endif
+
 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha);

@@ -17,6 +17,7 @@
 
 #define zeroStruct(s, structType) zeroMemory(s, sizeof(structType));
 #define copyArray(dst, src, type, count) memCpy(dst, src, sizeof(type)*count);
+#define moveArray(dst, src, type, count) memmove(dst, src, sizeof(type)*count);
 
 #define PVEC2(v) v.x, v.y
 #define PVEC3(v) v.x, v.y, v.z
@@ -1318,6 +1319,16 @@ struct DArray {
 
 	void push(DArray* array) {
 		push(array->data, array->count);
+	}
+
+	void insert(T element, int index) {
+		if(index > count-1) return push(element);
+
+		if(count == reserved) resize(count+1);
+
+		moveArray(data+index+1, data+index, T, count-(index+1));
+		data[index] = element;
+		count++;
 	}
 
 	int find(T value) {

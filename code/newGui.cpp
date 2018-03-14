@@ -521,6 +521,7 @@ struct NewGui {
 	bool forceNoClear;
 
 	bool disable;
+	bool setInactive;
 
 	// Temp vars for convenience.
 
@@ -730,7 +731,7 @@ bool newGuiFocusCanBeHot(NewGui* gui, int focus) {
 
 void newGuiSetHot(NewGui* gui, int id, float z, int focus = 0) {
 	// if(!newGuiSomeoneActive(gui) && newGuiFocusCanBeHot(gui, focus)) {
-	if(newGuiFocusCanBeHot(gui, focus)) {
+	if(newGuiFocusCanBeHot(gui, focus) && !gui->setInactive) {
 		if(z > gui->contenderIdZ[focus]) {
 			gui->contenderId[focus] = id;
 			gui->contenderIdZ[focus] = z;
@@ -869,6 +870,10 @@ Vec4 newGuiHotActiveColorMod(bool isHot, bool isActive) {
 	if(isHot) colorMod = vec4(0.08f,0); 
 	if(isActive) colorMod = vec4(0.17f,0); 
 
+	return colorMod;
+}
+Vec4 newGuiInactiveColorMod(bool inactive) {
+	Vec4 colorMod = !inactive ? vec4(0,0) : vec4(-0.1f,0);
 	return colorMod;
 }
 // We assume you got an id first before calling this.
@@ -1257,18 +1262,33 @@ void drawBox(Rect r, Rect scissor, BoxSettings settings, bool round = true) {
 	int borderSize = 1;
 
 	if(settings.color.a != 0) {
+		Rect br = r;
+		if(hasBorder) br = rectExpand(br, -vec2(borderSize*2));
+
 		if(settings.vertGradientOffset) {
+			glEnable(GL_STENCIL_TEST);
+
+			glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+			glStencilFunc(GL_ALWAYS, 1, 0xFF);
+			glStencilMask(0xFF);
+
+			drawRectRounded(br, settings.color, settings.roundedCorner);
+
+			glStencilFunc(GL_EQUAL, 1, 0xFF);
+			glStencilMask(0x00); 
+
 			setSRGB(false);
-			float colorOffset = 0.1f;
 			Vec4 off = vec4(settings.vertGradientOffset, 0);
 			drawRectNewColoredH(r, settings.color - off, settings.color + off);
 			setSRGB(true);
+
+			glStencilMask(0xFF); 
+			glDisable(GL_STENCIL_TEST);
 		} else {
-			Rect br = r;
-			if(hasBorder) br = rectExpand(br, -vec2(borderSize*2));
 			drawRectRounded(br, settings.color, settings.roundedCorner);
 		}
 	}
+
 	if(hasBorder) {
 		glLineWidth(1);
 		drawRectRoundedOutline(r, settings.borderColor, settings.roundedCorner);
@@ -1440,9 +1460,13 @@ bool _newGuiQuickButton(NewGui* gui, Rect r, char* text, Vec2i align, TextBoxSet
 	TextBoxSettings set = settings == 0 ? gui->buttonSettings : *settings;
 	set.boxSettings.color += highlightOnActive?newGuiColorModB(gui):newGuiColorMod(gui);
 
+	// set.boxSettings.color += newGuiInactiveColorMod(gui->setInactive);
+
 	drawTextBox(r, text, align, gui->scissor, set);
 
 	if(newGuiIsHot(gui)) newGuiSetCursor(gui, IDC_HAND);
+
+	if(gui->setInactive) gui->setInactive = false;
 
 	return active;
 }
