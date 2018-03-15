@@ -1170,6 +1170,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 							loadScene(world, dd->result, eui);
 							ad->sceneHasFile = true;
 							strCpy(ad->sceneFile, dd->result);
+
+							historyReset(&eui->history);
 						}
 
 					} else if(strCompare(dd->type, "ScreenshotDialog")) {
@@ -1280,7 +1282,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(eui->selectedObjects.count) {
 				// Delete.
 				if(keyPressed(gui, input, KEYCODE_DEL) && eui->selectionState != ENTITYUI_ACTIVE) {
-					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionChanged, &eui->history, false);
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->history, false);
 				}
 
 				// Copy.
@@ -1292,13 +1294,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X) && eui->selectionState != ENTITYUI_ACTIVE) {
 					// Copy and delete.
 					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
-					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionChanged, &eui->history, false);
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->history, false);
 				}
 			}
 			// Paste.
 			bool paste = false;
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
 				paste = true;
+				eui->objectsEdited = true;
 			}
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
@@ -1320,21 +1323,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->objectsEdited = true;
 			}
 
-			if(paste) {
-				// Copy paste if active.
-				if(eui->selectionState == ENTITYUI_ACTIVE) {
-					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
-				}
-
-				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, &eui->objectsEdited, &eui->history, true);
-			}
-
 			// if((input->mouseButtonReleased[0] || paste) && eui->selectionState == ENTITYUI_ACTIVE) {
 			if(eui->objectsEdited) {
 				eui->objectsEdited = false;
 
-				eui->selectionState = ENTITYUI_INACTIVE;
-				if(!eui->positionChanged) {
+				if(!paste) {
+					eui->selectionState = ENTITYUI_INACTIVE;
+				}
+				if(eui->objectNoticeableChange) {
 
 					for(int i = 0; i < eui->history.objectsPreMod.count; i++) {
 						Object objAfterMod = world->objects[eui->selectedObjects[i]];
@@ -1344,9 +1340,40 @@ extern "C" APPMAINFUNCTION(appMain) {
 					historyEdit(&eui->history, &eui->selectedObjects);
 				}
 
-				eui->positionChanged = false;
+				eui->objectNoticeableChange = false;
+			}
 
-				// if(paste) eui->selectedObjects.clear();
+			if(paste) {
+				// Copy paste if active.
+				if(eui->selectionState == ENTITYUI_ACTIVE) {
+					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
+				}
+
+				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, &eui->objectsEdited, &eui->history, true);
+
+				// Reset edit state. A paste should be an edit + paste.
+				if(paste && eui->selectionState == ENTITYUI_ACTIVE) {
+
+					// Code duplication with entityui code.
+
+					eui->history.objectsPreMod.clear();
+					for(int i = 0; i < eui->selectedObjects.count; i++) {
+						Object obj = world->objects[eui->selectedObjects[i]];
+						eui->history.objectsPreMod.push(obj);
+					}
+
+					Object* obj = &world->objects[eui->selectedObjects[0]];
+
+					if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION) {
+						eui->startPos = eui->currentPos;
+					} else if(eui->selectionMode == ENTITYUI_MODE_ROTATION) {
+						eui->startRot = obj->rot;
+						eui->objectDistanceVector = eui->currentObjectDistanceVector;
+					} else if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
+						eui->startDim = obj->dim.e[eui->axisIndex-1];
+						eui->objectDistanceVector = eui->currentObjectDistanceVector;
+					}
+				}
 			}
 
 			// 
@@ -1473,8 +1500,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 					}
 
-					eui->positionChanged = eui->startPos == pos;
+					eui->currentPos = pos;
 
+					// Center grabbing is not accurate enough and oscelates sometimes so we have to use a margin for the position difference calculation.
+					float diff = lenVec3(eui->startPos - pos);
+					float comparisonMargin = 0.00001f; // Static value not a good idea?
+					eui->objectNoticeableChange = diff > comparisonMargin;
 				} else {
 
 					Object* obj = ad->world.objects + eui->selectedObjects.first();
@@ -1508,6 +1539,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 							obj->rot = quat(angle, eui->axis)*eui->startRot;
 
 							eui->currentRotationAngle = angle;
+
+							eui->currentObjectDistanceVector = end;
+							eui->objectNoticeableChange = eui->currentRotationAngle != 0;
 						}
 					}
 
@@ -1547,6 +1581,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 
 							geometryBoundingSphere(obj);
+
+							eui->currentObjectDistanceVector = obj->pos - linePointOnAxis;
+
+							eui->objectNoticeableChange = obj->dim.e[eui->axisIndex-1] != eui->startDim;
 						}
 					}
 				}
@@ -2062,6 +2100,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 							axisIndex = eui->axisIndex;
 						}
 					
+						// Also check closest distance to occlusion sphere.
+						{
+							if(eui->selectionState != ENTITYUI_ACTIVE) {
+								Vec3 intersection;
+								float sphereDistance = lineSphereIntersection(cam->pos, rayDir, pos, radius-thickness, &intersection);
+								if(sphereDistance) {
+									float distToCam = -(vm*intersection).z;
+									if(distToCam < closestDistance) axisIndex = 0;
+								}
+							}
+						}
+
+						// Occlude rings with sphere.
+						drawSphere(pos, radius-thickness, vec4(0,0,0,0));
+
 						// Draw rings.
 
 						// Should switch to different depth buffer, but this works for now.
@@ -2069,9 +2122,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						drawSphere(pos, radius-thickness, vec4(0,0,0,0));
 
-						for(int i = 0; i < 3; i++) {
-							float a = uiAlpha;
-							drawRing(pos, axis[i], radius, thickness, vec4(c[i],a));
+						if(eui->selectionState != ENTITYUI_ACTIVE) {
+							for(int i = 0; i < 3; i++) {
+								drawRing(pos, axis[i], radius, thickness, vec4(c[i],uiAlpha));
+							}
 						}
 
 						// Paint over hot/active ring.
@@ -2634,7 +2688,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 							qr = quickRow(r, pad.x, 0.0f, 0.0f);
 
-							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Object")) {
+							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Default")) {
 								eui->objectTempArray.clear();
 								eui->objectTempArray.push(defaultObject());
 								insertObjects(&ad->world, &eui->objectTempArray, &eui->selectedObjects, &eui->objectsEdited, &eui->history, false);
@@ -2874,10 +2928,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, 0.0f, 0.0f);
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Copy")) {
-							// copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
+							copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
 						}
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
-							// deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, true);
+							deleteObjects(&world->objects, &eui->selectedObjects, &eui->history, false);
 						}
 
 

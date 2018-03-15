@@ -672,6 +672,13 @@ struct HistoryData {
 	DArray<int> previousSelection;
 };
 
+void historyReset(HistoryData* hd) {
+	hd->index = 0;
+	hd->buffer.clear();
+	hd->offsets.clear();
+	hd->previousSelection.clear();
+}
+
 Object objectDiff(Object o0, Object o1) {
 	Object diff = {};
 
@@ -704,6 +711,7 @@ Object objectAdd(Object obj, Object diff) {
 
 struct EntityUI {
 	HistoryData history;
+	bool objectNoticeableChange;
 
 	DArray<int> selectedObjects;
 	DArray<Object> objectCopies;
@@ -735,7 +743,6 @@ struct EntityUI {
 
 	// Translation mode.
 
-	bool positionChanged;
 	Vec3 startPos;
 	Vec3 centerOffset;
 	float centerDistanceToCam;
@@ -750,6 +757,11 @@ struct EntityUI {
 	// Scale mode.
 
 	float startDim;
+
+	// For resetting state.
+	
+	Vec3 currentObjectDistanceVector;
+	Vec3 currentPos;
 };
 
 bool keyPressed(NewGui* gui, Input* input, int keycode) {
@@ -1140,18 +1152,14 @@ void copyObjects(DArray<Object>* objects, DArray<Object>* copies, DArray<int>* s
 	}
 }
 
-void deleteObjects(DArray<Object>* objects, DArray<int>* selected, bool* selectionChanged, HistoryData* hd, bool switchSelected = true) {
-
-	// Push empty selection to history.
-	// hd->tempSelected.clear();
-	// historySelection(hd, &hd->tempSelected);
+void deleteObjects(DArray<Object>* objects, DArray<int>* selected, HistoryData* hd, bool switchSelected = true) {
 
 	// Push object removal to history.
 	hd->tempObjects.clear();
 
 	// Sort selected objects for undo remove.
+	// We could do user a better sort algorithm here, but it doesn't matter right now.
 	bubbleSort(selected->data, selected->count);
-
 	for(int i = 0; i < selected->count; i++) {
 		Object obj = objects->at(selected->at(i));
 		obj.id = selected->at(i);
@@ -1173,7 +1181,6 @@ void deleteObjects(DArray<Object>* objects, DArray<int>* selected, bool* selecti
 
 	selected->clear();
 	hd->previousSelection.clear();
-	// *selectionChanged = true;
 
 	// Ignoring the switch for now.
 
@@ -1182,7 +1189,6 @@ void deleteObjects(DArray<Object>* objects, DArray<int>* selected, bool* selecti
 	// } else if(!objects->empty()) {
 	// 	selected->at(0) = mod(selected->at(0), objects->count);
 	// }
-
 }
 
 void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, bool* objectsEdited, HistoryData* hd, bool keepPosition) {
