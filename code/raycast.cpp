@@ -666,7 +666,10 @@ struct HistoryData {
 	// Temp.
 
 	DArray<Object> objectsPreMod;
-	DArray<Object> temp;
+	DArray<Object> tempObjects;
+	DArray<int> tempSelected;
+
+	DArray<int> previousSelection;
 };
 
 Object objectDiff(Object o0, Object o1) {
@@ -704,6 +707,8 @@ struct EntityUI {
 
 	DArray<int> selectedObjects;
 	DArray<Object> objectCopies;
+	DArray<Object> objectTempArray;
+	bool objectsEdited;
 
 	// For multiple selection.
 	DArray<Vec3> objectCenterOffsets;
@@ -829,9 +834,13 @@ void loadScene(World* world, char* filePath, EntityUI* eui) {
 	fclose(file);
 }
 
-
+#define HistoryDebugStrings
 
 void historyEdit(HistoryData* hd, DArray<int>* selected) {
+
+	#ifdef HistoryDebugStrings
+	printf("%*s%i Edit\n", hd->index, "", hd->index);
+	#endif
 
 	int type = COMMAND_TYPE_EDIT;
 
@@ -868,6 +877,10 @@ void historyEdit(HistoryData* hd, DArray<int>* selected) {
 
 void historyInsert(HistoryData* hd, DArray<Object>* copies) {
 
+	#ifdef HistoryDebugStrings
+	printf("%*s%i Insert\n", hd->index, "", hd->index);
+	#endif
+
 	int type = COMMAND_TYPE_INSERT;
 
 	// Reset buffers to index position;
@@ -901,6 +914,10 @@ void historyInsert(HistoryData* hd, DArray<Object>* copies) {
 
 void historyRemove(HistoryData* hd, DArray<Object>* copies) {
 
+	#ifdef HistoryDebugStrings
+	printf("%*s%i Remove\n", hd->index, "", hd->index);
+	#endif
+
 	int type = COMMAND_TYPE_REMOVE;
 
 	// Reset buffers to index position;
@@ -923,6 +940,51 @@ void historyRemove(HistoryData* hd, DArray<Object>* copies) {
 			Object obj = copies->at(i);
 			dObjects[i] = obj;
 		}
+
+		int offsetSize = sizeof(int) + totalSize;
+		int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
+		hd->offsets.push(offsetBefore + offsetSize);
+	}
+
+	hd->index++;
+}
+
+void historySelection(HistoryData* hd, DArray<int>* selected) {
+
+	#ifdef HistoryDebugStrings
+	printf("%*s%i Selection\n", hd->index, "", hd->index);
+	#endif
+
+	int type = COMMAND_TYPE_SELECTION;
+
+	// Reset buffers to index position;
+	hd->offsets.count = hd->index;
+	hd->buffer.count = hd->index == 0 ? 0 : hd->offsets[hd->index-1];
+
+	int* dType = (int*)hd->buffer.retrieve(sizeof(int));
+	*dType = type;
+
+	{
+		if(hd->index == 0) hd->previousSelection.clear();
+
+		int pCount = hd->previousSelection.count;
+		int count = selected->count;
+		int totalSize = sizeof(int) + sizeof(int)*pCount + sizeof(int) + sizeof(int)*count;
+
+		char* d = hd->buffer.retrieve(totalSize);
+
+		int* dPrevCount = (int*)d; d += sizeof(int);
+		int* dPrevSelected = (int*)d; d += sizeof(int) * pCount;
+		*dPrevCount = pCount;
+		copyArray(dPrevSelected, hd->previousSelection.data, int, pCount);
+
+		int* dCount = (int*)d; d += sizeof(int);
+		int* dSelected = (int*)d; d += sizeof(int) * count;
+		*dCount = count;
+		copyArray(dSelected, selected->data, int, count);
+
+		hd->previousSelection.clear();
+		hd->previousSelection.push(selected);
 
 		int offsetSize = sizeof(int) + totalSize;
 		int offsetBefore = hd->offsets.count == 0 ? 0 : hd->offsets.last();
@@ -959,6 +1021,19 @@ void historyChange(HistoryData* hd, World* world, DArray<int>* selected, bool un
 	char* d = hd->buffer.data + offset;
 	int type = *((int*)d); d += sizeof(int);
 
+
+	#ifdef HistoryDebugStrings
+	char* typeString;
+	switch(type) {
+		case 0: typeString = "Edit"; break;
+		case 1: typeString = "Insert"; break;
+		case 2: typeString = "Remove"; break;
+		case 3: typeString = "Selection"; break;
+	}
+	printf("%*s%i %s %s\n", hd->index, "", hd->index, undo?"Undo":"Redo", typeString);
+	#endif
+
+
 	switch(type) {
 		case COMMAND_TYPE_EDIT: {
 			int count = *((int*)d); d += sizeof(int);
@@ -990,10 +1065,15 @@ void historyChange(HistoryData* hd, World* world, DArray<int>* selected, bool un
 
 			if(undo) {
 				// Insert at indexes where they got deleted.
+				selected->clear();
 				for(int i = 0; i < count; i++) {
 					Object obj = objects[i];
 					world->objects.insert(obj, obj.id);
+
+					selected->push(obj.id);
 				}
+
+				hd->previousSelection.copy(selected);
 			} else {
 
 				// Code duplication with deleteObjects().
@@ -1008,10 +1088,29 @@ void historyChange(HistoryData* hd, World* world, DArray<int>* selected, bool un
 						i--;
 					}
 				}
+
+				selected->clear();
+				hd->previousSelection.copy(selected);
 			}
 		} break;
 
-		default: break;
+		case COMMAND_TYPE_SELECTION: {
+			int pCount = *((int*)d); d += sizeof(int);
+			int* dPrevSelected = (int*)d; d += sizeof(int)*pCount;
+			int count = *((int*)d); d += sizeof(int);
+			int* dSelected = (int*)d; d += sizeof(int)*count;
+
+			if(undo) {
+				selected->clear();
+				selected->push(dPrevSelected, pCount);
+				hd->previousSelection.copy(selected);
+			} else {
+				selected->clear();
+				selected->push(dSelected, count);
+				hd->previousSelection.copy(selected);
+			}
+
+		} break;
 	}
 }
 
@@ -1034,16 +1133,33 @@ Object defaultObject() {
 	return obj;
 }
 
-void deleteObjects(DArray<Object>* objects, DArray<int>* selected, int* selectionState, HistoryData* hd, bool switchSelected = true) {
+void copyObjects(DArray<Object>* objects, DArray<Object>* copies, DArray<int>* selected) {
+	copies->clear();
+	for(int i = 0; i < selected->count; i++) {
+		copies->push(objects->at(selected->at(i)));
+	}
+}
 
-	hd->temp.clear();
+void deleteObjects(DArray<Object>* objects, DArray<int>* selected, bool* selectionChanged, HistoryData* hd, bool switchSelected = true) {
+
+	// Push empty selection to history.
+	// hd->tempSelected.clear();
+	// historySelection(hd, &hd->tempSelected);
+
+	// Push object removal to history.
+	hd->tempObjects.clear();
+
+	// Sort selected objects for undo remove.
+	bubbleSort(selected->data, selected->count);
+
 	for(int i = 0; i < selected->count; i++) {
 		Object obj = objects->at(selected->at(i));
 		obj.id = selected->at(i);
-		hd->temp.push(obj);
+		hd->tempObjects.push(obj);
 	}
-	historyRemove(hd, &hd->temp);
+	historyRemove(hd, &hd->tempObjects);
 
+	// Do the actual removal.
 	for(int i = 0; i < selected->count; i++) {
 		objects->at(selected->at(i)).markedForDeletion = true;
 	}
@@ -1055,59 +1171,33 @@ void deleteObjects(DArray<Object>* objects, DArray<int>* selected, int* selectio
 		}
 	}
 
-	if(selected->count > 1 || !switchSelected || objects->empty()) {
-		selected->clear();
-		*selectionState = ENTITYUI_INACTIVE;
-	} else if(!objects->empty()) {
-		selected->at(0) = mod(selected->at(0), objects->count);
-	}
-}
-
-void copyObjects(DArray<Object>* objects, DArray<Object>* copies, DArray<int>* selected) {
-	copies->clear();
-	for(int i = 0; i < selected->count; i++) {
-		copies->push(objects->at(selected->at(i)));
-	}
-}
-
-void insertObject(World* world, Object obj, DArray<int>* selected, HistoryData* hd, bool keepPosition = false) {
-	Camera* cam = &world->camera;
-	float spawnDistance = cam->dim.w*2;
-
-	if(!keepPosition) {
-		obj.pos = cam->pos + cam->ovecs.dir * spawnDistance;
-	}
-
-	world->objects.push(obj);
-
-	hd->temp.clear();
-	hd->temp.push(obj);
-	historyInsert(hd, &hd->temp);
-
 	selected->clear();
-	selected->push(world->objects.count-1);
+	hd->previousSelection.clear();
+	// *selectionChanged = true;
+
+	// Ignoring the switch for now.
+
+	// if(selected->count > 1 || !switchSelected || objects->empty()) {
+	// 	selected->clear();
+	// } else if(!objects->empty()) {
+	// 	selected->at(0) = mod(selected->at(0), objects->count);
+	// }
+
 }
 
-void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, HistoryData* hd, bool keepPosition = false) {
+void insertObjects(World* world, DArray<Object>* copies, DArray<int>* selected, bool* objectsEdited, HistoryData* hd, bool keepPosition) {
 	if(copies->empty()) return;
 
 	Camera* cam = &world->camera;
 	float spawnDistance = cam->dim.w*2;
 
-	if(copies->count == 1) {
-		if(!keepPosition) {
-			copies->atr(0)->pos = cam->pos + cam->ovecs.dir * spawnDistance;
-		}
+	if(copies->count == 1 && !keepPosition) {
+		copies->atr(0)->pos = cam->pos + cam->ovecs.dir * spawnDistance;
 	}
 
 	world->objects.push(copies);
 
 	historyInsert(hd, copies);
-
-	selected->clear();
-	// for(int i = 0; i < copies->count; i++) {
-	// 	selected->push(world->objects.count-1 + (i - (copies->count-1)));
-	// }
 }
 
 bool isObjectSelected(EntityUI* eui, int index) {

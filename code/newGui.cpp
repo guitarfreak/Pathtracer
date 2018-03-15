@@ -478,6 +478,7 @@ struct PopupData {
 	char name[30];
 	Rect rSource;
 	Rect r;
+	Rect rCheck;
 
 	Vec2 p;
 	float width;
@@ -523,6 +524,8 @@ struct NewGui {
 	bool disable;
 	bool setInactive;
 
+	int test;
+
 	// Temp vars for convenience.
 
 	Vec2 mouseAnchor, mouseAnchor2;
@@ -539,6 +542,7 @@ struct NewGui {
 
 	PopupData popupStack[10];
 	int popupStackCount;
+	int popupStartId;
 
 	int* comboBoxIndex;
 	ComboBoxData comboBoxData;
@@ -2361,22 +2365,40 @@ void newGuiPopupSetup(NewGui* gui) {
 		s.boxSettings.color.a = 0;
 		s.boxSettings.borderColor.a = 0;
 
-		if(newGuiGoButtonAction(gui, getScreenRect(gui->windowSettings))) {
-			gui->popupStackCount = 0;
+		// Hack. We ignore the mouseclick that probably created the popup.
+		if(gui->test == 1 && gui->input->mouseButtonPressed[0])
+		{
+			bool overPopup = false;
+			for(int i = 0; i < gui->popupStackCount; i++) {
+				if(pointInRectEx(gui->input->mousePosNegative, gui->popupStack[i].rCheck)) {
+					overPopup = true;
+					break;
+				}
+			}
+			if(!overPopup) {
+				gui->popupStackCount = 0;
+			}
 		}
+		if(gui->input->mouseButtonPressed[0]) gui->test = 1;
 
-		// Capture all mouse clicks.
-		int id = newGuiIncrementId(gui);
-		newGuiSetHotAll(gui, id, gui->zLevel);
-		int focus[] = {Gui_Focus_MLeft, Gui_Focus_MRight, Gui_Focus_MMiddle};
-		for(int i = 0; i < arrayCount(focus); i++) {
-			newGuiSetActive(gui, id, newGuiInputFromFocus(gui->input, focus[i]), focus[i]);
-			newGuiSetNotActiveWhenActive(gui, id);			
-		}
 
-		if(newGuiGotActive(gui, id)) gui->popupStackCount = 0;
+		// if(newGuiGoButtonAction(gui, getScreenRect(gui->windowSettings))) {
+		// 	gui->popupStackCount = 0;
+		// }
+
+		// // Capture all mouse clicks.
+		// int id = newGuiIncrementId(gui);
+		// newGuiSetHotAll(gui, id, gui->zLevel);
+		// int focus[] = {Gui_Focus_MLeft, Gui_Focus_MRight, Gui_Focus_MMiddle};
+		// for(int i = 0; i < arrayCount(focus); i++) {
+		// 	newGuiSetActive(gui, id, newGuiInputFromFocus(gui->input, focus[i]), focus[i]);
+		// 	newGuiSetNotActiveWhenActive(gui, id);			
+		// }
+
+		// if(newGuiGotActive(gui, id)) gui->popupStackCount = 0;
 	} else {
 		gui->menuActive = false;
+		gui->test = 0;
 	}
 
 	newGuiUpdateComboBoxPopups(gui);
@@ -2385,6 +2407,7 @@ void newGuiPopupSetup(NewGui* gui) {
 void newGuiUpdateComboBoxPopups(NewGui* gui) {
 	for(int i = 0; i < gui->popupStackCount; i++) {
 		PopupData pd = gui->popupStack[i];
+		int popupIndex = i;
 
 		if(pd.type == POPUP_TYPE_COMBO_BOX) {
 			ComboBoxData cData = gui->comboBoxData;
@@ -2415,7 +2438,7 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 			float popupHeight = eh * cData.count + border*2 + topBottomPadding*2;
 
 			Rect r = rectTDim(rectT(pd.r)-vec2(0,comboboxPopupTopOffset), vec2(popupWidth, popupHeight));
-
+			gui->popupStack[popupIndex].rCheck = r;
 
 			// Shadow.
 			Rect shadowRect = rectTrans(r, vec2(1,-1)*padding*0.5f);
@@ -2431,8 +2454,8 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 			float ew = rectW(lr);
 
 			Vec4 cButton = gui->popupSettings.color;
-			TextBoxSettings tbs = textBoxSettings(gui->buttonSettings.textSettings, boxSettings());
-			tbs.sideAlignPadding = padding;
+			TextBoxSettings tbs = textBoxSettings(gui->comboBoxSettings.textSettings, boxSettings());
+			tbs.sideAlignPadding = padding - border;
 
 			BoxSettings bs = boxSettings(cButton);
 			BoxSettings bsSelected = gui->editSettings.textBoxSettings.boxSettings;
@@ -2442,7 +2465,7 @@ void newGuiUpdateComboBoxPopups(NewGui* gui) {
 				tbs.boxSettings = selected ? bsSelected : bs;
 
 				Rect br = rectTLDim(p, vec2(ew, eh)); p.y -= eh;
-				if(selected) br = rectExpand(br, vec2(-padding*0.5f,0));
+				// if(selected) br = rectExpand(br, vec2(-padding*0.5f,0));
 
 				if(newGuiQuickButton(gui, br, cData.strings[i], vec2i(-1,0), &tbs)) {
 					gui->comboBoxData.index = i;

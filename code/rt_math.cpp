@@ -3477,12 +3477,16 @@ struct SortPair {
 };
 
 void bubbleSort(int* list, int size) {
+	if(size == 2) {
+		swap(list + 0, list + 1);
+	}
+
 	for(int off = 0; off < size-2; off++) {
 		bool sw = false;
 
 		for(int i = 0; i < size-1 - off; i++) {
 			if(list[i+1] < list[i]) {
-				swap(&off, &size);
+				swap(list + i+1, list + i);
 				sw = true;
 			}
 		}

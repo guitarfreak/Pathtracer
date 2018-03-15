@@ -1285,9 +1285,14 @@ struct DArray {
 
 	void copy(T* d, int n) {
 		count = 0;
-		if(n > reserved) resize(n);
-		copyArray(data, d, T, n);
-		count = n;
+		push(d, n);
+	}
+
+	void copy(DArray<T> array) {
+		return copy(array.data, array.count);
+	}
+	void copy(DArray<T>* array) {
+		return copy(*array);
 	}
 
 	void dealloc() {
@@ -1321,7 +1326,7 @@ struct DArray {
 		push(array->data, array->count);
 	}
 
-	void insert(T element, int index) {
+	void insertMove(T element, int index) {
 		if(index > count-1) return push(element);
 
 		if(count == reserved) resize(count+1);
@@ -1329,6 +1334,14 @@ struct DArray {
 		moveArray(data+index+1, data+index, T, count-(index+1));
 		data[index] = element;
 		count++;
+	}
+
+	void insert(T element, int index) {
+		assert(index <= count);
+		
+		if(index == count) return push(element);
+		push(data[index]);
+		data[index] = element;
 	}
 
 	int find(T value) {
@@ -1347,6 +1360,15 @@ struct DArray {
 
 		return p;
 	}
+
+	bool operator==(DArray<T> array) {
+		if(count != array.count) return false;
+		for(int i = 0; i < count; i++) {
+			if(data[i] != array.data[i]) return false;
+		}
+		return true;
+	}
+	bool operator!=(DArray<T> array) { return !(*this == array); }
 
 	void clear()           { count = 0; }
 	T    first()           { return data[0]; }

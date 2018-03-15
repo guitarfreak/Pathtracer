@@ -5,7 +5,7 @@
 	- Depth of field.
 	- Refraction.
 	- Clean global light and multiple lights
-	- Multiple selection
+	- Multiple selection. (With middle mouse button.)
 	- Revert.
 	- Color picker.
 	- More advanced lighting function
@@ -16,13 +16,18 @@
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Clean up repetitive gui code. (Layout.)
 	- Handle non ascii text.
-	- Some way to disable buttons and such.
 	- Turning while dragging is glitchy.
 	- Drag region selection.
-	- Gradient on button.
 	- Cleartype font rendering.
+	- Ui should scale with window size.
 
 	- Simd.
+	- Double click in test edit.
+	- Title button don't scale nicely.
+	- Shift resize widget should resize all 3 dims.
+	- Redraw menu buttons to look better at smaller sizes.
+	- Make pixel processing use tiles instead of vertical lines.
+	- Do stencil outline selection instead of polygon grid selection.
 
 	Bugs:
 	- Windows key slow often.
@@ -93,6 +98,8 @@ struct AppColors {
 	Vec4 border = vec4(0.21f,1);
 	Vec4 outline = vec4(0.19f,1);
 	Vec4 outlineBright = vec4(0.41f,1);
+	Vec4 ledgeDark = vec4(0.16f,1);
+	Vec4 ledgeBright = vec4(0.42f,1);
 };
 
 struct AppData {
@@ -726,7 +733,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec4 cText = vec4(0.85f,1);
 		if(!ws->windowHasFocus) cText = vec4(0.6f,1);
 
-		Vec4 cTextShadow = vec4(0,1);
+		Vec4 cTextShadow = ad->colors.outline;
 
 		float fontHeight = sd->normalTitleHeight*0.7f;
 		float textPadding = fontHeight*0.3f;
@@ -755,30 +762,40 @@ extern "C" APPMAINFUNCTION(appMain) {
 		if(sd->ncTestRegion == HTMAXBUTTON) cButton1 = cButtonsHot;
 		if(sd->ncTestRegion == HTCLOSE)     cButton2 = cButtonsHot;
 
+		glLineWidth(1);
+		for(int i = 0; i < 2; i++)
 		{
-			glLineWidth(1);
+			Vec4 cShadow = ad->colors.outline;
+			Vec4 c;
+			Vec2 so = i == 0 ? vec2(0,-1) : vec2(0,0);
 
 			float off = rectW(sd->rMinimize)*0.2f;
 			{
 				Rect r = sd->rMinimize;
 				Vec2 p0 = rectBL(r) + vec2(off);
 				Vec2 p1 = rectBR(r) + vec2(-off,off);
-				drawLine(roundVec2(p0)+vec2(0,0.5f), roundVec2(p1)+vec2(0,0.5f), cButton0);
+				
+				Vec4 c = i == 1 ? cButton0 : cShadow;
+				drawLine(roundVec2(p0)+vec2(0,0.5f)+so, roundVec2(p1)+vec2(0,0.5f)+so, c);
 			}
 
 			{
 				Rect r = sd->rMaximize;
 				r = rectExpand(r, vec2(-off*2));
 				r = rectRound(r);
-				drawRectOutline(r, cButton1);
-				drawLine(rectTL(r)+vec2(0,-1.5f), rectTR(r)+vec2(0,-1.5f), cButton1);
+				Vec4 c = i == 1 ? cButton1 : cShadow;
+				r = rectTrans(r, so);
+				drawRectOutline(r, c);
+				drawRect(rectRound(rectRSetB(r, 2)), c);
 			}
 
 			{
 				Rect r = sd->rClose;
-				drawCross(roundVec2(rectCen(r)), rectW(r) - off*2, 1.5f, cButton2);
+				Vec4 c = i == 1 ? cButton2 : cShadow;
+				drawCross(roundVec2(rectCen(r))+so, rectW(r) - off*2, 1.5f, c);
 			}
 		}
+
 
 		Vec2 tp = vec2(ws->titleRect.left + textPadding, rectCen(ws->titleRect).y);
 
@@ -1188,8 +1205,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		if(ad->drawSceneWired) {
-			if(mouseWheel(gui, input) && eui->selectionState != ENTITYUI_ACTIVE) {
-				ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode - mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
+
+			if(mouseWheel(gui, input)) { 
+				if(eui->selectionState != ENTITYUI_ACTIVE) {
+					ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode - mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
+				} else {
+					if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION && eui->translateMode == TRANSLATE_MODE_CENTER) {
+						float wheelObjectCenterSpeed = 0.4f;
+						eui->centerDistanceToCam += mouseWheel(gui, input) * cam->dim.w*wheelObjectCenterSpeed;
+					}
+				}
 			}
 
 			if(eui->selectedObjects.count > 1) eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
@@ -1201,6 +1226,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			// @Selection.
+
+			if(eui->selectedObjects.count == 0) {
+				eui->selectionState = ENTITYUI_INACTIVE;
+			}
 
 			bool multipleSelectionMode = input->keysDown[KEYCODE_CTRL];
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
@@ -1237,12 +1266,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count) {
 				eui->selectedObjects.clear();
 				eui->selectionState = ENTITYUI_INACTIVE;
+				eui->selectionChanged = true;
+			}
+
+			if(eui->selectionChanged) {
+				// Compare current selection with previous and only push when different.
+				if(eui->selectedObjects != eui->history.previousSelection)
+					historySelection(&eui->history, &eui->selectedObjects);
+
+				eui->selectionChanged = false;
 			}
 
 			if(eui->selectedObjects.count) {
 				// Delete.
-				if(keyPressed(gui, input, KEYCODE_DEL)) {
-					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, false);
+				if(keyPressed(gui, input, KEYCODE_DEL) && eui->selectionState != ENTITYUI_ACTIVE) {
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionChanged, &eui->history, false);
 				}
 
 				// Copy.
@@ -1251,16 +1289,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 
 				// Cut.
-				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X)) {
+				if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_X) && eui->selectionState != ENTITYUI_ACTIVE) {
 					// Copy and delete.
 					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
-					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, false);
+					deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionChanged, &eui->history, false);
 				}
 			}
-			// Insert.
-			bool insert = false;
+			// Paste.
+			bool paste = false;
 			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_V)) {
-				insert = true;
+				paste = true;
 			}
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
@@ -1269,19 +1307,32 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(keyPressed(gui, input, KEYCODE_2)) eui->selectionMode = ENTITYUI_MODE_ROTATION;
 			if(keyPressed(gui, input, KEYCODE_3)) eui->selectionMode = ENTITYUI_MODE_SCALE;
 
-			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Y)) {
+			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Y) && eui->selectionState != ENTITYUI_ACTIVE) {
 				historyChange(&eui->history, world, &eui->selectedObjects);
-				eui->selectedObjects.clear();
-				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
-			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Z)) {
+			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_Z) && eui->selectionState != ENTITYUI_ACTIVE) {
 				historyChange(&eui->history, world, &eui->selectedObjects, false);
-				eui->selectedObjects.clear();
-				eui->selectionState = ENTITYUI_INACTIVE;
 			}
 
-			if((input->mouseButtonReleased[0] || insert) && eui->selectionState == ENTITYUI_ACTIVE) {
+			// if((input->mouseButtonReleased[0] || paste) && eui->selectionState == ENTITYUI_ACTIVE) {
+			if((input->mouseButtonReleased[0]) && eui->selectionState == ENTITYUI_ACTIVE) {
+				eui->objectsEdited = true;
+			}
+
+			if(paste) {
+				// Copy paste if active.
+				if(eui->selectionState == ENTITYUI_ACTIVE) {
+					copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
+				}
+
+				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, &eui->objectsEdited, &eui->history, true);
+			}
+
+			// if((input->mouseButtonReleased[0] || paste) && eui->selectionState == ENTITYUI_ACTIVE) {
+			if(eui->objectsEdited) {
+				eui->objectsEdited = false;
+
 				eui->selectionState = ENTITYUI_INACTIVE;
 				if(!eui->positionChanged) {
 
@@ -1294,11 +1345,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 
 				eui->positionChanged = false;
+
+				// if(paste) eui->selectedObjects.clear();
 			}
 
-			if(insert) {
-				insertObjects(world, &eui->objectCopies, &eui->selectedObjects, &eui->history, true);
-			}
+			// 
 
 			eui->gotActive = false;
 
@@ -1759,11 +1810,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Vec4 translationCenterBoxColor = vec4(0.5f,1);
 					float translationCenterBoxColorMod = 0.1f;
 
-
-					float distToCam = lenVec3(cam->pos - pos);
+					// Scale ui widgets with window size so they stay operable at smaller window sizes.
+					float screenMod = (float)ws->biggestMonitorSize.w / (float)ws->clientRes.w;
+					screenMod = powf(screenMod, 0.7f);
+					
+					float distToCam = lenVec3(cam->pos - pos) * screenMod;
 					float translateLineWidth = 5;
 
-					float translationArrowLength = distToCam * 0.2f;
+					float translationArrowLength = distToCam * 0.15f;
 					float translationArrowThickness = distToCam * 0.008f;
 					float translationVectorThickness = translationArrowThickness*0.5f;
 
@@ -2142,14 +2196,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Vec4 cEditCursor = c.text;
 			Vec4 cEditSelection = vec4(hslToRgbFloat(0.6f,0.4f,0.4f),1);
 
-			float buttonRounding = ad->fontHeight * 0.3;
+			float buttonRounding = ad->fontHeight * 0.3f;
 			float textPadding = font->height*0.4f;
 
 			BoxSettings bs = boxSettings(c.background, 0, c.outline);
 			TextSettings ts = textSettings(font, c.text);
 
 			BoxSettings bous = boxSettings(c.button, buttonRounding, c.outline);
-			bous.vertGradientOffset = 0.1f;
+			bous.vertGradientOffset = 0.04f;
 			TextBoxSettings bus = textBoxSettings(ts, bous);
 
 			gui->textSettings = ts;
@@ -2178,7 +2232,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// @Menu.
 		{
 			int fontHeight = roundInt(ad->fontHeight * 1.1f);
-			float menuHeight = fontHeight * 1.5f;
+			float menuHeight = roundFloat(fontHeight * 1.5f);
 			float padding = ad->fontHeight * 1.4;
 			float border = 1;
 			Vec4 cMenu = ad->colors.menu;
@@ -2433,12 +2487,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 					RaytraceSettings* settings = &ad->settings;
 					World* world = &ad->world;
 
-					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, vec4(0, 1));
+					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, ad->colors.outline);
 
 					TextBoxSettings headerSettings = textBoxSettings(headerTextSettings, boxSettings());
 					float headerHeight = eh * 1.2f;
 					float separatorHeight = font->height * 0.3f;
-					Vec4 cSeparator = gui->editSettings.textBoxSettings.boxSettings.borderColor;
+					Vec4 cSeparatorDark = ad->colors.ledgeDark;
+					Vec4 cSeparatorBright = ad->colors.ledgeBright;
 
 					Rect r;
 					char* s;
@@ -2486,7 +2541,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					{
 						p.y -= separatorHeight/2;
-						drawLineH(p, p + vec2(ew,0), cSeparator);
+						Vec2 vo = vec2(0,0);
+						drawLineH(p - vo + vec2(0,0.5f), p + vo + vec2(ew,0) + vec2(0,0.5f), cSeparatorDark);
+						drawLineH(p - vo + vec2(0,-0.5f), p + vo + vec2(ew,0) + vec2(0,-0.5f), cSeparatorBright);
 						p.y -= separatorHeight/2;
 					}
 
@@ -2525,9 +2582,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 					eh = elementHeight;
 
 					{
-						glLineWidth(1);
 						p.y -= separatorHeight/2;
-						drawLineH(p, p + vec2(ew,0), cSeparator);
+						drawLineH(p + vec2(0,0.5f), p + vec2(ew,0) + vec2(0,0.5f), cSeparatorDark);
+						drawLineH(p + vec2(0,-0.5f), p + vec2(ew,0) + vec2(0,-0.5f), cSeparatorBright);
 						p.y -= separatorHeight/2;
 					}
 
@@ -2578,17 +2635,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 							qr = quickRow(r, pad.x, 0.0f, 0.0f);
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Object")) {
-								insertObject(&ad->world, defaultObject(), &eui->selectedObjects, &eui->history);
+								eui->objectTempArray.clear();
+								eui->objectTempArray.push(defaultObject());
+								insertObjects(&ad->world, &eui->objectTempArray, &eui->selectedObjects, &eui->objectsEdited, &eui->history, false);
 							}
 
 							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copies")) {
-								insertObjects(&ad->world, &eui->objectCopies, &eui->selectedObjects, &eui->history);
+								insertObjects(&ad->world, &eui->objectCopies, &eui->selectedObjects, &eui->objectsEdited, &eui->history, false);
 							}
 						}
 
 					}
-
-					//
 
 				}
 
@@ -2720,7 +2777,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} else quickRowNext(&qr);
 
 					char* headerString = "<b>Entities<b>";
-					if(!multipleSelection) headerString = fillString("<b>Entity (%i)<b>", eui->selectedObjects.first());
+					if(!multipleSelection) headerString = fillString("<b>Entity %i<b>", eui->selectedObjects.first());
 					newGuiQuickTextBox(gui, quickRowNext(&qr), headerString, vec2i(0,0), &headerSettings);
 
 					if(!multipleSelection) {
@@ -2817,10 +2874,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, 0.0f, 0.0f);
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Copy")) {
-							copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
+							// copyObjects(&world->objects, &eui->objectCopies, &eui->selectedObjects);
 						}
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "Delete")) {
-							deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, true);
+							// deleteObjects(&world->objects, &eui->selectedObjects, &eui->selectionState, &eui->history, true);
 						}
 
 
@@ -2891,6 +2948,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 				Rect rPop = rectTLDim(pd.p-vec2(0,popupOffset), vec2(popupWidth,popupHeight));
+				gui->popupStack[i].rCheck = rPop;
 
 				newGuiSetHotAllMouseOver(gui, rPop, gui->zLevel);
 
