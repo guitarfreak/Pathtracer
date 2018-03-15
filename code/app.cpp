@@ -1046,7 +1046,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			// Precalc stuff.
+			// Precalc.
 			{
 				World* world = &ad->world;
 				settings->pixelPercent = vec2(1/(float)settings->texDim.w, 1/(float)settings->texDim.h);
@@ -1054,6 +1054,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Camera camera = world->camera;
 				OrientationVectors ovecs = camera.ovecs;
 				settings->camTopLeft = camera.pos + ovecs.dir*camera.nearDist + (ovecs.right*-1)*(camera.dim.w/2.0f) + (ovecs.up)*(camera.dim.h/2.0f);
+
+				for(int i = 0; i < world->objects.count; i++) {
+					Object* obj = world->objects + i;
+					geometryBoundingSphere(obj);
+				}
 			}
 
 			int threadCount = ad->threadCount;
@@ -1269,6 +1274,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->selectedObjects.clear();
 				eui->selectionState = ENTITYUI_INACTIVE;
 				eui->selectionChanged = true;
+
+				// Hack.
+				gui->popupStackCount = 0;
 			}
 
 			if(eui->selectionChanged) {
@@ -1580,8 +1588,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 								obj->dim.e[eui->axisIndex-1] = currentAxisLength;
 							}
 
-							geometryBoundingSphere(obj);
-
 							eui->currentObjectDistanceVector = obj->pos - linePointOnAxis;
 
 							eui->objectNoticeableChange = obj->dim.e[eui->axisIndex-1] != eui->startDim;
@@ -1839,7 +1845,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					glDisable(GL_LIGHTING);
 
-					float boundRadius = geom->boundingSphereRadius*1.5f;
 					float uiAlpha = 0.7f;
 
 					Vec4 rotationSegmentColor = vec4(hslToRgbFloat(vec3(0.5f,0.9f,0.5f)), 0.5f);
@@ -2755,6 +2760,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				float headerHeight = elementHeight * 1.2f;
 
+				Vec4 textColor = gui->textSettings.color;
+				Vec4 diffColor = vec4(1,0,1,1);
+
 				Vec2 p = rectTL(pri);
 				float eh = elementHeight;
 				float ew = elementWidth;
@@ -2776,6 +2784,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					bool multipleSelection = eui->selectedObjects.count > 1;
 
+					Object objectDiffs = {};
+
 					// if(eui->selectionChanged) {
 					{
 						eui->multiChangeObject = {};
@@ -2784,37 +2794,61 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Object o = world->objects[eui->selectedObjects[0]];
 
 						// Find values that are identical on all selected objects.
+						// We need -1 values can naturally be 0.
 						for(int i = 1; i < eui->selectedObjects.count; i++) {
 							Object* obj = world->objects + eui->selectedObjects[i];
-							if(o.pos.x != obj->pos.x) o.pos.x = 0;
-							if(o.pos.y != obj->pos.y) o.pos.y = 0;
-							if(o.pos.z != obj->pos.z) o.pos.z = 0;
-							if(o.rot.w != obj->rot.w) o.rot.w = 0;
-							if(o.rot.x != obj->rot.x) o.rot.x = 0;
-							if(o.rot.y != obj->rot.y) o.rot.y = 0;
-							if(o.rot.z != obj->rot.z) o.rot.z = 0;
-							if(o.dim.x != obj->dim.x) o.dim.x = 0;
-							if(o.dim.y != obj->dim.y) o.dim.y = 0;
-							if(o.dim.z != obj->dim.z) o.dim.z = 0;
-							if(o.color.r != obj->color.r) o.color.r = 0;
-							if(o.color.g != obj->color.g) o.color.g = 0;
-							if(o.color.b != obj->color.b) o.color.b = 0;
-							if(o.geometry.type != obj->geometry.type) o.geometry.type = 0;
-							if(o.material.emitColor.r != obj->material.emitColor.r) o.material.emitColor.r = 0;
-							if(o.material.emitColor.g != obj->material.emitColor.g) o.material.emitColor.g = 0;
-							if(o.material.emitColor.b != obj->material.emitColor.b) o.material.emitColor.b = 0;
-							if(o.material.reflectionMod != obj->material.reflectionMod) o.material.reflectionMod = 0;
+							if(o.pos.x != obj->pos.x) o.pos.x = -1;
+							if(o.pos.y != obj->pos.y) o.pos.y = -1;
+							if(o.pos.z != obj->pos.z) o.pos.z = -1;
+							if(o.rot.w != obj->rot.w) o.rot.w = -1;
+							if(o.rot.x != obj->rot.x) o.rot.x = -1;
+							if(o.rot.y != obj->rot.y) o.rot.y = -1;
+							if(o.rot.z != obj->rot.z) o.rot.z = -1;
+							if(o.dim.x != obj->dim.x) o.dim.x = -1;
+							if(o.dim.y != obj->dim.y) o.dim.y = -1;
+							if(o.dim.z != obj->dim.z) o.dim.z = -1;
+							if(o.color.r != obj->color.r) o.color.r = -1;
+							if(o.color.g != obj->color.g) o.color.g = -1;
+							if(o.color.b != obj->color.b) o.color.b = -1;
+							if(o.geometry.type != obj->geometry.type) o.geometry.type = -1;
+							if(o.material.emitColor.r != obj->material.emitColor.r) o.material.emitColor.r = -1;
+							if(o.material.emitColor.g != obj->material.emitColor.g) o.material.emitColor.g = -1;
+							if(o.material.emitColor.b != obj->material.emitColor.b) o.material.emitColor.b = -1;
+							if(o.material.reflectionMod != obj->material.reflectionMod) o.material.reflectionMod = -1;
 						}
 
+						objectDiffs = o;
+						{
+							// Ugh... probably needs some meta programming?
+							if(o.pos.x == -1) o.pos.x = 0;
+							if(o.pos.y == -1) o.pos.y = 0;
+							if(o.pos.z == -1) o.pos.z = 0;
+							if(o.rot.w == -1) o.rot.w = 0;
+							if(o.rot.x == -1) o.rot.x = 0;
+							if(o.rot.y == -1) o.rot.y = 0;
+							if(o.rot.z == -1) o.rot.z = 0;
+							if(o.dim.x == -1) o.dim.x = 0;
+							if(o.dim.y == -1) o.dim.y = 0;
+							if(o.dim.z == -1) o.dim.z = 0;
+							if(o.color.r == -1) o.color.r = 0;
+							if(o.color.g == -1) o.color.g = 0;
+							if(o.color.b == -1) o.color.b = 0;
+							if(o.geometry.type == -1) o.geometry.type = 0;
+							if(o.material.emitColor.r == -1) o.material.emitColor.r = 0;
+							if(o.material.emitColor.g == -1) o.material.emitColor.g = 0;
+							if(o.material.emitColor.b == -1) o.material.emitColor.b = 0;
+							if(o.material.reflectionMod == -1) o.material.reflectionMod = 0;
+						}
 						eui->multiChangeObject = o;
+
+						if(!multipleSelection) diffColor = textColor;
 					}
 
-					Object* obj;
-					if(multipleSelection) obj = &eui->multiChangeObject;
-					else obj = world->objects + eui->selectedObjects.first();
+					Object* obj = &eui->multiChangeObject;
 
 					// Offset and size of value that changes for multiple selection.
 					Vec2i offSize = vec2i(0,0);
+					Vec2i offSize2 = vec2i(0,0);
 
 					//
 
@@ -2827,6 +2861,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(!multipleSelection) {
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "◄")) {
 							eui->selectedObjects[0] = mod(eui->selectedObjects[0]-1, world->objects.count);
+							eui->selectionChanged = true;
 						}
 					} else quickRowNext(&qr);
 
@@ -2837,11 +2872,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 					if(!multipleSelection) {
 						if(newGuiQuickButton(gui, quickRowNext(&qr), "►")) {
 							eui->selectedObjects[0] = mod(eui->selectedObjects[0]+1, world->objects.count);
+							eui->selectionChanged = true;
 						}
 					} else quickRowNext(&qr);
 
 					{
-						char* labels[] = {"Position", "Rotation", "Color", "Type", "BRadius", "Dimension", "EmitColor", "Reflection"};
+						char* labels[] = {"Position", "Rotation", "Color", "Type", "Dimension", "EmitColor", "Reflection"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2851,18 +2887,47 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.x)) offSize = memberOffsetSize(Object, pos.x);
-						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.y)) offSize = memberOffsetSize(Object, pos.y);
-						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.z)) offSize = memberOffsetSize(Object, pos.z);
 
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						float cols[] = {labelsMaxWidth, 0,0,0,0};
-						qr = quickRow(r, pad.x, cols, arrayCount(cols));
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.w)) offSize = memberOffsetSize(Object, rot.w);
-						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.x)) offSize = memberOffsetSize(Object, rot.x);
-						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.y)) offSize = memberOffsetSize(Object, rot.y);
-						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->rot.z)) offSize = memberOffsetSize(Object, rot.z);
+						// if(objectDiffs.pos.x != -1) gui->editSettings.textBoxSettings.textSettings.color = diffColor;
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.x)) offSize = memberOffsetSize(Object, pos.x);
+						// gui->editSettings.textBoxSettings.textSettings.color = textColor;
+
+						// if(objectDiffs.pos.y != -1) gui->editSettings.textBoxSettings.textSettings.color = diffColor;
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.y)) offSize = memberOffsetSize(Object, pos.y);
+						// gui->editSettings.textBoxSettings.textSettings.color = textColor;
+
+						// if(objectDiffs.pos.z != -1) gui->editSettings.textBoxSettings.textSettings.color = diffColor;
+						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.z)) offSize = memberOffsetSize(Object, pos.z);
+						// gui->editSettings.textBoxSettings.textSettings.color = textColor;
+
+						{
+							float roll, pitch, yaw;
+							quatToEulerAngles(obj->rot, &roll, &pitch, &yaw);
+
+							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+							float cols[] = {labelsMaxWidth, 0,0,0};
+							qr = quickRow(r, pad.x, cols, arrayCount(cols));
+							newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+							bool change = false;
+
+							float rollDegree = radianToDegree(roll);
+							float pitchDegree = radianToDegree(pitch);
+							float yawDegree = radianToDegree(yaw);
+
+							if(newGuiQuickSlider(gui, quickRowNext(&qr), &rollDegree, -180, 180)) change = true;
+							if(newGuiQuickSlider(gui, quickRowNext(&qr), &pitchDegree, -180, 180)) change = true;
+							if(newGuiQuickSlider(gui, quickRowNext(&qr), &yawDegree, -180, 180)) change = true;
+
+							if(change) {
+								roll = degreeToRadian(rollDegree);
+								pitch = degreeToRadian(pitchDegree);
+								yaw = degreeToRadian(yawDegree);
+
+								obj->rot = eulerAnglesToQuat(roll, pitch, yaw);
+								offSize = memberOffsetSize(Object, rot);
+							}
+						}
+
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -2879,15 +2944,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
 								obj->dim = vec3(max(obj->dim.x, obj->dim.y, obj->dim.z));
-								offSize = memberOffsetSize(Object, dim);
+								offSize2 = memberOffsetSize(Object, dim);
 							}
-							geometryBoundingSphere(obj);
 						}
-
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickText(gui, quickRowNext(&qr), fillString("%f", obj->geometry.boundingSphereRadius), vec2i(-1,0));
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -2902,13 +2961,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 								float d = obj->dim.e[dimChanged-1];
 								obj->dim = vec3(d);
 								offSize = memberOffsetSize(Object, dim);
+							} else {
+								if(dimChanged == 1) offSize = memberOffsetSize(Object, dim.x);
+								if(dimChanged == 2) offSize = memberOffsetSize(Object, dim.y);
+								if(dimChanged == 3) offSize = memberOffsetSize(Object, dim.z);
 							}
-
-							if(dimChanged == 1) offSize = memberOffsetSize(Object, dim.x);
-							if(dimChanged == 2) offSize = memberOffsetSize(Object, dim.y);
-							if(dimChanged == 3) offSize = memberOffsetSize(Object, dim.z);
-
-							geometryBoundingSphere(obj);
 						}
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2936,13 +2993,29 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 						// Set value of all objects to the value that changed.
-						if(multipleSelection && offSize.y) {
-							int offset = offSize.x;
-							int size = offSize.y;
-
+						if(offSize.y) {
+							eui->history.objectsPreMod.clear();
 							for(int i = 0; i < eui->selectedObjects.count; i++) {
-								Object* o = world->objects + eui->selectedObjects[i];
-								memCpy((char*)(o) + offset, (char*)(obj) + offset, size);
+								Object obj = world->objects[eui->selectedObjects[i]];
+								eui->history.objectsPreMod.push(obj);
+							}
+
+							eui->objectsEdited = true;
+							eui->objectNoticeableChange = true;
+
+							{
+								for(int i = 0; i < eui->selectedObjects.count; i++) {
+									Object* o = world->objects + eui->selectedObjects[i];
+									memCpy((char*)(o) + offSize.x, (char*)(obj) + offSize.x, offSize.y);
+								}
+
+								if(offSize2.y) {
+									Vec2i offSize = offSize2;
+									for(int i = 0; i < eui->selectedObjects.count; i++) {
+										Object* o = world->objects + eui->selectedObjects[i];
+										memCpy((char*)(o) + offSize.x, (char*)(obj) + offSize.x, offSize.y);
+									}
+								}
 							}
 						}
 					}

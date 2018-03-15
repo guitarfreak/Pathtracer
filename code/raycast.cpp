@@ -512,6 +512,8 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects) {
 		Object* obj = objects + i;
 		Geometry* g = &obj->geometry;
 
+		geometryBoundingSphere(obj);
+
 		// Check collision with bounding sphere.
 		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
 		if(possibleIntersection) {
@@ -687,7 +689,6 @@ Object objectDiff(Object o0, Object o1) {
 	diff.dim = o0.dim - o1.dim;
 	diff.color = o0.color - o1.color;
 	diff.geometry.type = o0.geometry.type - o1.geometry.type;
-	diff.geometry.boundingSphereRadius = o0.geometry.boundingSphereRadius - o1.geometry.boundingSphereRadius;
 	diff.material.emitColor = o0.material.emitColor - o1.material.emitColor;
 	diff.material.reflectionMod = o0.material.reflectionMod - o1.material.reflectionMod;
 
@@ -700,7 +701,6 @@ Object objectAdd(Object obj, Object diff) {
 	obj.dim = obj.dim + diff.dim;
 	obj.color = obj.color + diff.color;
 	obj.geometry.type = obj.geometry.type + diff.geometry.type;
-	obj.geometry.boundingSphereRadius = obj.geometry.boundingSphereRadius + diff.geometry.boundingSphereRadius;
 	obj.material.emitColor = obj.material.emitColor + diff.material.emitColor;
 	obj.material.reflectionMod = obj.material.reflectionMod + diff.material.reflectionMod;
 
@@ -846,7 +846,7 @@ void loadScene(World* world, char* filePath, EntityUI* eui) {
 	fclose(file);
 }
 
-#define HistoryDebugStrings
+// #define HistoryDebugStrings
 
 void historyEdit(HistoryData* hd, DArray<int>* selected) {
 
@@ -1140,7 +1140,6 @@ Object defaultObject() {
 	obj.color = vec3(0.5f,0.5f,0.5f);
 	obj.material = m;
 	obj.geometry.type = GEOM_TYPE_SPHERE;
-	geometryBoundingSphere(&obj);
 	
 	return obj;
 }

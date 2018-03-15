@@ -1394,30 +1394,64 @@ void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSett
 
 	BoxSettings sliderBoxSettings = boxSettings(settings.color, settings.rounding, settings.borderColor);
 	drawBox(sr, scissor, sliderBoxSettings);
-	// drawBox(sr, scissor, boxSettings(settings.color, settings.rounding));
 
 	scissorTestScreen(rectExpand(getRectScissor(br, scissor), vec2(-2,-2)));
-	// scissorTestScreen(getRectScissor(br, scissor));
 
 	char* text = type == SLIDER_TYPE_FLOAT ? fillString("%f", *((float*)val)) : fillString("%i", *((int*)val)) ;
 
 	// Position text outside of slider rect.
-	Vec2 tp = rectCen(br);
 	{
+		int border = 1;
+		br = rectExpand(br, -vec2(border*2));
+		Vec2 tp = rectCen(br);
+
 		float off = settings.heightOffset;
-		Vec2 dim = getTextDim(text, textSettings->font);
-		float l = tp.x - dim.w/2 - off;
-		float r = tp.x + dim.w/2 + off;
-		if(sr.right < l || sr.left > r) {
-			// Text fits in middle.
-			drawText(text, rectCen(br), vec2i(0,0), *textSettings);
+		Vec2 tDim = getTextDim(text, textSettings->font);
+		float l = tp.x - tDim.w/2 - off;
+		float r = tp.x + tDim.w/2 + off;
+
+		Vec2i align = vec2i(0,0);
+
+		// Test doesn't fit.
+		if(tDim.w > rectDim(br).w-off*2) {
+			tp = rectCen(br);
+			align = vec2i(0,0);
 		} else {
-			if(rectCen(sr).x < rectCen(br).x) {
-				drawText(text, rectR(sr) + vec2(off,0), vec2i(-1,0), *textSettings);
+			if(sr.right < l || sr.left > r) {
+				// Text fits in middle.
+				tp = rectCen(br);
+				align = vec2i(0,0);
 			} else {
-				drawText(text, rectL(sr) - vec2(off,0), vec2i(1,0), *textSettings);
+				Vec2 brRight = rectR(br) - vec2(off,0);
+				Vec2 brLeft = rectL(br) + vec2(off,0);
+
+				if(rectCen(sr).x < rectCen(br).x) {
+					Vec2 nextToSlider = rectR(sr) + vec2(off,0);
+					// Clamp.
+					if(brRight.x - nextToSlider.x < tDim.w) {
+						tp = brRight;
+						align = vec2i(1,0);
+					} else {
+						// Slider left of center.
+						tp = nextToSlider;
+						align = vec2i(-1,0);
+					}
+				} else {
+					Vec2 nextToSlider = rectL(sr) - vec2(off,0);
+					// Clamp.
+					if(nextToSlider.x - brLeft.x < tDim.w) {
+						tp = brLeft;
+						align = vec2i(-1,0);
+					} else {
+						// Slider right of center.
+						tp = nextToSlider;
+						align = vec2i(1,0);
+					}
+				}
 			}
 		}
+
+		drawText(text, tp, align, *textSettings);
 	}
 }
 void drawSlider(float val, Rect br, Rect sr, Rect scissor, SliderSettings settings) {
@@ -1846,9 +1880,11 @@ bool newGuiQuickComboBox(NewGui* gui, Rect r, int* index, char** strings, int st
 		}
 		if(mod) {
 			*index += mod;
+			if(*index < 0 || *index > stringCount-1) updated = false;
+			else updated = true;
+
 			clampInt(index, 0, stringCount-1);
 			gui->comboBoxData.index = *index;
-			updated = true;
 		}
 	}
 
