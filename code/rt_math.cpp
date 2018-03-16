@@ -1598,12 +1598,52 @@ void closestPointToTriangle(float closest[2], float a[2], float b[2], float c[2]
 	}
 }
 
-Vec2 projectPointOnLine(Vec2 p0, Vec2 lp0, Vec2 lp1) {
-	Vec2 a = lp1 - lp0;
-	Vec2 b = p0 - lp0;
-	Vec2 result = lp0 + (((a*b)*a) / pow(lenVec2(a),2));
+Vec2 projectPointOnLine(Vec2 p, Vec2 lp0, Vec2 lp1, bool clampDist = false) {
+
+	Vec2 ld = normVec2(lp1 - lp0);
+	float dist = (dot(p-lp0, ld) / dot(ld, ld));
+
+	if(clampDist) dist = clamp(dist, 0, lenVec2(lp1 - lp0));
+
+	Vec2 result = lp0 + ld * dist;
 
 	return result;
+}
+
+float sign(Vec2 p1, Vec2 p2, Vec2 p3) {
+	return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+}
+
+bool pointInTriangle(Vec2 pt, Vec2 v1, Vec2 v2, Vec2 v3) {
+	bool b1, b2, b3;
+
+	b1 = sign(pt, v1, v2) < 0.0f;
+	b2 = sign(pt, v2, v3) < 0.0f;
+	b3 = sign(pt, v3, v1) < 0.0f;
+
+	return ((b1 == b2) && (b2 == b3));
+}
+
+Vec2 closestPointToTriangle(Vec2 p, Vec2 a, Vec2 b, Vec2 c) {
+	bool insideTriangle = pointInTriangle(p.e, a.e, b.e, c.e);
+	if(insideTriangle) return p;
+
+	Vec2 p0 = projectPointOnLine(p, a, b, true);
+	Vec2 p1 = projectPointOnLine(p, b, c, true);
+	Vec2 p2 = projectPointOnLine(p, c, a, true);
+
+	float d0 = lenVec2(p0 - p);
+	float d1 = lenVec2(p1 - p);
+	float d2 = lenVec2(p2 - p);
+
+	float shortestDist = min(d0, d1, d2);
+
+	Vec2 closestPoint = vec2(0,0);
+	     if(shortestDist == d0) closestPoint = p0;
+	else if(shortestDist == d1) closestPoint = p1;
+	else if(shortestDist == d2) closestPoint = p2;
+
+	return closestPoint;
 }
 
 inline bool lineCircleIntersection(Vec2 lp0, Vec2 lp1, Vec2 cp, float r, Vec2 * i) {

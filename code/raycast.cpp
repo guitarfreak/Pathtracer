@@ -762,6 +762,7 @@ struct EntityUI {
 	// Scale mode.
 
 	float startDim;
+	bool enableScaleEqually;
 
 	// For resetting state.
 	
@@ -856,7 +857,7 @@ void loadScene(World* world, char* filePath, EntityUI* eui) {
 	fclose(file);
 }
 
-#define HistoryDebugStrings
+// #define HistoryDebugStrings
 
 void historyEdit(HistoryData* hd, DArray<int>* selected) {
 

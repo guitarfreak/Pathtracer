@@ -281,6 +281,9 @@ struct TextEditVars {
 
 	float dt;
 	float cursorTimer;
+
+	bool wordSelectionMode;
+	int wordSelectionStartIndex;
 };
 
 struct BoxSettings {
@@ -715,10 +718,11 @@ void newGuiSetNotActiveWhenActive(NewGui* gui, int id) {
 }
 
 void newGuiSetActive(NewGui* gui, int id, bool input, int focus = 0) {
-	if(input && newGuiIsHot(gui, id, focus)) {
-		gui->activeId = id;
-		gui->gotActiveId = id;
-	}
+	if(!newGuiIsActive(gui, id))
+		if(input && newGuiIsHot(gui, id, focus)) {
+			gui->activeId = id;
+			gui->gotActiveId = id;
+		}
 }
 
 bool newGuiFocusCanBeHot(NewGui* gui, int focus) {
@@ -745,6 +749,9 @@ void newGuiSetHot(NewGui* gui, int id, float z, int focus = 0) {
 			}
 		}
 	}
+}
+void newGuiSetHot(NewGui* gui, int id, int focus = 0) {
+	return newGuiSetHot(gui, id, gui->zLevel, focus);
 }
 
 void newGuiSetHotAll(NewGui* gui, int id, float z) {
@@ -845,6 +852,20 @@ int newGuiDragAction(NewGui* gui, Rect r, float z, int focus = 0) {
 	bool input = newGuiInputFromFocus(gui->input, focus, true);
 	bool inputRelease = newGuiInputFromFocus(gui->input, focus, false);
 	return newGuiDragAction(gui, newGuiIncrementId(gui), r, z, gui->input->mousePosNegative, input, inputRelease, focus);
+}
+int newGuiDragAction(NewGui* gui, bool isHot, int focus = 0) {
+	bool input = newGuiInputFromFocus(gui->input, focus, true);
+	bool inputRelease = newGuiInputFromFocus(gui->input, focus, false);
+
+	int id = newGuiIncrementId(gui);
+	Vec2 mousePos = gui->input->mousePosNegative;
+
+	newGuiSetActive(gui, id, input);
+	if(newGuiIsActive(gui, id) && inputRelease) newGuiSetNotActive(gui, id);
+
+	if(isHot) newGuiSetHot(gui, id, focus);
+	
+	return id;
 }
 
 int newGuiGoDragAction(NewGui* gui, Rect r, float z, bool input, bool inputRelease, int focus = 0, bool screenMouse = false) {
@@ -1113,6 +1134,7 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, void* var, int mode, T
 	int event = newGuiGoDragAction(gui, textRect, z, doubleClick?input->doubleClick:input->mouseButtonPressed[0], releaseEvent, Gui_Focus_MLeft);
 
 	if(event == 1) {
+		printf("asdf\n");
 		gui->editVars.scrollOffset = vec2(0,0);
 		if(mode == EDIT_MODE_CHAR)      strCpy(gui->editText, (char*)var);
 		else if(mode == EDIT_MODE_INT) strCpy(gui->editText, fillString("%i", *((int*)var)));
@@ -1970,6 +1992,24 @@ char* textSelectionToString(char* text, int index1, int index2) {
 	return str;
 }
 
+
+int textWordSearch(char* text, int startIndex, bool left) {
+	if(left) {
+		int index = startIndex;
+		if(text[index] == ' ' && index != 0) index--;
+		while(text[index] != ' ' && index != 0) index--;
+		if(text[index] == ' ') index++;
+
+		return index;
+	} else {
+		int index = startIndex;
+		if(text[index] == ' ' && index != 0) index--;
+		while(text[index] != ' ' && text[index] != '\0') index++;
+
+		return index;
+	}
+}
+
 void textEditBox(char* text, int textMaxSize, Font* font, Rect textRect, Input* input, Vec2i align, TextEditSettings tes, TextEditVars* tev) {
 
 	bool wrapping = flagGet(tes.flags, ESETTINGS_WRAPPING);
@@ -1984,22 +2024,51 @@ void textEditBox(char* text, int textMaxSize, Font* font, Rect textRect, Input* 
 	int cursorIndex = tev->cursorIndex;
 	int markerIndex = tev->markerIndex;
 
-	int mouseIndex;
-	if(input->mouseButtonPressed[0] || input->mouseButtonDown[0]) {
-		Vec2 mp = input->mousePosNegative;
-		if(singleLine) mp.y = rectCenY(textRect); // Lock mouse y axis.
+	// Bug.
+	Vec2 off = vec2(2,0);
+	Vec2 mp = input->mousePosNegative + off;
+	if(singleLine) mp.y = rectCenY(textRect); // Lock mouse y axis.
 
-		mouseIndex = textMouseToIndex(text, font, startPos, mp, align, wrapWidth);
+	int mouseIndex = textMouseToIndex(text, font, startPos, mp, align, wrapWidth);
+
+	if(input->doubleClick) {
+		tev->wordSelectionMode = true;
+		cursorIndex = 0;
+		markerIndex = strLen(text);
+
+		tev->wordSelectionStartIndex = mouseIndex;
 	}
 
-	if(input->mouseButtonPressed[0]) {
-		if(pointInRect(input->mousePosNegative, textRect)) {
-			markerIndex = mouseIndex;
+	if(input->mouseButtonReleased[0]) {
+		tev->wordSelectionMode = false;
+	}
+
+	if(!tev->wordSelectionMode) {
+		if(input->mouseButtonPressed[0]) {
+			if(pointInRect(input->mousePosNegative, textRect)) {
+				markerIndex = mouseIndex;
+			}
 		}
-	}
 
-	if(input->mouseButtonDown[0]) {
-		cursorIndex = mouseIndex;
+		if(input->mouseButtonDown[0]) {
+			cursorIndex = mouseIndex;
+		}
+
+	} else {
+		if(input->mouseButtonDown[0]) {
+			if(tev->wordSelectionStartIndex != mouseIndex) {
+				if(mouseIndex < tev->wordSelectionStartIndex) {
+					markerIndex = textWordSearch(text, tev->wordSelectionStartIndex, false);
+					cursorIndex = textWordSearch(text, mouseIndex, true);
+				} else {
+					markerIndex = textWordSearch(text, tev->wordSelectionStartIndex, true);
+					cursorIndex = textWordSearch(text, mouseIndex, false);
+				}
+			} else {
+				markerIndex = textWordSearch(text, mouseIndex, true);
+				cursorIndex = textWordSearch(text, mouseIndex, false);
+			}
+		}
 	}
 
 	bool left = input->keysPressed[KEYCODE_LEFT];
@@ -2190,6 +2259,8 @@ void textEditBox(char* text, int textMaxSize, Font* font, Rect textRect, Input* 
 		float rightEnd = textRect.right - tes.textOffset;
 		if(		cursorPos.x < leftEnd) tev->scrollOffset.x += leftEnd - cursorPos.x;
 		else if(cursorPos.x > rightEnd) tev->scrollOffset.x += rightEnd - cursorPos.x;
+
+		printf("%f %f %f %f\n", cursorPos.x, leftEnd, rightEnd, tev->scrollOffset.x);
 
 		clampMax(&tev->scrollOffset.x, 0);
 		

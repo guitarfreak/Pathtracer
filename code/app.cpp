@@ -14,14 +14,13 @@
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Clean up repetitive gui code. (Layout.)
 
-	- Turning while dragging is glitchy.
-	- Simd.
-	- Double click in test edit.
-	- Title button don't scale nicely.
 	- Shift resize widget should resize all 3 dims.
-	- Redraw menu buttons to look better at smaller sizes.
 	- Make pixel processing use tiles instead of vertical lines.
+	- Turning while dragging is glitchy.
+	- Title buttons don't scale nicely.
+	- Redraw menu buttons to look better at smaller sizes.
 	- Do stencil outline selection instead of polygon grid selection.
+	- Simd.
 
 	Bugs:
 	- Windows key slow often.
@@ -157,6 +156,7 @@ struct AppData {
 	Rect menuRect;
 	Rect panelLeftRect;
 	Rect panelRightRect;
+	Rect panelColorPickerRect;
 
 	// 
 
@@ -1286,7 +1286,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count) {
+			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count && !ad->drawSceneWired) {
 				eui->selectedObjects.clear();
 				eui->selectionState = ENTITYUI_INACTIVE;
 				eui->selectionChanged = true;
@@ -1399,6 +1399,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 					}
 				}
 			}
+
+			if(keyDown(gui, input, KEYCODE_CTRL)) eui->enableScaleEqually = true;
+			else eui->enableScaleEqually = false;
 
 			// 
 
@@ -1597,7 +1600,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 								currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
 							}
 
-							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
+							if(obj->geometry.type == GEOM_TYPE_SPHERE || eui->enableScaleEqually) {
 								// obj->dim = vec3(currentAxisLength*0.5f);
 								obj->dim = vec3(currentAxisLength);
 							} else if(obj->geometry.type == GEOM_TYPE_BOX) {
@@ -2537,11 +2540,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 		clamp(&ad->panelWidthLeft, panelWidthMin, panelWidthMax);
 		clamp(&ad->panelWidthRight, panelWidthMin, panelWidthMax);
 
+		Vec2i res = ws->clientRes;
+
 		panelDim = vec2(ad->panelWidthLeft,ad->panelHeightLeft);
 		Rect rectPanelLeft = rectTLDim(vec2(panelOffset.x,-panelOffset.y), panelDim);
 		ad->panelLeftRect = rectPanelLeft;
 
-		Vec2i res = ws->clientRes;
 		panelDim = vec2(ad->panelWidthRight,ad->panelHeightRight);
 		Rect rectPanelRight = rectTRDim(vec2(res.w,0) + vec2(-panelOffset.x,-panelOffset.y), panelDim);
 		ad->panelRightRect = rectPanelRight;
@@ -2554,7 +2558,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(ad->entityUI.selectionState == ENTITYUI_ACTIVE && 
 			   (pointInRect(input->mousePosNegative, rectPanelLeft) || 
-			   (entityPanelActive && pointInRect(input->mousePosNegative, rectPanelRight)))) {
+			   (entityPanelActive && (pointInRect(input->mousePosNegative, rectPanelRight) ||
+			                          pointInRect(input->mousePosNegative, ad->panelColorPickerRect))))) {
 
 				inc = true;
 			}
@@ -2591,6 +2596,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					clamp(&ad->panelWidthLeft, panelWidthMin, panelWidthMax);
 
 					rectPanelLeft.right = rectPanelLeft.left + ad->panelWidthLeft;
+					ad->panelLeftRect = rectPanelLeft;
 				}
 				if(newGuiIsHot(gui)) {
 					newGuiSetCursor(gui, IDC_SIZEWE);
@@ -2637,7 +2643,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
 
 					{
-						char* labels[] = {"TexDim", "SampleMode", "SampleGridDim", "SampleCellCount", "MaxRayBounces"};
+						char* labels[] = {"TextureDim", "SampleMode", "SampleGridDim", "SampleCellCount", "MaxRayBounces"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2722,8 +2728,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					//
 
-					r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-					r = rectExpand(r, vec2((panelMargin-1)*2,-eh*0.2f));
+					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
 					newGuiQuickTextBox(gui, r, "<b>Scene<b>", vec2i(0,0), &headerSettings);
 
 					{
@@ -2788,8 +2793,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 		#endif
 
-		// Right panel.
-		#if 1
+		// @RightPanel.
 		if(entityPanelActive)
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
@@ -2812,6 +2816,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					clamp(&ad->panelWidthRight, panelWidthMin, panelWidthMax);
 
 					rectPanelRight.left = rectPanelRight.right - ad->panelWidthRight;
+					ad->panelRightRect = rectPanelRight;
 				}
 				if(newGuiIsHot(gui)) {
 					newGuiSetCursor(gui, IDC_SIZEWE);
@@ -3009,6 +3014,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.g)) offSize = memberOffsetSize(Object, color.g);
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.b)) offSize = memberOffsetSize(Object, color.b);
 
+
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
@@ -3100,19 +3106,297 @@ extern "C" APPMAINFUNCTION(appMain) {
 				newGuiScissorPop(gui);
 			}
 		}
-		#endif
 
+		// @ColorPicker.
+		if(entityPanelActive)
+		{
+			Rect rEntities = ad->panelRightRect;
+
+			float panelHeight = 10 * ad->fontHeight;
+			if(rectW(rEntities) < panelHeight) {
+				panelHeight = rectW(rEntities);
+			}
+
+			Rect rectColorPicker = rectTRDim(rectBR(rEntities), vec2(panelHeight, panelHeight));
+			ad->panelColorPickerRect = rectColorPicker;
+
+			newGuiSetHotAllMouseOver(gui, rectColorPicker, gui->zLevel);
+			newGuiQuickBox(gui, rectColorPicker);
+
+			newGuiScissorPush(gui, rectExpand(rectColorPicker, vec2(-2)));
+
+			{
+				Rect r = rectExpand(rectColorPicker, vec2(-panelBorder*2));
+
+				Vec2 cen = rectCen(r);
+				float height = rectH(r);
+
+				//
+
+				float ringThickness = height * 0.13f;
+				float triangleOffset = 0.4f * ad->fontHeight;
+
+				float markerRadius = ringThickness/2 / 2;
+				Vec4 cOutline = ad->colors.outline;
+				// Vec4 cOutline = vec4(1,1);
+				Vec4 cMarker = vec4(1,1);
+				Vec4 cMarkerOutline = cOutline;
+
+				// So we don't clamp to one extreme. Not the best solution.
+				float minRange = 0.001f;
+				float maxRange = 0.999f;
+
+				//
+
+				bool colorChanged = false;
+				bool applyImmediately = true;
+
+				float hue = 0;
+				float saturation = 0;
+				float lightness = 0;
+
+				EntityUI* eui = &ad->entityUI;
+				World* world = &ad->world;
+
+				{
+					// Check if everyone has the same color, and if so use that.
+					bool everyoneHasSameColor = true;
+					Vec3 startColor = world->objects[eui->selectedObjects[0]].color;
+					for(int i = 1; i < eui->selectedObjects.count; i++) {
+						Object* obj = world->objects + eui->selectedObjects[i];
+						if(obj->color != startColor) {
+							everyoneHasSameColor = false;
+							break;
+						}
+					}
+
+					Vec3 hsl;
+					if(everyoneHasSameColor) {
+						hsl = rgbToHslFloat(startColor);
+					} else {
+						hsl = vec3(0,0.5f,0.5f);
+						applyImmediately = false;
+					}
+
+					hue = hsl.x;
+					saturation = hsl.y;
+					lightness = hsl.z;
+				}
+
+				// Triangle.
+				{
+					float triangleRadius = rectW(r) / 2 - ringThickness - triangleOffset;
+					Vec2 dir = normVec2(vec2(0,1)) * triangleRadius;
+
+					Vec2 tp0 = cen + rotateVec2(dir, degreeToRadian((360/3.0f)*2));
+					Vec2 tp1 = cen + dir;
+					Vec2 tp2 = cen + rotateVec2(dir, degreeToRadian(360/3.0f));
+
+					{
+						bool hot = lenVec2(input->mousePosNegative - cen) <= triangleRadius;
+						int id = newGuiDragAction(gui, hot);
+						if(newGuiGotActive(gui, id)) {
+							// Code duplication.
+							eui->history.objectsPreMod.clear();
+							for(int i = 0; i < eui->selectedObjects.count; i++) {
+								Object obj = world->objects[eui->selectedObjects[i]];
+								eui->history.objectsPreMod.push(obj);
+							}
+						}
+						if(newGuiIsActive(gui, id) || newGuiWasActive(gui, id)) {
+							// Convert point to value.
+							Vec2 mp = input->mousePosNegative;
+							Vec2 trianglePoint = closestPointToTriangle(mp, tp0, tp1, tp2);
+
+							// saturation = mapRange(trianglePoint.y, tp0.y, tp1.y, minRange, maxRange);
+							// float xMin = mapRange(saturation, minRange, maxRange, tp0.x, tp1.x);
+							// float xMax = mapRange(saturation, minRange, maxRange, tp2.x, tp1.x);
+							// if(xMin == xMax) lightness = maxRange;
+							// else lightness = mapRange(trianglePoint.x, xMin, xMax, minRange, maxRange);
+
+							lightness = mapRange(trianglePoint.x, tp0.x, tp2.x, minRange, maxRange);
+							lightness = clamp(lightness, minRange, maxRange);
+							float yMax;
+							if(lightness <= 0.5f) yMax = mapRange(lightness, minRange, 0.5f, tp0.y, tp1.y);
+							else yMax = mapRange(lightness, 0.5f, maxRange, tp1.y, tp0.y);
+
+							saturation = mapRange(trianglePoint.y, tp0.y, yMax, minRange, maxRange);
+
+							saturation = clamp(saturation, minRange, maxRange);
+						}
+						if(newGuiWasActive(gui, id)) {
+							colorChanged = true;
+						}
+					}
+
+					// Draw triangle.
+					{
+						setSRGB(false);
+						Vec4 c0 = COLOR_SRGB(vec4(hslToRgbFloat(hue,0,0), 1));
+						Vec4 c1 = COLOR_SRGB(vec4(hslToRgbFloat(hue,1,0.5f), 1));
+						Vec4 c2 = COLOR_SRGB(vec4(hslToRgbFloat(hue,1,1), 1));
+
+						Vec2 tp;
+						glBindTexture(GL_TEXTURE_2D, 0);
+						glBegin(GL_TRIANGLES);
+							pushColor(c0); pushVec(tp0);
+							pushColor(c1); pushVec(tp1);
+							pushColor(c2); pushVec(tp2);
+						glEnd();
+						setSRGB();
+					}
+
+					// Triangle outline.
+					{
+						setSRGB(false);
+						glBindTexture(GL_TEXTURE_2D, 0);
+						Vec4 color = COLOR_SRGB(cOutline);
+						pushColor(color);
+
+						glBegin(GL_LINE_STRIP);
+							pushVec(tp0);
+							pushVec(tp1);
+							pushVec(tp2);
+							pushVec(tp0);
+						glEnd();
+						setSRGB();
+					}
+
+					// Draw triangle point.
+					{
+						Vec2 trianglePoint;
+
+						// Convert value to point.
+						{
+							// trianglePoint.y = mapRange(saturation, 0, 1, tp0.y, tp1.y);
+							// float xMin = mapRange(saturation, 0, 1, tp0.x, tp1.x);
+							// float xMax = mapRange(saturation, 0, 1, tp2.x, tp1.x);
+							// trianglePoint.x = mapRange(lightness, 0, 1, xMin, xMax);
+	
+							trianglePoint.x = mapRange(lightness, minRange, maxRange, tp0.x, tp2.x);
+							float yMax;
+							if(lightness <= 0.5f) yMax = mapRange(lightness, minRange, 0.5f, tp0.y, tp1.y);
+							else yMax = mapRange(lightness, 0.5f, maxRange, tp1.y, tp0.y);
+
+							trianglePoint.y = mapRange(saturation, minRange, maxRange, tp0.y, yMax);
+						}
+
+						drawRing(trianglePoint, markerRadius + 0.5f, cMarkerOutline);
+						drawCircle(trianglePoint, markerRadius, cMarker);
+					}
+				}
+
+				// Circle.
+				{
+					Vec2 cp = cen;
+					float cr = rectW(r)/2;
+
+					{
+						float distToCenter = lenVec2(input->mousePosNegative - cen);
+						bool hot = valueBetween(distToCenter, cr-ringThickness, cr);
+
+						int id = newGuiDragAction(gui, hot);
+						if(newGuiGotActive(gui, id)) {
+							// Code duplication.
+							eui->history.objectsPreMod.clear();
+							for(int i = 0; i < eui->selectedObjects.count; i++) {
+								Object obj = world->objects[eui->selectedObjects[i]];
+								eui->history.objectsPreMod.push(obj);
+							}
+						}
+						if(newGuiIsActive(gui, id) || newGuiWasActive(gui, id)) {
+							// Angle to hue.
+
+							Vec2 mp = input->mousePosNegative;
+							Vec2 dir = mp - cp;
+							float angle = angleVec2(vec2(0,1), dir);
+
+							if(dot(dir, vec2(1,0)) < 0) angle = M_PI + M_PI-angle;
+							hue = mapRange(angle, 0, M_2PI, 0, 1);
+
+							if(saturation == 0) saturation = minRange;
+						}
+						if(newGuiWasActive(gui, id)) {
+							colorChanged = true;
+						}
+					}
+
+					{
+						setSRGB(false);
+
+						glBindTexture(GL_TEXTURE_2D, 0);
+						glBegin(GL_TRIANGLE_STRIP);
+						int segments = (M_2PI * cr)*0.2f;
+						for(int i = 0; i < segments+1; i++) {
+							float angle = (i * M_2PI/(float)segments);
+
+							float degrees = radianToDegree(angle);
+							Vec3 hueRGB;
+							hueToRgb(hueRGB.e, degrees);
+
+							Vec4 c = vec4(hueRGB, 1);
+							pushColor(c);
+
+							Vec2 dir = rotateVec2(vec2(0,1), angle);
+							Vec2 p0 = cp + dir * (cr - ringThickness);
+							Vec2 p1 = cp + dir * (cr);
+
+							pushVec(p0);
+							pushVec(p1);
+						}
+						glEnd();
+
+						setSRGB();
+					}
+
+					// Draw hue point.
+					{
+						Vec2 dir = rotateVec2(vec2(0,1), hue*M_2PI);
+						Vec2 huePoint = cen + dir * (cr - ringThickness/2);
+						float huePointRadius = markerRadius;
+
+						drawRing(huePoint, huePointRadius + 0.5f, cMarkerOutline);
+						drawCircle(huePoint, huePointRadius, cMarker);
+					}
+
+					// Circle outline.
+					{
+						Vec2 cc = cen;
+						float off = 0.5f;
+						glLineWidth(1);
+						drawRing(cc, cr+off, cOutline);
+						drawRing(cc, cr-off - ringThickness, cOutline);
+						glLineWidth(1);
+					}
+				}
+
+				Vec3 color = hslToRgbFloat(hue, saturation, lightness);
+
+				if(applyImmediately || colorChanged) {
+					for(int i = 0; i < eui->selectedObjects.count; i++) {
+						Object* obj = world->objects + eui->selectedObjects[i];
+						obj->color = color;
+					}
+				}
+
+				if(colorChanged) {
+					eui->objectsEdited = true;
+					eui->objectNoticeableChange = true;
+				}
+			}
+
+			newGuiScissorPop(gui);
+		}
 
 
 		newGuiPopupSetup(gui);
 
-		// Handle custom popups.
+		// @Popups.
 		{
 			for(int i = 0; i < gui->popupStackCount; i++) {
 				PopupData pd = gui->popupStack[i];
 
 				if(pd.type != POPUP_TYPE_OTHER) continue;
-
 
 				float fontHeight = gui->textSettings.font->height;
 
@@ -3301,6 +3585,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				newGuiScissorPop(gui);
 			}
+
 		}
 
 		newGuiEnd(gui);
