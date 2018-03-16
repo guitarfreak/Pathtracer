@@ -5,8 +5,6 @@
 	- Depth of field.
 	- Refraction.
 	- Clean global light and multiple lights
-	- Multiple selection. (With middle mouse button.)
-	- Revert.
 	- Color picker.
 	- More advanced lighting function
 	- Have cam independent, mini window.
@@ -15,12 +13,8 @@
 	- Converge method on sampling for speed up.
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Clean up repetitive gui code. (Layout.)
-	- Handle non ascii text.
-	- Turning while dragging is glitchy.
-	- Drag region selection.
-	- Cleartype font rendering.
-	- Ui should scale with window size.
 
+	- Turning while dragging is glitchy.
 	- Simd.
 	- Double click in test edit.
 	- Title button don't scale nicely.
@@ -1177,6 +1171,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							strCpy(ad->sceneFile, dd->result);
 
 							historyReset(&eui->history);
+							eui->selectedObjects.count = 0;
 						}
 
 					} else if(strCompare(dd->type, "ScreenshotDialog")) {
@@ -1215,7 +1210,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			if(mouseWheel(gui, input)) { 
 				if(eui->selectionState != ENTITYUI_ACTIVE) {
-					ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode - mouseWheel(gui, input), ENTITYUI_MODE_SIZE);
+					ad->entityUI.selectionMode = mod(ad->entityUI.selectionMode - mouseWheel(gui, input), ENTITYUI_MODE_SCALE+1);
 				} else {
 					if(eui->selectionMode == ENTITYUI_MODE_TRANSLATION && eui->translateMode == TRANSLATE_MODE_CENTER) {
 						float wheelObjectCenterSpeed = 0.4f;
@@ -1224,7 +1219,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			if(eui->selectedObjects.count > 1) eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
+			if(eui->selectedObjects.count > 1) {
+				if(eui->selectionMode == ENTITYUI_MODE_ROTATION || 
+				   eui->selectionMode == ENTITYUI_MODE_SCALE) {
+					eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
+				}
+			}
 
 			if(input->keysDown[KEYCODE_SHIFT]) {
 				eui->snappingEnabled = true;
@@ -1234,11 +1234,27 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// @Selection.
 
-			if(eui->selectedObjects.count == 0) {
-				eui->selectionState = ENTITYUI_INACTIVE;
+			bool multipleSelectionMode = input->keysDown[KEYCODE_CTRL];
+			eui->multipleSelectionMode = multipleSelectionMode;
+
+			if(mouseButtonPressedMiddle(gui, input)) {
+				eui->dragSelectionStart = input->mousePosNegative;
+				eui->dragSelectionActive = true;
+				eui->selectionMode = ENTITYUI_MODE_DRAG;
+				eui->selectionState = ENTITYUI_ACTIVE;
 			}
 
-			bool multipleSelectionMode = input->keysDown[KEYCODE_CTRL];
+			if(input->mouseButtonReleased[2]) {
+				eui->dragSelectionActive = false;
+				eui->selectionChanged = true;
+				eui->selectionState = ENTITYUI_INACTIVE;
+				eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
+			}
+
+			// if(eui->selectedObjects.count == 0) {
+			// 	eui->selectionState = ENTITYUI_INACTIVE;
+			// }
+
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
@@ -1393,7 +1409,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->gotActive = true;
 			}
 
-			if(eui->selectionState == ENTITYUI_ACTIVE) {
+			if(eui->selectionState == ENTITYUI_ACTIVE && eui->selectionMode != ENTITYUI_MODE_DRAG) {
 
 				Camera* cam = &ad->world.camera;
 				Vec3 rayPos = cam->pos;
@@ -2238,11 +2254,65 @@ extern "C" APPMAINFUNCTION(appMain) {
 		setClientViewport(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
 		setClientScissor(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
 
+		{
+			Vec4 cDragOutline = vec4(0,1);
+			Vec4 cDrag = vec4(0,0.8f,0.8f,0.2f);
+
+			EntityUI* eui = &ad->entityUI;
+			if(eui->dragSelectionActive) {
+				Vec2 start = eui->dragSelectionStart;
+				Vec2 end = input->mousePosNegative;
+
+				float left = min(start.x, end.x);
+				float right = max(start.x, end.x);
+				float bottom = min(start.y, end.y);
+				float top = max(start.y, end.y);
+
+				Rect r = rect(left, bottom, right, top);
+				drawRectOutline(r, cDragOutline);
+				drawRect(r, cDrag);
+
+				Camera* cam = &ad->world.camera;
+				Vec3 rayDirLeft = mouseRayCast(ad->textureScreenRectFitted, rectL(r), cam);
+				Vec3 coneLeftDir = normVec3(cross(cam->ovecs.up, rayDirLeft));
+
+				Vec3 rayDirRight = mouseRayCast(ad->textureScreenRectFitted, rectR(r), cam);
+				Vec3 coneRightDir = normVec3(-cross(cam->ovecs.up, rayDirRight));
+
+				Vec3 rayDirBottom = mouseRayCast(ad->textureScreenRectFitted, rectB(r), cam);
+				Vec3 coneBottomDir = normVec3(-cross(cam->ovecs.right, rayDirBottom));
+
+				Vec3 rayDirTop = mouseRayCast(ad->textureScreenRectFitted, rectT(r), cam);
+				Vec3 coneTopDir = normVec3(cross(cam->ovecs.right, rayDirTop));
+
+				eui->selectedObjects.clear();
+				for(int i = 0; i < ad->world.objects.count; i++) {
+
+					Object* obj = ad->world.objects + i;
+					Vec3 objDir = normVec3(obj->pos - cam->pos);
+
+					bool objectNotInCone = false;
+					if(dot(objDir, coneLeftDir) > 0 || 
+					   dot(objDir, coneRightDir) > 0 || 
+					   dot(objDir, coneBottomDir) > 0 || 
+					   dot(objDir, coneTopDir) > 0) {
+						objectNotInCone = true;
+					}
+
+					if(!objectNotInCone) {
+						eui->selectedObjects.push(i);
+					}
+				}
+			}
+		}
+
 
 
 		NewGui* gui = &ad->gui;
 
-		if(ad->entityUI.selectionState == ENTITYUI_ACTIVE) gui->hotId[Gui_Focus_MLeft] = 0;
+		if(ad->entityUI.selectionState == ENTITYUI_ACTIVE) {
+			for(int i = 0; i < Gui_Focus_Size; i++) gui->hotId[i] = 0;
+		}
 
 		{
 			// @GuiSettings
@@ -2299,6 +2369,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			Font* font = getFont(ad->fontFile, fontHeight, ad->fontFileBold, ad->fontFileItalic);
 
 			Rect mr = rectRSetB(rectTLDim(0,0, ws->clientRes.w, ws->clientRes.h), menuHeight);
+			newGuiSetHotAllMouseOver(gui, mr, gui->zLevel);
 
 			ad->menuHeight = menuHeight;
 			ad->menuFontHeight;
@@ -2425,7 +2496,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				char* icons[] = { "translationIcon.png", "rotationIcon.png", 
 								  "scalingIcon.png" };
 
-				for(int i = 0; i < ENTITYUI_MODE_SIZE; i++) {
+				for(int i = 0; i < ENTITYUI_MODE_SCALE + 1; i++) {
 					r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
 
 					bool multipleSelection = eui->selectedObjects.count > 1;
@@ -2475,13 +2546,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Rect rectPanelRight = rectTRDim(vec2(res.w,0) + vec2(-panelOffset.x,-panelOffset.y), panelDim);
 		ad->panelRightRect = rectPanelRight;
 
+		bool entityPanelActive = ad->entityUI.selectedObjects.count > 0;
+
 		// Panel fade animation.
 		{
 			bool inc = false;
 
-			if(ad->entityUI.selectionState == ENTITYUI_ACTIVE &&
+			if(ad->entityUI.selectionState == ENTITYUI_ACTIVE && 
 			   (pointInRect(input->mousePosNegative, rectPanelLeft) || 
-			   pointInRect(input->mousePosNegative, rectPanelRight))) {
+			   (entityPanelActive && pointInRect(input->mousePosNegative, rectPanelRight)))) {
 
 				inc = true;
 			}
@@ -2614,7 +2687,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					eh = font->height;
 
 					{
-						char* labels[] = {"Pixel count", "Samples per pixel", "Total samples", "Total time", "Time per pixel"};
+						char* labels[] = {"HPixel count", "Samples per pixel", "Total samples", "Total time", "Time per pixel"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2717,7 +2790,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		// Right panel.
 		#if 1
-		if(ad->entityUI.selectedObjects.count)
+		if(entityPanelActive)
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
 
@@ -3132,6 +3205,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 							getDefaultScene(world);
 							ad->sceneHasFile = false;
 							strClear(ad->sceneFile);
+
+							historyReset(&ad->entityUI.history);
+							ad->entityUI.selectedObjects.count = 0;
+
 							close = true;
 						}
 

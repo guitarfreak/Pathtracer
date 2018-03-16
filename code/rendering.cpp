@@ -522,10 +522,12 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 
 
 	int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_NORMAL;
-	// int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_TARGET_NORMAL;
+	// int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_TARGET_LCD;
 
+	
 	// FT_RENDER_MODE_NORMAL, FT_RENDER_MODE_LIGHT, FT_RENDER_MODE_MONO, FT_RENDER_MODE_LCD, FT_RENDER_MODE_LCD_V,
 	FT_Render_Mode renderFlags = FT_RENDER_MODE_NORMAL;
+	// FT_Render_Mode renderFlags = FT_RENDER_MODE_LCD;
 
 
 	font.glyphRangeCount = 0;
@@ -533,6 +535,7 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 	font.glyphRanges[font.glyphRangeCount++] = setupRange(0x20, 0x7F);
 	font.glyphRanges[font.glyphRangeCount++] = setupRange(0xA1, 0xFF);
 	font.glyphRanges[font.glyphRangeCount++] = setupRange(0x25BA, 0x25C4);
+	// font.glyphRanges[font.glyphRangeCount++] = setupRange(0x48, 0x49);
 	#undef setupRange
 
 	font.totalGlyphCount = 0;
@@ -626,7 +629,9 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 	memSet(fontBitmap, 255, texSize.w*texSize.h*4);
 	for(int i = 0; i < texSize.w*texSize.h; i++) fontBitmap[i*4+3] = fontBitmapBuffer[i];
 
-	loadTexture(&tex, fontBitmap, texSize.w, texSize.h, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+	// loadTexture(&tex, fontBitmap, texSize.w, texSize.h, 1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+	loadTexture(&tex, fontBitmap, texSize.w, texSize.h, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
+
 	font.tex = tex;
 
 
@@ -636,6 +641,42 @@ Font* fontInit(Font* fontSlot, char* file, float height, bool enableHinting = fa
 	*fontSlot = font;
 	return fontSlot;
 }
+
+/*
+	Subpixel Test:
+
+	int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_TARGET_LCD;
+	int loadFlags = FT_LOAD_DEFAULT | FT_LOAD_TARGET_LCD;
+	...
+	uchar* fontBitmapBuffer = (uchar*)malloc(sizeof(uchar) * 3 * texSize.x*texSize.y);
+	memSet(fontBitmapBuffer, 0, texSize.x*texSize.y*3);
+	...
+	FT_Bitmap* bitmap = &face->glyph->bitmap;
+	Vec2i coordinate = vec2i(glyphIndex%gridSize * 3, glyphIndex/gridSize);
+	Vec2i startPixel = coordinate * font.height;
+	...
+	font.cData[glyphIndex].x0 = startPixel.x/3;
+	font.cData[glyphIndex].x1 = startPixel.x/3 + bitmap->width/3;
+	...
+	font.cData[glyphIndex].width =    bitmap->width/3;
+	font.cData[glyphIndex].height =   bitmap->rows;
+	...
+	for(int y = 0; y < bitmap->rows; y++) {
+		for(int x = 0; x < bitmap->width; x++) {
+			Vec2i coord = startPixel + vec2i(x,y);
+			fontBitmapBuffer[coord.y*texSize.w*3 + coord.x] = bitmap->buffer[y*bitmap->pitch + x];
+		}
+	}
+	...
+	for(int i = 0; i < texSize.w*texSize.h; i++) {
+	fontBitmap[(i*4)+0] = fontBitmapBuffer[i*3+0];
+	fontBitmap[(i*4)+1] = fontBitmapBuffer[i*3+1];
+	fontBitmap[(i*4)+2] = fontBitmapBuffer[i*3+2];
+	fontBitmap[(i*4)+3] = 255;
+	}
+	...
+	loadTexture(&tex, fontBitmap, texSize.w, texSize.h, 1, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE);
+*/
 
 void freeFont(Font* font) {
 	freeZero(font->cData);

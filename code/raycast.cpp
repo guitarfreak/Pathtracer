@@ -629,6 +629,7 @@ enum EntitySelectionMode {
 	ENTITYUI_MODE_TRANSLATION = 0,
 	ENTITYUI_MODE_ROTATION,
 	ENTITYUI_MODE_SCALE,
+	ENTITYUI_MODE_DRAG,
 
 	ENTITYUI_MODE_SIZE,
 };
@@ -722,6 +723,10 @@ struct EntityUI {
 	DArray<Vec3> objectCenterOffsets;
 	Object multiChangeObject;
 
+	Vec2 dragSelectionStart;
+	bool dragSelectionActive;
+	bool multipleSelectionMode;
+
 	int selectionMode;
 	int selectionState;
 	bool gotActive;
@@ -794,6 +799,11 @@ int mouseButtonReleasedRight(NewGui* gui, Input* input) {
 	else return input->mouseButtonReleased[1]; 
 }
 
+int mouseButtonPressedMiddle(NewGui* gui, Input* input) {
+	if(gui->hotId[Gui_Focus_MMiddle] != 0 || gui->activeId != 0) return false;
+	else return input->mouseButtonPressed[2]; 
+}
+
 bool guiHotMouseClick(NewGui* gui) {
 	return gui->hotId[Gui_Focus_MLeft] != 0;
 }
@@ -846,7 +856,7 @@ void loadScene(World* world, char* filePath, EntityUI* eui) {
 	fclose(file);
 }
 
-// #define HistoryDebugStrings
+#define HistoryDebugStrings
 
 void historyEdit(HistoryData* hd, DArray<int>* selected) {
 
