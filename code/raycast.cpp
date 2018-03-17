@@ -761,7 +761,7 @@ struct EntityUI {
 
 	// Scale mode.
 
-	float startDim;
+	Vec3 startDim;
 	bool enableScaleEqually;
 
 	// For resetting state.

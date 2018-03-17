@@ -1252,6 +1252,26 @@ void drawRing(Vec2 pos, float r, Vec4 color) {
 
 	glEnd();
 }
+void drawRing(Vec2 pos, float r, float thickness, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+
+	glBegin(GL_TRIANGLE_STRIP);
+	int segments = (M_2PI * r)*1.0f;
+	for(int i = 0; i < segments+1; i++) {
+		float angle = (i * M_2PI/(float)segments);
+
+		Vec2 dir = rotateVec2(vec2(0,1), angle);
+		Vec2 p0 = pos + dir * (r - thickness);
+		Vec2 p1 = pos + dir * (r);
+
+		pushVec(p0);
+		pushVec(p1);
+	}
+	glEnd();
+}
 
 void drawCircle(Vec2 pos, float r, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -2336,7 +2356,12 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, Timer* swa
 
 			// If we missed a frame we have to sleep longer.
 			// For example: going from 60hz to 30hz.
-			while(frameTime > fullFrameTime) fullFrameTime *= 2;
+			int count = 0;
+			while(frameTime > fullFrameTime) {
+				fullFrameTime *= 2;
+				count++;
+				if(count > 4) break;
+			}
 
 			double sleepTime = fullFrameTime - frameTime;
 

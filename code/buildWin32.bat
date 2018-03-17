@@ -1,7 +1,7 @@
 @echo off
 
 set 7ZIP_PATH=C:\Program Files\7-Zip\7z.exe
-set APP_NAME=Raycaster
+set APP_NAME=Pathtracer
 
 set scriptpath=%~d0%~p0
 cd %scriptpath%
@@ -74,12 +74,19 @@ goto packShippingFolderEnd
 	mkdir ".\%BUILD_FOLDER%\data"
 	xcopy ".\data" ".\%BUILD_FOLDER%\data" /E /Q
 
-	del ".\%BUILD_FOLDER%\*.pdb"
-	del ".\%BUILD_FOLDER%\*.exp"
-	del ".\%BUILD_FOLDER%\*.lib"
-	del ".\%BUILD_FOLDER%\*.obj"
+	if "%~2"=="" goto nodelete
+		del ".\%BUILD_FOLDER%\*.pdb"
+		del ".\%BUILD_FOLDER%\*.exp"
+		del ".\%BUILD_FOLDER%\*.lib"
+		del ".\%BUILD_FOLDER%\*.obj"
+	:nodelete
 
 	xcopy ".\libs\freetype 2.9\lib\%PLATFORM%\*.dll" ".\%BUILD_FOLDER%" /Q
+
+	xcopy ".\README.txt" ".\%BUILD_FOLDER%" /Q
+	xcopy ".\Licenses.txt" ".\%BUILD_FOLDER%" /Q
+
+
 
 	call "C:\\Standalone\\rcedit.exe" "%BUILD_FOLDER%\\%APP_NAME%.exe" --set-icon icon.ico
 

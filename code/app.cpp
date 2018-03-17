@@ -5,17 +5,17 @@
 	- Depth of field.
 	- Refraction.
 	- Clean global light and multiple lights
-	- Color picker.
+	- Ellipses.
+	- Make pixel processing use tiles instead of vertical lines.
+	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
+	- Write readme file. (For and controls.)
+
 	- More advanced lighting function
 	- Have cam independent, mini window.
-	- Ellipses.
 	- Spacial data structure to speed up processing.
 	- Converge method on sampling for speed up.
-	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Clean up repetitive gui code. (Layout.)
 
-	- Shift resize widget should resize all 3 dims.
-	- Make pixel processing use tiles instead of vertical lines.
 	- Turning while dragging is glitchy.
 	- Title buttons don't scale nicely.
 	- Redraw menu buttons to look better at smaller sizes.
@@ -344,7 +344,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Sphere.
 		{
 			int count = 0;
-			int div = 4;
+			int div = 3;
 
 			triangleSubDivVertex(buffer, &count, vec3(0,0,1),  vec3(0,1,0),  vec3(1,0,0),  div );
 			triangleSubDivVertex(buffer, &count, vec3(0,0,1),  vec3(-1,0,0), vec3(0,1,0),  div );
@@ -1162,16 +1162,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(!dd->error) {
 					if(strCompare(dd->type, "SceneDialog")) {
 						if(dd->saveMode) {
+							printf("Start saving scene.\n");
 							saveScene(world, dd->result);
 							ad->sceneHasFile = true;
 							strCpy(ad->sceneFile, dd->result);
+							printf("Finished saving scene.\n");
 						} else {
+							printf("Start loading scene.\n");
 							loadScene(world, dd->result, eui);
 							ad->sceneHasFile = true;
 							strCpy(ad->sceneFile, dd->result);
 
 							historyReset(&eui->history);
 							eui->selectedObjects.count = 0;
+							printf("Finished loading scene.\n");
 						}
 
 					} else if(strCompare(dd->type, "ScreenshotDialog")) {
@@ -1394,7 +1398,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						eui->startRot = obj->rot;
 						eui->objectDistanceVector = eui->currentObjectDistanceVector;
 					} else if(eui->selectionMode == ENTITYUI_MODE_SCALE) {
-						eui->startDim = obj->dim.e[eui->axisIndex-1];
+						eui->startDim = obj->dim;
 						eui->objectDistanceVector = eui->currentObjectDistanceVector;
 					}
 				}
@@ -1585,13 +1589,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(eui->gotActive) {
 								eui->objectDistanceVector = obj->pos - linePointOnAxis;
 
-								eui->startDim = obj->dim.e[eui->axisIndex-1];
+								eui->startDim = obj->dim;
 							}
 
 							float oldLength = lenVec3(eui->objectDistanceVector);
 							float newLength = lenVec3(obj->pos - linePointOnAxis);
 
-							float currentAxisLength = eui->startDim + (newLength - oldLength)*2;
+							float currentAxisLength = eui->startDim.e[eui->axisIndex-1] + (newLength - oldLength)*2;
 
 							currentAxisLength = clampMin(currentAxisLength, 0);
 							if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
@@ -1601,15 +1605,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 
 							if(obj->geometry.type == GEOM_TYPE_SPHERE || eui->enableScaleEqually) {
-								// obj->dim = vec3(currentAxisLength*0.5f);
 								obj->dim = vec3(currentAxisLength);
 							} else if(obj->geometry.type == GEOM_TYPE_BOX) {
+								obj->dim = eui->startDim;
 								obj->dim.e[eui->axisIndex-1] = currentAxisLength;
 							}
 
 							eui->currentObjectDistanceVector = obj->pos - linePointOnAxis;
 
-							eui->objectNoticeableChange = obj->dim.e[eui->axisIndex-1] != eui->startDim;
+							eui->objectNoticeableChange = obj->dim != eui->startDim;
 						}
 					}
 				}
@@ -3134,13 +3138,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 				//
 
 				float ringThickness = height * 0.13f;
-				float triangleOffset = 0.4f * ad->fontHeight;
+				float triangleOffset = 0.1f * ad->fontHeight;
 
 				float markerRadius = ringThickness/2 / 2;
 				Vec4 cOutline = ad->colors.outline;
 				// Vec4 cOutline = vec4(1,1);
-				Vec4 cMarker = vec4(1,1);
-				Vec4 cMarkerOutline = cOutline;
+				// Vec4 cMarker = vec4(1,1);
+				// Vec4 cMarkerOutline = cOutline;
+
+				Vec4 cMarker1 = vec4(1,1);
+				Vec4 cMarker2 = vec4(0,1);
+				float markerThickness1 = 1.0f;
+				float markerThickness2 = 2.0f;
 
 				// So we don't clamp to one extreme. Not the best solution.
 				float minRange = 0.001f;
@@ -3281,8 +3290,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 							trianglePoint.y = mapRange(saturation, minRange, maxRange, tp0.y, yMax);
 						}
 
-						drawRing(trianglePoint, markerRadius + 0.5f, cMarkerOutline);
-						drawCircle(trianglePoint, markerRadius, cMarker);
+						drawRing(trianglePoint, markerRadius + markerThickness1/2, markerThickness1, cMarker1);
+						drawRing(trianglePoint, markerRadius - markerThickness1/2, markerThickness2, cMarker2);
+
+						// drawRing(trianglePoint, markerRadius + 0.5f, cMarkerOutline);
+						// drawCircle(trianglePoint, markerRadius, cMarker);
 					}
 				}
 
@@ -3353,10 +3365,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 					{
 						Vec2 dir = rotateVec2(vec2(0,1), hue*M_2PI);
 						Vec2 huePoint = cen + dir * (cr - ringThickness/2);
-						float huePointRadius = markerRadius;
 
-						drawRing(huePoint, huePointRadius + 0.5f, cMarkerOutline);
-						drawCircle(huePoint, huePointRadius, cMarker);
+						// glLineWidth(2);
+						// // drawRing(huePoint + dir * 0.5f, huePointRadius, vec4(1,1));
+						// drawRing(huePoint, huePointRadius, cMarkerOutline);
+						// glLineWidth(1);
+
+						drawRing(huePoint, markerRadius + markerThickness1/2, markerThickness1, cMarker1);
+						drawRing(huePoint, markerRadius - markerThickness1/2, markerThickness2, cMarker2);
+
+						// drawRing(huePoint, huePointRadius + 0.5f, cMarkerOutline);
+						// drawCircle(huePoint, huePointRadius, cMarker);
 					}
 
 					// Circle outline.
