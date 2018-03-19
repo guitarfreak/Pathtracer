@@ -1,3 +1,5 @@
+#ifndef SHIPPING_MODE
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
@@ -6,12 +8,13 @@
 #include "rt_hotload.cpp"
 #include "rt_misc_win32.cpp"
 
-#include "external\iacaMarks.h"
-
-#ifdef SHIPPING_MODE
-#define OPEN_CONSOLE 0
-#else 
 #define OPEN_CONSOLE 1
+
+#else 
+
+#define OPEN_CONSOLE 0
+#include "app.cpp"
+
 #endif
 
 
@@ -24,13 +27,16 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 		freopen("conout$","w",stderr);
 	}
 
-	HotloadDll hotloadDll;
+#ifndef SHIPPING_MODE	
 
-	#ifndef SHIPPING_MODE	
+	HotloadDll hotloadDll;
 	initDll(&hotloadDll, "app.dll", "appTemp.dll", "lock.tmp");
-	#else 
-	initDll(&hotloadDll, "app.dll", "appTemp.dll", "lock.tmp", false);
-	#endif 
+
+// #else 
+
+	// initDll(&hotloadDll, "app.dll", "appTemp.dll", "lock.tmp", false);
+
+#endif 
 
 	WindowsData wData = windowsData(instance, prevInstance, commandLine, showCode);
 
@@ -50,12 +56,20 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
     	bool reload = false;
 		
+	#ifndef SHIPPING_MODE
+    	
 		#ifndef RELEASE_BUILD	
 		if(threadQueueFinished(&threadQueue)) reload = updateDll(&hotloadDll);
      	#endif 
 
      	platform_appMain = (appMainType*)getDllFunction(&hotloadDll, "appMain");
         platform_appMain(firstFrame, reload, &isRunning, wData, &threadQueue, &appMemory);
+
+    #else 
+
+        appMain(firstFrame, reload, &isRunning, wData, &threadQueue, &appMemory);
+
+    #endif
 
         if(firstFrame) firstFrame = false;
     }

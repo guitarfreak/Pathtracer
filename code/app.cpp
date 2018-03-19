@@ -419,7 +419,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 
-
 		globalGraphicsState->fontFolders[globalGraphicsState->fontFolderCount++] = getPStringCpy(App_Font_Folder);
 		char* windowsFontFolder = fillString("%s%s", getenv(Windows_Font_Path_Variable), Windows_Font_Folder);
 		globalGraphicsState->fontFolders[globalGraphicsState->fontFolderCount++] = getPStringCpy(windowsFontFolder);
@@ -442,8 +441,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				at.mouseSpeed = 1;
 				at.fontScale = 0.95;
-				at.panelWidthLeft = ad->fontHeight*15;
-				at.panelWidthRight = ad->fontHeight*15;
+				
+				ad->fontHeight = roundInt(at.fontScale*systemData->fontHeight);
+
+				at.panelWidthLeft = ad->fontHeight*16;
+				at.panelWidthRight = ad->fontHeight*16;
+
 				strClear(at.sceneFile);
 
 				appWriteSessionSettings(App_Session_File, &at);
