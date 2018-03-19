@@ -28,6 +28,7 @@
 	- glGenerateTextureMipmap(ad->raycastTexture.id) clears screen to black so we have to 
 	  draw the background again.
 	- Saving sometimes crashes. Hard to debug...
+	- Gui text edit going from right to left doesn't work.
 
 =================================================================================
 */
@@ -441,8 +442,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				at.mouseSpeed = 1;
 				at.fontScale = 0.95;
-				at.panelWidthLeft = systemData->fontHeight*15;
-				at.panelWidthRight = systemData->fontHeight*15;
+				at.panelWidthLeft = ad->fontHeight*15;
+				at.panelWidthRight = ad->fontHeight*15;
 				strClear(at.sceneFile);
 
 				appWriteSessionSettings(App_Session_File, &at);
@@ -479,7 +480,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->entityUI.selectionMode = ENTITYUI_MODE_TRANSLATION;
 		ad->entityUI.localMode = false;
-		ad->entityUI.snapGridSize = 1;
+		ad->entityUI.snapGridSize = 3;
 		ad->entityUI.snapGridDim = 100;
 
 		ad->entityUI.objectCopies.push(defaultObject());
@@ -1511,7 +1512,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						for(int i = 0; i < 3; i++) {
 							Vec3 p = projectPointOnLine(eui->startPos, eui->axes[i], pos);
 							float length = lenVec3(p - eui->startPos);
-							float snappedLength = roundMod(length, eui->snapGridSize);
+							float snappedLength = roundMod(length, roundFloat(eui->snapGridSize));
 							float lengthDiff = length - snappedLength;
 
 							if(dot(p - eui->startPos, eui->axes[i]) > 0) lengthDiff *= -1;
@@ -1601,7 +1602,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(dot(eui->objectDistanceVector, obj->pos - linePointOnAxis) < 0) currentAxisLength = 0;
 
 							if(eui->snappingEnabled) {
-								currentAxisLength = roundMod(currentAxisLength, eui->snapGridSize);
+								currentAxisLength = roundMod(currentAxisLength, roundFloat(eui->snapGridSize));
 							}
 
 							if(obj->geometry.type == GEOM_TYPE_SPHERE || eui->enableScaleEqually) {
@@ -1709,12 +1710,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 			EntityUI* eui = &ad->entityUI;
 
 			glDisable(GL_LIGHTING);
-			ad->entityUI.snapGridSize = 3;
 
 			glLineWidth(1);
 
 			Vec4 lineColor = vec4(0,0.5f);
-			float size = ad->entityUI.snapGridSize;
+			float size = roundFloat(ad->entityUI.snapGridSize);
 			float count = roundFloat(eui->snapGridDim / size);
 			Vec3 start = vec3(-(size*count)/2, -(size*count)/2, 0);
 			for(int i = 0; i < count+1; i++) {
@@ -2740,7 +2740,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Cam pos", "Cam rot", "Cam Fov", "ObjectCount"};
+						char* labels[] = {"Cam pos", "Cam rot", "Cam Fov", "SnapGridSize"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2769,7 +2769,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickText(gui, quickRowNext(&qr), fillString("%i", world->objects.count), vec2i(1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &eui->snapGridSize, 1,10);
 
 						{
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;

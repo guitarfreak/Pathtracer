@@ -739,7 +739,7 @@ struct EntityUI {
 	float selectionAnimState;
 	bool localMode;
 	bool snappingEnabled;
-	float snapGridSize;
+	int snapGridSize;
 	float snapGridDim;
 
 	int axisIndex;

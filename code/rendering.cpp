@@ -240,7 +240,13 @@ void initTexture(Texture* texture, int mipLevels, int internalFormat, Vec2i dim,
 // Fonts.
 //
 
-struct PackedChar;
+struct PackedChar {
+   unsigned short x0,y0,x1,y1;
+   float xBearing, yBearing;
+   float width, height;
+   float xadvance; // yBearing + h-yBearing
+};
+
 struct Font {
 	char* file;
 	int id;
@@ -268,12 +274,6 @@ struct Font {
 	bool pixelAlign;
 };
 
-struct PackedChar {
-   unsigned short x0,y0,x1,y1;
-   float xBearing, yBearing;
-   float width, height;
-   float xadvance; // yBearing + h-yBearing
-};
 //
 // Framebuffers.
 //
@@ -729,7 +729,6 @@ Font* getFont(char* fontFile, float heightIndex, char* boldFontFile = 0, char* i
 
 	return fontSlot;
 }
-
 
 void setViewPort(Rect r) {
 	int left   = roundInt(r.left);

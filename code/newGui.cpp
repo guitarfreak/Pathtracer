@@ -1134,7 +1134,6 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, void* var, int mode, T
 	int event = newGuiGoDragAction(gui, textRect, z, doubleClick?input->doubleClick:input->mouseButtonPressed[0], releaseEvent, Gui_Focus_MLeft);
 
 	if(event == 1) {
-		printf("asdf\n");
 		gui->editVars.scrollOffset = vec2(0,0);
 		if(mode == EDIT_MODE_CHAR)      strCpy(gui->editText, (char*)var);
 		else if(mode == EDIT_MODE_INT) strCpy(gui->editText, fillString("%i", *((int*)var)));
@@ -2259,8 +2258,6 @@ void textEditBox(char* text, int textMaxSize, Font* font, Rect textRect, Input* 
 		float rightEnd = textRect.right - tes.textOffset;
 		if(		cursorPos.x < leftEnd) tev->scrollOffset.x += leftEnd - cursorPos.x;
 		else if(cursorPos.x > rightEnd) tev->scrollOffset.x += rightEnd - cursorPos.x;
-
-		printf("%f %f %f %f\n", cursorPos.x, leftEnd, rightEnd, tev->scrollOffset.x);
 
 		clampMax(&tev->scrollOffset.x, 0);
 		
