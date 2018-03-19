@@ -255,9 +255,33 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		windowHandle = systemData->windowHandle;
 
-		printf("%Opengl Version: %s\n", (char*)glGetString(GL_VERSION));
-
 		loadFunctions();
+
+		// Ask for specific opengl version.
+		{
+		    GLint attribs[] = {
+		        WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+		        WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+		        // WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+		        WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
+		        0
+		    };
+
+		    HGLRC compatibilityContext = wglCreateContextAttribsARB(systemData->deviceContext, 0, attribs);
+		    if (compatibilityContext && wglMakeCurrent(systemData->deviceContext, compatibilityContext)) {
+		        systemData->openglContext = compatibilityContext;
+		    } else {
+				printf("Could not set Opengl compatibility context\n");
+		    }
+		}
+
+		GLint majorVersion, minorVersion;
+		glGetIntegerv(GL_MAJOR_VERSION, &majorVersion);
+		glGetIntegerv(GL_MINOR_VERSION, &minorVersion);
+
+		printf("Opengl Version: %s - %i.%i\n", (char*)glGetString(GL_VERSION), majorVersion, minorVersion);
+
+
 
 		const char* extensions = wglGetExtensionsStringEXT();
 
@@ -310,10 +334,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		//
 		// Setup Meshs.
 		//
-
-		uint vao = 0;
-		glCreateVertexArrays(1, &vao);
-		glBindVertexArray(vao);
 
 		gs->meshCountMax = 10;
 		gs->meshes = getPArray(Mesh, gs->meshCountMax);
@@ -926,7 +946,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				Texture* t = &ad->raycastTexture;
 				Vec3 black = vec3(0.2f);
-				glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
+
+				// glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 			}
 		}
 
@@ -942,7 +963,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			Texture* t = &ad->raycastTexture;
 			// Vec3 black = vec3(0.2f);
-			glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
+			// glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 
 			int pixelCount = settings->texDim.w*settings->texDim.h;
 			reallocArraySave(Vec3, ad->buffer, pixelCount);

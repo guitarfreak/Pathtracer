@@ -158,8 +158,13 @@ int getMaximumMipmapsFromSize(int w, int h) {
 void loadTexture(Texture* texture, unsigned char* buffer, int w, int h, int mipLevels, int internalFormat, int channelType, int channelFormat, bool reload = false) {
 
 	if(!reload) {
-		glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
-		glTextureStorage2D(texture->id, mipLevels, internalFormat, w, h);
+		// glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
+		// glTextureStorage2D(texture->id, mipLevels, internalFormat, w, h);
+
+		glGenTextures(1, &texture->id);
+
+		glBindTexture(GL_TEXTURE_2D, texture->id);
+		glTexStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, w, h);
 
 		texture->dim = vec2i(w,h);
 		texture->channels = 4;
@@ -199,15 +204,25 @@ void loadTextureFromMemory(Texture* texture, char* buffer, int length, int mipLe
 }
 
 void createTexture(Texture* texture, bool isRenderBuffer = false) {	
-	if(!isRenderBuffer) glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
-	else glCreateRenderbuffers(1, &texture->id);
+	if(!isRenderBuffer) {
+		// glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
+		glGenTextures(1, &texture->id);
+		glBindTexture(GL_TEXTURE_2D, texture->id);
+	} else {
+		// glCreateRenderbuffers(1, &texture->id);
+		glGenRenderbuffers(1, &texture->id);
+		glBindRenderbuffer(GL_RENDERBUFFER, texture->id);
+	}
 }
 
 void recreateTexture(Texture* t) {
 	glDeleteTextures(1, &t->id);
-	glCreateTextures(GL_TEXTURE_2D, 1, &t->id);
+	// glCreateTextures(GL_TEXTURE_2D, 1, &t->id);
+	glGenTextures(1, &t->id);
 
-	glTextureStorage2D(t->id, 1, t->internalFormat, t->dim.w, t->dim.h);
+	// glTextureStorage2D(t->id, 1, t->internalFormat, t->dim.w, t->dim.h);
+	glBindTexture(GL_TEXTURE_2D, t->id);
+	glTexStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
 }
 
 void deleteTexture(Texture* t) {
@@ -219,8 +234,11 @@ void initTexture(Texture* texture, int mipLevels, int internalFormat, Vec2i dim,
 
 	if(mipLevels == -1) mipLevels = getMaximumMipmapsFromSize(dim.w, dim.h);
 
-	glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
-	glTextureStorage2D(texture->id, mipLevels, internalFormat, dim.w, dim.h);
+	// glCreateTextures(GL_TEXTURE_2D, 1, &texture->id);
+	// glTextureStorage2D(texture->id, mipLevels, internalFormat, dim.w, dim.h);
+	glGenTextures(1, &texture->id);
+	glBindTexture(GL_TEXTURE_2D, texture->id);
+	glTexStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, dim.w, dim.h);
 
 	texture->dim = vec2i(dim.w,dim.h);
 	texture->channels = channels;
@@ -306,7 +324,9 @@ FrameBuffer* getFrameBuffer(int id);
 Texture* addTexture(Texture tex);
 
 void initFrameBuffer(FrameBuffer* fb) {
-	glCreateFramebuffers(1, &fb->id);
+	// glCreateFramebuffers(1, &fb->id);
+	glGenFramebuffers(1, &fb->id);
+	glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
 
 	for(int i = 0; i < arrayCount(fb->slots); i++) {
 		fb->slots[i] = 0;
@@ -363,8 +383,12 @@ void reloadFrameBuffer(FrameBuffer* fb) {
 			glNamedFramebufferRenderbuffer(fb->id, slot, GL_RENDERBUFFER, t->id);
 		} else {
 			glDeleteTextures(1, &t->id);
-			glCreateTextures(GL_TEXTURE_2D, 1, &t->id);
-			glTextureStorage2D(t->id, 1, t->internalFormat, t->dim.w, t->dim.h);
+			// glCreateTextures(GL_TEXTURE_2D, 1, &t->id);
+			// glTextureStorage2D(t->id, 1, t->internalFormat, t->dim.w, t->dim.h);
+			glGenTextures(1, &t->id);
+			glBindTexture(GL_TEXTURE_2D, t->id);
+			glTexStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
+
 			glNamedFramebufferTexture(fb->id, slot, t->id, 0);
 		}
 	}
@@ -2202,8 +2226,8 @@ int textMouseToIndex(char* text, Font* font, Vec2 startPos, Vec2 mousePos, Vec2i
 
 uint createSampler(float ani, int wrapS, int wrapT, int magF, int minF, int wrapR = GL_CLAMP_TO_EDGE) {
 	uint result;
-	glCreateSamplers(1, &result);
-
+	// glCreateSamplers(1, &result);
+	glGenSamplers(1, &result);
 	glSamplerParameteri(result, GL_TEXTURE_MAX_ANISOTROPY_EXT, ani);
 	glSamplerParameteri(result, GL_TEXTURE_WRAP_S, wrapS);
 	glSamplerParameteri(result, GL_TEXTURE_WRAP_T, wrapT);
@@ -2217,6 +2241,7 @@ uint createSampler(float ani, int wrapS, int wrapT, int magF, int minF, int wrap
 
 
 void openglDebug() {
+	/*
 	glEnable(GL_DEBUG_OUTPUT);
 	glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
@@ -2242,6 +2267,7 @@ void openglDebug() {
 
 		printf("\t%s \n", messageLog);
 	}
+	*/
 }
 
 void openglClearFrameBuffers() {
@@ -2291,7 +2317,7 @@ void openglDefaultSetup() {
 	// glDisable(GL_DEPTH_TEST);
 
 	glUseProgram(0);
-	glBindProgramPipeline(0);
+	// glBindProgramPipeline(0);
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);

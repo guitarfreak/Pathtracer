@@ -15,6 +15,9 @@
 #define WGL_CONTEXT_DEBUG_BIT_ARB         0x0001
 #define WGL_CONTEXT_MAJOR_VERSION_ARB     0x2091
 #define WGL_CONTEXT_MINOR_VERSION_ARB     0x2092
+#define WGL_CONTEXT_PROFILE_MASK_ARB            0x9126
+#define WGL_CONTEXT_CORE_PROFILE_BIT_ARB        0x00000001
+#define WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
 #define GL_MAJOR_VERSION                  0x821B
 #define GL_MINOR_VERSION                  0x821C
 #define GL_RGB32F                         0x8815
@@ -74,97 +77,36 @@ typedef ptrdiff_t GLintptr;
 #define loadGLFunction(name) \
 	gl##name = (name##Function*)wglGetProcAddress("gl" #name);
 
+
 #define GL_FUNCTION_LIST \
-	GLOP(void, CreateVertexArrays, GLsizei n, GLuint *arrays) \
-	GLOP(void, BindVertexArray, GLuint array) \
-	GLOP(void, CreateBuffers, GLsizei n, GLuint *buffers) \
-	GLOP(void, CreateTextures, GLenum target, GLsizei n, GLuint *textures) \
-	GLOP(void, NamedBufferStorage, GLuint buffer, GLsizei size, const void *data, GLbitfield flags) \
-	GLOP(void*, MapNamedBufferRange, GLuint buffer, GLint* offset, GLsizei length, GLbitfield access) \
-	GLOP(void, TextureBuffer, GLuint texture, GLenum internalformat, GLuint buffer) \
-	GLOP(uint, CreateShaderProgramv, GLenum type, GLsizei count, const char **strings) \
-	GLOP(void, CreateProgramPipelines, GLsizei n, GLuint *pipelines) \
-	GLOP(void, UseProgramStages, GLuint pipeline, GLbitfield stages, GLuint program) \
-	GLOP(void, BindTextures, GLuint first, GLsizei count, const GLuint *textures) \
-	GLOP(void, BindProgramPipeline, GLuint pipeline) \
-	GLOP(void, DrawArraysInstancedBaseInstance, GLenum mode, GLint first, GLsizei count, GLsizei primcount, GLuint baseinstance) \
-	GLOP(GLuint, GetDebugMessageLog, GLuint counter, GLsizei bufSize, GLenum *source, GLenum *types, GLuint *ids, GLenum *severities, GLsizei *lengths, char *messageLog) \
-	GLOP(void, TextureStorage3D, GLuint texture, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth) \
-	GLOP(void, TextureSubImage3D, GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void *pixels) \
-	GLOP(void, GenerateTextureMipmap, GLuint texture) \
-	GLOP(void, TextureStorage2D, GLuint texture, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height) \
-	GLOP(void, TextureSubImage2D, GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *pixels) \
-	GLOP(void, CreateSamplers, GLsizei n, GLuint *samplers) \
-	GLOP(void, SamplerParameteri, GLuint sampler, GLenum pname, GLint param) \
-	GLOP(void, BindSamplers, GLuint first, GLsizei count, const GLuint *samplers) \
-	GLOP(void, TextureParameteri, GLuint texture, GLenum pname, GLint param) \
-	GLOP(GLint, GetUniformLocation, GLuint program, const GLchar *name) \
-	GLOP(void, ProgramUniform4f, GLuint program, GLint location, GLfloat v0, GLfloat v1, GLfloat v2,GLfloat v3) \
-	GLOP(void, ProgramUniform3f, GLuint program, GLint location, GLfloat v0, GLfloat v1, GLfloat v2) \
-	GLOP(void, ProgramUniform2f, GLuint program, GLint location, GLfloat v0, GLfloat v1) \
-	GLOP(void, ProgramUniform1f, GLuint program, GLint location, GLfloat v0) \
-	GLOP(void, ProgramUniform1i, GLuint program, GLint location, GLuint v0) \
-	GLOP(void, ProgramUniform1fv, GLuint program, GLint location, GLsizei count, const GLfloat *value) \
-	GLOP(void, ProgramUniform2fv, GLuint program, GLint location, GLsizei count, const GLfloat *value) \
-	GLOP(void, ProgramUniform1iv, GLuint program, GLint location, GLsizei count, const GLint *value) \
-	GLOP(void, ProgramUniformMatrix4fv, GLuint program, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value) \
-	GLOP(void, ProgramUniform4fv, GLuint program, GLint location, GLsizei count, const GLfloat *value) \
-	GLOP(void, UseProgram, GLuint program) \
-	GLOP(void, ActiveTexture, GLenum texture) \
-	GLOP(void, EnableVertexAttribArray, GLuint index) \
-	GLOP(void, DisableVertexAttribArray, GLuint index) \
-	GLOP(void, TexImage3DEXT,  GLenum	target, GLint	level, GLenum	internalformat, GLsizei	width, GLsizei	height, GLsizei	depth, GLint	border, GLenum	format, GLenum	type, const	GLvoid *pixels) \
-	GLOP(void, ActiveTextureARB, GLenum texture) \
-	GLOP(void, VertexAttribIPointer, GLuint index, GLint size, GLenum type, GLsizei stride, const GLvoid * pointer) \
-	GLOP(void, BindBuffer, GLenum target, GLuint buffer) \
-	GLOP(void, BindBufferARB, GLenum target, GLuint buffer) \
-	GLOP(void, GenBuffersARB, GLsizei n, GLuint * buffers) \
-	GLOP(void, NamedBufferData, GLuint buffer, GLsizeiptr size, const GLvoid * data, GLenum usage) \
-	GLOP(void, BufferDataARB, GLenum target, GLsizeiptr size, const GLvoid * data, GLenum usage) \
-	GLOP(void, TexBufferARB, GLenum target, GLenum internalFormat, GLuint buffer) \
-	GLOP(void, UniformMatrix4fv, GLint location, GLsizei count, GLboolean transpose, const GLfloat *value) \
-	GLOP(void, VertexAttribPointer, GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid * pointer) \
-	GLOP(void, ProgramUniform3fv, GLuint program, GLint location, GLsizei count, const GLfloat *value) \
-	GLOP(GLint, GetAttribLocation, GLuint program, const GLchar *name) \
+	GLOP(void, TexStorage2D, GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height) \
 	GLOP(void, GenSamplers, GLsizei n, GLuint *samplers) \
+	GLOP(void, GenFramebuffers, GLsizei n, GLuint *framebuffers) \
+	GLOP(void, GenRenderbuffers, GLsizei n, GLuint *renderbuffers) \
+	GLOP(void, BindRenderbuffer, GLenum target, GLuint renderbuffer) \
+	GLOP(void, BindVertexArray, GLuint array) \
+	GLOP(void, GenerateTextureMipmap, GLuint texture) \
+	GLOP(void, TextureSubImage2D, GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void *pixels) \
+	GLOP(void, SamplerParameteri, GLuint sampler, GLenum pname, GLint param) \
+	GLOP(void, TextureParameteri, GLuint texture, GLenum pname, GLint param) \
+	GLOP(void, UseProgram, GLuint program) \
+	GLOP(void, BindBuffer, GLenum target, GLuint buffer) \
 	GLOP(void, BindSampler, GLuint unit, GLuint sampler) \
-	GLOP(void, BindTextureUnit, GLuint unit, GLuint texture) \
-	GLOP(void, NamedBufferSubData, GLuint buffer, GLintptr offset, GLsizei size, const void *data) \
-	GLOP(void, NamedBufferSubDataEXT, GLuint buffer, GLintptr offset, GLsizei size, const void *data) \
-	GLOP(void, GetUniformiv, GLuint program, GLint location, GLint * params) \
-	GLOP(void, GetUniformfv, GLuint program, GLint location, GLfloat * params) \
-	GLOP(void, CreateFramebuffers, GLsizei n, GLuint *framebuffers) \
-	GLOP(void, NamedFramebufferParameteri, GLuint framebuffer, GLenum pname, GLint param) \
 	GLOP(void, NamedRenderbufferStorageMultisample, GLuint renderbuffer, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height) \
-	GLOP(void, CreateRenderbuffers, GLsizei n, GLuint *renderbuffers) \
 	GLOP(void, NamedFramebufferRenderbuffer, GLuint framebuffer, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer) \
 	GLOP(void, BindFramebuffer, GLenum target, GLuint framebuffer) \
-	GLOP(void, NamedFramebufferDrawBuffer, GLuint framebuffer, GLenum buf) \
-	GLOP(void, BlitFramebuffer, GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) \
 	GLOP(void, BlitNamedFramebuffer, GLuint readFramebuffer, GLuint drawFramebuffer, GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1, GLbitfield mask, GLenum filter) \
 	GLOP(void, NamedFramebufferTexture, GLuint framebuffer, GLenum attachment, GLuint texture, GLint level) \
-	GLOP(void, TextureStorage2DMultisample, GLuint texture, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations) \
-	GLOP(void, TexImage2DMultisample, GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations) \
-	GLOP(void, NamedRenderbufferStorage, GLuint renderbuffer, GLenum internalformat, GLsizei width, GLsizei height) \
 	GLOP(GLenum, CheckNamedFramebufferStatus, GLuint framebuffer, GLenum target) \
-	GLOP(void, GenFramebuffers, GLsizei n, GLuint *ids) \
-	GLOP(void, FramebufferTexture, GLenum target, GLenum attachment, GLuint texture, GLint level) \
 	GLOP(void, BlendFuncSeparate, GLenum srcRGB, GLenum dstRGB, GLenum srcAlpha, GLenum dstAlpha) \
 	GLOP(void, BlendEquation, GLenum mode) \
 	GLOP(void, BlendEquationSeparate, GLenum modeRGB, GLenum modeAlpha) \
-	GLOP(void, GetTextureSubImage, uint texture, int level, int xoffset, int yoffset, int zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, GLsizei bufSize, void *pixels) \
-	GLOP(GLubyte*, GetStringi, GLenum name, GLuint index) \
-	GLOP(void, DrawArraysInstanced, GLenum mode, GLint first, GLsizei count, GLsizei primcount) \
-	GLOP(void, VertexAttribDivisor, GLuint index, GLuint divisor) \
-	GLOP(void, GetTextureImage, GLuint texture, GLint level, GLenum format, GLenum type, GLsizei bufSize, void *pixels) \
-	GLOP(void, ClearTexSubImage, GLuint texture, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void * data)
-	 
+	GLOP(GLubyte*, GetStringi, GLenum name, GLuint index) 
 
 
 #define GLOP(returnType, name, ...) makeGLFunction(returnType, name, __VA_ARGS__) 
 	GL_FUNCTION_LIST
 #undef GLOP
-
 
 
 // typedef HGLRC wglCreateContextAttribsARBFunction(HDC hDC, HGLRC hshareContext, const int *attribList);
@@ -177,7 +119,8 @@ wglSwapIntervalEXTFunction* wglSwapIntervalEXT;
 typedef const char* WINAPI wglGetExtensionsStringEXTFunction(void);
 wglGetExtensionsStringEXTFunction* wglGetExtensionsStringEXT;
 
-
+typedef HGLRC WINAPI wglCreateContextAttribsARBFunction(HDC hDC, HGLRC hshareContext, const int *attribList);
+wglCreateContextAttribsARBFunction* wglCreateContextAttribsARB;
 
 
 void loadFunctions() {
@@ -187,6 +130,8 @@ void loadFunctions() {
 	wglGetSwapIntervalEXT = (wglGetSwapIntervalEXTFunction*)wglGetProcAddress("wglGetSwapIntervalEXT");
 	wglSwapIntervalEXT = (wglSwapIntervalEXTFunction*)wglGetProcAddress("wglSwapIntervalEXT");
 	wglGetExtensionsStringEXT = (wglGetExtensionsStringEXTFunction*)wglGetProcAddress("wglGetExtensionsStringEXT");
+	wglCreateContextAttribsARB = (wglCreateContextAttribsARBFunction*)wglGetProcAddress("wglCreateContextAttribsARB");
+
 #undef GLOP
 }
 

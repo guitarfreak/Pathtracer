@@ -745,6 +745,8 @@ void CALLBACK updateInput(SystemData* sd) {
 
 #include <Mmsystem.h>
 
+
+
 int getSystemFontHeight(HWND windowHandle);
 void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, Vec2i res, int style, int , int monitor = 0) {
 	systemData->windowsData = wData;
