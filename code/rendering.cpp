@@ -155,6 +155,16 @@ int getMaximumMipmapsFromSize(int w, int h) {
 	return mipLevels;
 }
 
+void texStorage2D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height) {
+	for (int i = 0; i < levels; i++) {
+	    glTexImage2D(target, i, internalformat, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	    width = max(1, (width / 2));
+	    height = max(1, (height / 2));
+	}
+
+	glGenerateMipmap(GL_TEXTURE_2D);
+}
+
 void loadTexture(Texture* texture, unsigned char* buffer, int w, int h, int mipLevels, int internalFormat, int channelType, int channelFormat, bool reload = false) {
 
 	if(!reload) {
@@ -164,21 +174,31 @@ void loadTexture(Texture* texture, unsigned char* buffer, int w, int h, int mipL
 		glGenTextures(1, &texture->id);
 
 		glBindTexture(GL_TEXTURE_2D, texture->id);
-		glTexStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, w, h);
+
+		// glTexStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, w, h);
+		texStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, w, h);
 
 		texture->dim = vec2i(w,h);
 		texture->channels = 4;
 		texture->levels = mipLevels;
 	}	
 
-	glTextureSubImage2D(texture->id, 0, 0, 0, w, h, channelType, channelFormat, buffer);
+	// glTextureSubImage2D(texture->id, 0, 0, 0, w, h, channelType, channelFormat, buffer);
+	glBindTexture(GL_TEXTURE_2D, texture->id);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, channelType, channelFormat, buffer);
 
-	glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTextureParameteri(texture->id, GL_TEXTURE_WRAP_S, GL_CLAMP);
-	glTextureParameteri(texture->id, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	// glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	// glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	// glTextureParameteri(texture->id, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	// glTextureParameteri(texture->id, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
-	glGenerateTextureMipmap(texture->id);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+	// glGenerateTextureMipmap(texture->id);
+	glGenerateMipmap(GL_TEXTURE_2D);
 }
 
 void loadTextureFromFile(Texture* texture, char* path, int mipLevels, int internalFormat, int channelType, int channelFormat, bool reload = false) {
@@ -222,7 +242,8 @@ void recreateTexture(Texture* t) {
 
 	// glTextureStorage2D(t->id, 1, t->internalFormat, t->dim.w, t->dim.h);
 	glBindTexture(GL_TEXTURE_2D, t->id);
-	glTexStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
+	// glTexStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
+	texStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
 }
 
 void deleteTexture(Texture* t) {
@@ -238,18 +259,25 @@ void initTexture(Texture* texture, int mipLevels, int internalFormat, Vec2i dim,
 	// glTextureStorage2D(texture->id, mipLevels, internalFormat, dim.w, dim.h);
 	glGenTextures(1, &texture->id);
 	glBindTexture(GL_TEXTURE_2D, texture->id);
-	glTexStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, dim.w, dim.h);
+	// glTexStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, dim.w, dim.h);
+	texStorage2D(GL_TEXTURE_2D, mipLevels, internalFormat, dim.w, dim.h);
 
 	texture->dim = vec2i(dim.w,dim.h);
 	texture->channels = channels;
 	texture->levels = mipLevels;
 
-	glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, filterMode);
-	glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, filterMode);
-	glTextureParameteri(texture->id, GL_TEXTURE_WRAP_S, wrapMode);
-	glTextureParameteri(texture->id, GL_TEXTURE_WRAP_T, wrapMode);
+	// glTextureParameteri(texture->id, GL_TEXTURE_MIN_FILTER, filterMode);
+	// glTextureParameteri(texture->id, GL_TEXTURE_MAG_FILTER, filterMode);
+	// glTextureParameteri(texture->id, GL_TEXTURE_WRAP_S, wrapMode);
+	// glTextureParameteri(texture->id, GL_TEXTURE_WRAP_T, wrapMode);
 
-	glGenerateTextureMipmap(texture->id);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filterMode);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filterMode);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapMode);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapMode);
+
+	// glGenerateTextureMipmap(texture->id);
+	glGenerateMipmap(GL_TEXTURE_2D);
 
 	texture->isCreated = true;
 }
@@ -379,17 +407,32 @@ void reloadFrameBuffer(FrameBuffer* fb) {
 		else if(valueBetween(i, 12, 15)) slot = GL_DEPTH_STENCIL_ATTACHMENT;
 
 		if(t->isRenderBuffer) {
-			glNamedRenderbufferStorageMultisample(t->id, t->msaa, t->internalFormat, t->dim.w, t->dim.h);
-			glNamedFramebufferRenderbuffer(fb->id, slot, GL_RENDERBUFFER, t->id);
+			// glNamedRenderbufferStorageMultisample(t->id, t->msaa, t->internalFormat, t->dim.w, t->dim.h);
+
+			glBindRenderbuffer( GL_RENDERBUFFER, t->id);
+			glRenderbufferStorageMultisample(GL_RENDERBUFFER, t->msaa, t->internalFormat, t->dim.w, t->dim.h);
+			glBindRenderbuffer( GL_RENDERBUFFER, 0);
+
+			// glNamedFramebufferRenderbuffer(fb->id, slot, GL_RENDERBUFFER, t->id);
+			glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, slot, GL_RENDERBUFFER, t->id);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 		} else {
 			glDeleteTextures(1, &t->id);
 			// glCreateTextures(GL_TEXTURE_2D, 1, &t->id);
 			// glTextureStorage2D(t->id, 1, t->internalFormat, t->dim.w, t->dim.h);
 			glGenTextures(1, &t->id);
 			glBindTexture(GL_TEXTURE_2D, t->id);
-			glTexStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
+			// glTexStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
 
-			glNamedFramebufferTexture(fb->id, slot, t->id, 0);
+			// glPixelStorei(GL_TEXTURE_2D,1);
+			texStorage2D(GL_TEXTURE_2D, 1, t->internalFormat, t->dim.w, t->dim.h);
+
+			// glNamedFramebufferTexture(fb->id, slot, t->id, 0);
+			glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
+			glFramebufferTexture(GL_FRAMEBUFFER, slot, t->id, 0);
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		}
 	}
 }
@@ -402,7 +445,13 @@ void blitFrameBuffers(int id1, int id2, Vec2i dim, int bufferBit, int filter) {
 	FrameBuffer* fb1 = getFrameBuffer(id1);
 	FrameBuffer* fb2 = getFrameBuffer(id2);
 
-	glBlitNamedFramebuffer (fb1->id, fb2->id, 0,0, dim.x, dim.y, 0,0, dim.x, dim.y, bufferBit, filter);
+	// glBlitNamedFramebuffer (fb1->id, fb2->id, 0,0, dim.x, dim.y, 0,0, dim.x, dim.y, bufferBit, filter);
+
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, fb1->id);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb2->id);
+	glBlitFramebuffer(0,0, dim.x, dim.y, 0,0, dim.x, dim.y, bufferBit, filter);
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void bindFrameBuffer(FrameBuffer* fb, int slot = GL_FRAMEBUFFER) {
@@ -430,7 +479,11 @@ void setDimForFrameBufferAttachmentsAndUpdate(int id, int w, int h) {
 
 uint checkStatusFrameBuffer(int id) {
 	FrameBuffer* fb = getFrameBuffer(id);
-	GLenum result = glCheckNamedFramebufferStatus(fb->id, GL_FRAMEBUFFER);
+	// GLenum result = glCheckNamedFramebufferStatus(fb->id, GL_FRAMEBUFFER);
+	glBindFramebuffer(GL_FRAMEBUFFER, fb->id);
+	GLenum result = glCheckFramebufferStatus(fb->id, GL_FRAMEBUFFER);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
 	return result;
 }
 
@@ -1449,33 +1502,6 @@ void drawPlane(Vec3 pos, Vec3 normal, Vec3 up, Vec2 dim, Vec4 color, Rect uv, in
 	glEnd();
 }
 
-void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	Vec4 c = COLOR_SRGB(color);
-	glColor4f(c.r, c.g, c.b, c.a);
-	glPushMatrix();
-	glTranslatef(pos.x, pos.y, pos.z);
-	glScalef(dim.x, dim.y, dim.z);
-
-
-	Mesh* mesh = &globalGraphicsState->meshes[MESH_CUBE];
-
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
-
-	glEnableClientState(GL_NORMAL_ARRAY);
-	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
-
-	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
-
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_NORMAL_ARRAY);
-
-
-	glPopMatrix();
-}
-
 void drawCircle(Vec3 pos, float r, Vec3 dir, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -1518,6 +1544,43 @@ void drawRing(Vec3 pos, Vec3 normal, float r, float thickness, Vec4 color) {
 	glEnd();
 }
 
+void drawBox(Vec3 pos, Vec3 dim, Vec4 color) {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Vec4 c = COLOR_SRGB(color);
+	glColor4f(c.r, c.g, c.b, c.a);
+	glPushMatrix();
+	glTranslatef(pos.x, pos.y, pos.z);
+	glScalef(dim.x, dim.y, dim.z);
+
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_CUBE];
+
+	glBegin(GL_TRIANGLES);
+	for(int i = 0; i < mesh->vertexCount; i++) {
+		MeshVertex* v = mesh->vertices + i;
+		glNormal3f(v->n.x, v->n.y, v->n.z);
+		glVertex3f(v->p.x, v->p.y, v->p.z);
+	}
+	glEnd();
+
+	glPopMatrix();
+}
+
+void drawBoxRaw() {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_CUBE];
+
+	glBegin(GL_TRIANGLES);
+	for(int i = 0; i < mesh->vertexCount; i++) {
+		MeshVertex* v = mesh->vertices + i;
+		glNormal3f(v->n.x, v->n.y, v->n.z);
+		glVertex3f(v->p.x, v->p.y, v->p.z);
+	}
+
+	glEnd();
+}
+
 void drawSphere(Vec3 pos, float r, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 	Vec4 c = COLOR_SRGB(color);
@@ -1529,16 +1592,13 @@ void drawSphere(Vec3 pos, float r, Vec4 color) {
 
 	Mesh* mesh = &globalGraphicsState->meshes[MESH_SPHERE];
 
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
-
-	glEnableClientState(GL_NORMAL_ARRAY);
-	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
-
-	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
-
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_NORMAL_ARRAY);
+	glBegin(GL_TRIANGLES);
+	for(int i = 0; i < mesh->vertexCount; i++) {
+		MeshVertex* v = mesh->vertices + i;
+		glNormal3f(v->n.x, v->n.y, v->n.z);
+		glVertex3f(v->p.x, v->p.y, v->p.z);
+	}
+	glEnd();
 
 	glPopMatrix();
 }
@@ -1548,34 +1608,13 @@ void drawSphereRaw() {
 
 	Mesh* mesh = &globalGraphicsState->meshes[MESH_SPHERE];
 
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
-
-	glEnableClientState(GL_NORMAL_ARRAY);
-	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
-
-	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
-
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_NORMAL_ARRAY);
-}
-
-void drawBoxRaw() {
-	glBindTexture(GL_TEXTURE_2D, 0);
-
-	Mesh* mesh = &globalGraphicsState->meshes[MESH_CUBE];
-
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glVertexPointer(3, GL_FLOAT, sizeof(Vec3)*2, mesh->vertices);
-
-	glEnableClientState(GL_NORMAL_ARRAY);
-	glNormalPointer(GL_FLOAT, sizeof(Vec3)*2, ((char*)mesh->vertices) + sizeof(Vec3));
-
-	glDrawArrays(GL_TRIANGLES, 0, mesh->vertexCount);
-	// glDrawArrays(GL_QUADS, 0, 24);
-
-	glDisableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_NORMAL_ARRAY);
+	glBegin(GL_TRIANGLES);
+	for(int i = 0; i < mesh->vertexCount; i++) {
+		MeshVertex* v = mesh->vertices + i;
+		glNormal3f(v->n.x, v->n.y, v->n.z);
+		glVertex3f(v->p.x, v->p.y, v->p.z);
+	}
+	glEnd();
 }
 
 // Bad beans.
@@ -1673,6 +1712,9 @@ int getUnicodeRangeOffset(int c, Font* font) {
 	return unicodeOffset;
 }
 
+static int counter = 0;
+static __int64 total = 0;
+
 // Taken from stbtt_truetype.
 void getPackedQuad(PackedChar *chardata, Vec2i texDim, int char_index, Vec2 pos, Rect* r, Rect* uv, int alignToInteger)
 {
@@ -1680,8 +1722,19 @@ void getPackedQuad(PackedChar *chardata, Vec2i texDim, int char_index, Vec2 pos,
 
    if (alignToInteger) {
    	  *r = rectBLDim(roundFloat(pos.x + b->xBearing), roundFloat(pos.y - (b->height - b->yBearing)), b->width, b->height);
+
+   	  (*r).left = roundFloat(pos.x + b->xBearing);
+   	  (*r).bottom = roundFloat(pos.y - (b->height - b->yBearing));
+   	  (*r).right = (*r).left + b->width;
+   	  (*r).top = (*r).bottom + b->height;
+
    } else {
-   	  *r = rectBLDim(pos.x + b->xBearing, pos.y - (b->height - b->yBearing), b->width, b->height);
+   	  // *r = rectBLDim(pos.x + b->xBearing, pos.y - (b->height - b->yBearing), b->width, b->height);
+
+   	  (*r).left = pos.x + b->xBearing;
+   	  (*r).bottom = pos.y - (b->height - b->yBearing);
+   	  (*r).right = (*r).left + b->width;
+   	  (*r).top = (*r).bottom + b->height;
    }
 
    Vec2 ip = vec2(1.0f / texDim.w, 1.0f / texDim.h);
@@ -1965,6 +2018,8 @@ struct TextSettings {
 	Vec2 shadowDir;
 	float shadowSize;
 	Vec4 shadowColor;
+
+	bool srgb;
 };
 
 TextSettings textSettings(Font* font, Vec4 color, int shadowMode, Vec2 shadowDir, float shadowSize, Vec4 shadowColor) {
@@ -2028,7 +2083,7 @@ void drawText(char* text, Vec2 startPos, Vec2i align, int wrapWidth, TextSetting
 
 	startPos = testgetTextStartPos(text, font, startPos, align, wrapWidth);
 
-	setSRGB(false);
+	if(!settings.srgb) setSRGB(false);
 
 	Vec4 c = COLOR_SRGB(settings.color);
 	Vec4 sc = COLOR_SRGB(settings.shadowColor);
@@ -2083,7 +2138,7 @@ void drawText(char* text, Vec2 startPos, Vec2i align, int wrapWidth, TextSetting
 	
 	glEnd();
 
-	setSRGB();
+	if(!settings.srgb) setSRGB();
 }
 void drawText(char* text, Vec2 startPos, TextSettings settings) {
 	return drawText(text, startPos, vec2i(-1,1), 0, settings);
@@ -2225,7 +2280,7 @@ int textMouseToIndex(char* text, Font* font, Vec2 startPos, Vec2 mousePos, Vec2i
 // }
 
 uint createSampler(float ani, int wrapS, int wrapT, int magF, int minF, int wrapR = GL_CLAMP_TO_EDGE) {
-	uint result;
+uint result;
 	// glCreateSamplers(1, &result);
 	glGenSamplers(1, &result);
 	glSamplerParameteri(result, GL_TEXTURE_MAX_ANISOTROPY_EXT, ani);
@@ -2326,7 +2381,7 @@ void openglDefaultSetup() {
 }
 
 void setWindowViewport(WindowSettings* ws, Rect vp);
-void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, Timer* swapTimer, bool init, float panelAlpha) {
+void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, Timer* swapTimer, bool init, float panelAlpha, float adt) {
 	
 	//
 	// Render.
@@ -2375,34 +2430,36 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, Timer* swa
 		if(!ws->vsync) sd->vsyncTempTurnOff = false;
 
 		// Sleep until monitor refresh.
+		double frameTime = timerStop(swapTimer);
+		int sleepTimeMS = 0;
 		if(!init && ws->vsync && !sd->vsyncTempTurnOff) {
-			double frameTime = timerStop(swapTimer);
+			// double frameTime = timerStop(swapTimer);
 			double fullFrameTime = ((double)1/ws->frameRate);
 
 			// If we missed a frame we have to sleep longer.
 			// For example: going from 60hz to 30hz.
-			int count = 0;
-			while(frameTime > fullFrameTime) {
-				fullFrameTime *= 2;
-				count++;
-				if(count > 4) break;
+			// while(frameTime > fullFrameTime) {
+			// 	fullFrameTime *= 2;
+			// 	if(fullFrameTime > (double)1/29) break;
+			// }
+
+			if(frameTime < fullFrameTime) {
+				double sleepTime = fullFrameTime - frameTime;
+
+				sleepTimeMS = sleepTime*1000.0 - 0.5f;
+				// sleepTimeMS = sleepTime*1000.0 - 1.0f;
+				// sleepTimeMS = sleepTime*1000.0 - 2.0f;
+
+				if(sleepTimeMS > 0) {
+	    			glFlush();
+					Sleep(sleepTimeMS);
+				}
 			}
-
-			double sleepTime = fullFrameTime - frameTime;
-
-			int sleepTimeMS = sleepTime*1000.0 - 0.5;
-
-			// timerStart(swapTimer);
-			if(sleepTimeMS > 0) Sleep(sleepTimeMS);
-			// timerStop(swapTimer);
-
-			// printf("%f %f %f %i\n", fullFrameTime, frameTime, sleepTime, sleepTimeMS);
-			// sleepTimeMS += 1;
-			// printf("sleep %i: %i %f %f diff:%f\n", swapTimer->dt > sleepTimeMS/1000.0, sleepTimeMS, sleepTime, swapTimer->dt, sleepTimeMS/1000.0 - swapTimer->dt);
 		}
 
 		// Cap max framerate if vsync disabled.
 		if(!init && !ws->vsync) {
+
 			double frameTime = timerStop(swapTimer);
 			double maxFrameTime = ((double)1/ws->frameRate);
 
@@ -2441,7 +2498,13 @@ void openglDrawFrameBufferAndSwap(WindowSettings* ws, SystemData* sd, Timer* swa
         		wglSwapIntervalEXT(0);
         	}
 
+        	// timerStart(swapTimer);
+        	// glFlush();
 			swapBuffers(sd);
+        	glFinish();
+
+			// float asdf = timerUpdate(swapTimer);
+			// printf("(%f %f %f) %f, %f %i\n", frameTime, asdf, ((double)1/ws->frameRate), adt, frameTime + asdf, sleepTimeMS);
 
         	if(sd->vsyncTempTurnOff) {
         		wglSwapIntervalEXT(1);

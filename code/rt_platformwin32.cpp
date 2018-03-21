@@ -1165,6 +1165,12 @@ double timerStop(Timer* timer) {
 	return timer->dt;
 }
 
+double timerUpdate(Timer* timer) {	
+	double time = timerStop(timer);
+	timerStart(timer);
+
+	return time;
+}
 
 
 void shellExecute(char* command) {

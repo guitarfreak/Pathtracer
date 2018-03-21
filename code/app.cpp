@@ -8,7 +8,6 @@
 	- Ellipses.
 	- Make pixel processing use tiles instead of vertical lines.
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
-	- Write readme file. (For and controls.)
 
 	- More advanced lighting function
 	- Have cam independent, mini window.
@@ -25,10 +24,10 @@
 	Bugs:
 	- Windows key slow often.
 	- Memory leak? Flashing when drawing scene in opengl.
-	- glGenerateTextureMipmap(ad->raycastTexture.id) clears screen to black so we have to 
-	  draw the background again.
 	- Saving sometimes crashes. Hard to debug...
 	- Gui text edit going from right to left doesn't work.
+	- If framerate to low we generate too many timer messages and the mouse locks up.
+	- If multiple objects selected and hold ctrl+v and let mouse go it doesn't set inactive.
 
 =================================================================================
 */
@@ -201,7 +200,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 	// i64 startupTimer = timerInit();
 
-
 	if(init) {
 
 		// Init memory.
@@ -252,7 +250,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		int windowStyle = WS_OVERLAPPEDWINDOW & ~WS_SYSMENU;
 		initSystem(systemData, ws, windowsData, vec2i(1920*0.85f, 1080*0.85f), windowStyle, 1);
 
-
 		windowHandle = systemData->windowHandle;
 
 		loadFunctions();
@@ -294,7 +291,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ws->vsync = false;
 			ws->frameRate = 200;
 		}
-		int fps = wglGetSwapIntervalEXT();
+		int swapInterval = wglGetSwapIntervalEXT();
 
 		initInput(&ad->input);
 		systemData->input = &ad->input;
@@ -307,7 +304,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			makeWindowTopmost(systemData);
 		}
 		#endif
-
+	
 		gs->useSRGB = true;
 
 		//
@@ -320,13 +317,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		FolderSearchData fd;
 		folderSearchStart(&fd, fillString("%s*", App_Image_Folder));
+
 		while(folderSearchNextFile(&fd)) {
 
 			if(strLen(fd.fileName) <= 2) continue; // Skip ".."
 
 			Texture tex;
 			char* filePath = fillString("%s%s", App_Image_Folder, fd.fileName);
+
 			loadTextureFromFile(&tex, filePath, -1, INTERNAL_TEXTURE_FORMAT, GL_RGBA, GL_UNSIGNED_BYTE);
+
 			tex.name = getPStringCpy(fd.fileName);
 			addTexture(tex);
 		}
@@ -518,11 +518,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// ad->settings.texDim = vec2i(1280, 720);
 		ad->settings.texDim = vec2i(768, 432);
 
-		ad->settings.sampleMode = SAMPLE_MODE_BLUE_MULTI;
-		ad->settings.sampleCountGrid = 4;
+		ad->settings.sampleMode = SAMPLE_MODE_BLUE;
+		ad->settings.sampleCountGrid = 10;
 		ad->settings.sampleGridWidth = 10;
-
-		ad->settings.rayBouncesMax = 6;
+		ad->settings.rayBouncesMax = 10;
 
 		ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
 		// ad->threadCount = 1;
@@ -602,7 +601,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			timerStart(&ad->frameTimer);
 			ad->dt = 1/(float)60;
 		} else {
-			ad->dt = timerStop(&ad->frameTimer);
+			ad->dt = timerUpdate(&ad->frameTimer);
 			ad->time += ad->dt;
 
 			ad->fpsTime += ad->dt;
@@ -613,7 +612,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				ad->fpsCounter = 0;
 			}
 
-			timerStart(&ad->frameTimer);
+			// timerStart(&ad->frameTimer);
 			// printf("%f\n", ad->dt);
 		}
 	}
@@ -706,7 +705,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	NewGui* gui = &ad->gui;
 
 	{
-		newGuiBegin(gui, &ad->input, ws, ad->dt);
+		newGuiBegin(gui, &ad->input, ws, ad->dt, systemData->mouseInClient);
 	}
 
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
@@ -975,21 +974,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Vec2* blueNoiseSamples;
 
 				int sampleCount;
-				if(mode == SAMPLE_MODE_GRID) sampleCount = settings->sampleCountGrid*settings->sampleCountGrid;
-				else if(mode == SAMPLE_MODE_BLUE) {
-					float sampleCountGrid = settings->sampleCountGrid * 1.3f;  // Mod for blue noise.
-					sampleCount = blueNoise(rect(0,0,1,1), 1/(float)sampleCountGrid, &blueNoiseSamples);
-				} else if(mode == SAMPLE_MODE_BLUE_MULTI) {
+				if(mode == SAMPLE_MODE_GRID) {
+					sampleCount = settings->sampleCountGrid*settings->sampleCountGrid;
+				} else if(mode == SAMPLE_MODE_BLUE) {
 					float sampleCountGrid = settings->sampleCountGrid * 1.3f;
 					sampleCount = blueNoise(rect(vec2(0.0f),vec2(settings->sampleGridWidth)), 1/(float)sampleCountGrid, &blueNoiseSamples);
 				}
-				else if(mode == SAMPLE_MODE_MSAA4X) sampleCount = 4;
-				else if(mode == SAMPLE_MODE_MSAA8X) sampleCount = 8;
 
 				settings->sampleCount = sampleCount;
 				if(settings->samples) free(settings->samples);
 				settings->samples = mallocArray(Vec2, sampleCount);
-
 
 				switch(mode) {
 					case SAMPLE_MODE_GRID: {
@@ -1006,11 +1000,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} break;
 
 					case SAMPLE_MODE_BLUE: {
-						for(int i = 0; i < sampleCount; i++) settings->samples[i] = blueNoiseSamples[i];
-						free(blueNoiseSamples);
-					} break;
-
-					case SAMPLE_MODE_BLUE_MULTI: {
 
 						assert(settings->sampleGridWidth > 0);
 
@@ -1054,14 +1043,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 						free(counter);
 						free(blueNoiseSamples);
 					} break;
-
-					case SAMPLE_MODE_MSAA4X: {
-						for(int i = 0; i < sampleCount; i++) settings->samples[i] = msaa4xPatternSamples[i];
-					} break;
-
-					case SAMPLE_MODE_MSAA8X: {
-						for(int i = 0; i < sampleCount; i++) settings->samples[i] = msaa8xPatternSamples[i];
-					} break;
 				}
 			}
 
@@ -1083,6 +1064,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			int threadCount = ad->threadCount;
 			int pixelCountPerThread = pixelCount/threadCount;
 			int pixelCountRest = pixelCount % threadCount;
+
+			Vec2i d = ad->settings.texDim;
 
 			for(int i = 0; i < threadCount; i++) {
 				ProcessPixelsData* data = ad->threadData + i;
@@ -1125,8 +1108,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		if(doneProcessing || ad->activeProcessing) {
-			glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
-			glGenerateTextureMipmap(ad->raycastTexture.id);
+			// glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
+
+			glBindTexture(GL_TEXTURE_2D, ad->raycastTexture.id);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
+
+			// glGenerateTextureMipmap(ad->raycastTexture.id);
+			glGenerateMipmap(GL_TEXTURE_2D);
 		}
 
 		// Calc texture rect.
@@ -1280,9 +1268,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
 			}
 
-			// if(eui->selectedObjects.count == 0) {
-			// 	eui->selectionState = ENTITYUI_INACTIVE;
-			// }
+			if(eui->selectedObjects.count == 0 && eui->selectionState == ENTITYUI_HOT) {
+				eui->selectionState = ENTITYUI_INACTIVE;
+			}
 
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
@@ -1724,8 +1712,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
 		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
 
-
-
 		glEnable(GL_DEPTH_TEST);
 		glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -1765,6 +1751,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glLoadIdentity();
 
 			for(int objectIndex = 0; objectIndex < world->objects.count; objectIndex++) {
+
 				Object* obj = world->objects + objectIndex;
 				Geometry* g = &obj->geometry;
 				Material* m = &obj->material;
@@ -1793,6 +1780,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				Mat4 fm = vm * tm * rm * sm;
 				rowToColumn(&fm);
+
 				glLoadMatrixf(fm.e);
 
 				switch(g->type) {
@@ -2338,7 +2326,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 
-
 		NewGui* gui = &ad->gui;
 
 		if(ad->entityUI.selectionState == ENTITYUI_ACTIVE) {
@@ -2395,7 +2382,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			float menuHeight = roundFloat(fontHeight * 1.5f);
 			float padding = ad->fontHeight * 1.4;
 			float border = 1;
+			float regionGap = padding/2;
 			Vec4 cMenu = ad->colors.menu;
+
+			float separatorWidth = padding*0.5f;
+			float separatorOffset = padding*0.2f;
+			float statsSeparatorWidth = padding;
+			Vec4 cSeparator = ad->colors.outlineBright;
 
 			Font* font = getFont(ad->fontFile, fontHeight, ad->fontFileBold, ad->fontFileItalic);
 
@@ -2415,6 +2408,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			TextBoxSettings tbsActive = gui->textBoxSettings;
 			tbs.textSettings.font = font;
 			tbsActive.textSettings.font = font;
+
+			TextSettings menuTextSettings = tbs.textSettings;
 
 
 			Rect r;
@@ -2457,15 +2452,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// @MenuButtons.
 			{
 				float buttonWidth = menuHeight;
-				float buttonOffset = fontHeight*1;
 				float buttonMargin = buttonWidth * 0.3f;
-				float separatorWidth = padding*0.5f;
 				Vec4 cButtonActive = vec4(1,1);
 				Vec4 cButtonInactive = vec4(0.7f,1);
 				// Vec4 cSeparator = gui->buttonSettings.boxSettings.borderColor;
-				Vec4 cSeparator = ad->colors.outlineBright;
 
-				p.x += buttonOffset;
+				p.x += regionGap;
 
 				EntityUI* eui = &ad->entityUI;
 
@@ -2508,8 +2500,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				{
 					p.x += separatorWidth * 0.5f;
 					float x = roundFloat(p.x) + 0.5f;
-					float off = padding*0.2f;
-					drawLine(vec2(x, p.y - off), vec2(x, p.y-menuHeight + off), cSeparator);
+					drawLine(vec2(x, p.y - separatorOffset), vec2(x, p.y-menuHeight + separatorOffset), cSeparator);
 					p.x += separatorWidth * 0.5f;
 				}
 
@@ -2544,10 +2535,50 @@ extern "C" APPMAINFUNCTION(appMain) {
 					drawRect(rectRound(r), eui->selectionMode==i?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture(icons[i])->id);
 				}
 
+				p.x += regionGap;
 			}
 
-		}
+			// Stats.
+			if(!ad->drawSceneWired)
+			{
+				Rect rStats = rect(p-vec2(0,menuHeight), rectTR(mr));
+				rStats.right -= padding/2;
 
+				RaytraceSettings* settings = &ad->settings;
+
+				i64 totalSampleCount = ((i64)settings->texDim.x * (i64)settings->texDim.h * (i64)ad->settings.sampleCount);
+				char* stats[] = {
+					fillString("Pixels: %i.", settings->texDim.x * settings->texDim.h),
+					fillString("Samples/Pixels: %i.", ad->settings.sampleCount), 
+					fillString("Samples: %i.m", (totalSampleCount/(i64)1000000)),
+					fillString("Time: %fs", (float)ad->processTime),
+					fillString("Time/Pixels: %fms", (float)(ad->processTime/(settings->texDim.x*settings->texDim.y)*1000000)),
+				};
+
+				float statsWidth = 0;
+				for(int i = 0; i < arrayCount(stats); i++) {
+					statsWidth += getTextDim(stats[i], font).w;
+					if(i <= arrayCount(stats)) statsWidth += statsSeparatorWidth;
+				}
+
+				Vec2 tp = rectR(mr) - vec2(padding/2, 0);
+				if(mr.right - p.x + padding/2 < statsWidth) tp.x = rStats.left + (statsWidth - (padding));
+
+				newGuiScissorPush(gui, rStats);
+				for(int i = arrayCount(stats)-1; i >= 0; i--) {
+					
+					drawText(stats[i], tp, vec2i(1,0), menuTextSettings);
+					tp.x -= getTextDim(stats[i], font).w;
+
+					if(i > 0) {
+						tp.x -= statsSeparatorWidth * 0.5f;
+						drawLineV(tp + vec2(0,separatorOffset*2), tp - vec2(0,separatorOffset*2), cSeparator);
+						tp.x -= statsSeparatorWidth * 0.5f;
+					}
+				}
+				newGuiScissorPop(gui);
+			}
+		}
 
 
 		bindFrameBuffer(FRAMEBUFFER_2dPanels);
@@ -2601,8 +2632,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->panelAlpha = 1-pow(ad->panelAlphaFadeState,2);
 		}
 
+		glDisable(GL_DEPTH_TEST);
+
 		// Left panel.
 		#if 1
+		if(ad->drawSceneWired)
 		{
 			glDisable(GL_DEPTH_TEST);
 
@@ -2671,7 +2705,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
 
 					{
-						char* labels[] = {"TextureDim", "SampleMode", "SampleGridDim", "SampleCellCount", "MaxRayBounces"};
+						char* labels[] = {"TextureDim", "SampleMode", "SampleGridDim", "MaxRayBounces"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2683,6 +2717,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.w);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.h);
+						clampInt(&settings->texDim.w, 10, 10000);
+						clampInt(&settings->texDim.h, 10, 10000);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
@@ -2693,11 +2729,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
-
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleGridWidth);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
@@ -2714,47 +2745,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 					}
 
 					// 
-
-					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
-					newGuiQuickTextBox(gui, r, "<b>Statistics<b>", vec2i(0,0), &headerSettings);
-
-					eh = font->height;
-
-					{
-						char* labels[] = {"HPixel count", "Samples per pixel", "Total samples", "Total time", "Time per pixel"};
-						int labelIndex = 0;
-						float labelsMaxWidth = 0;
-						for(int i = 0; i < arrayCount(labels); i++) {
-							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
-						}
-
-						char* stats[] = {
-							fillString("%i.", settings->texDim.x * settings->texDim.h),
-							fillString("%i.", ad->settings.sampleCount), 
-							fillString("%i.", settings->texDim.x * settings->texDim.h * ad->settings.sampleCount), 
-							fillString("%fs", (float)ad->processTime),
-							fillString("%fms", (float)(ad->processTime/(settings->texDim.x*settings->texDim.y)*1000000)),
-						};
-
-						for(int i = 0; i < arrayCount(stats); i ++) {
-							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-							qr = quickRow(r, pad.x, labelsMaxWidth, 0);
-
-							newGuiQuickText(gui, quickRowNext(&qr), labels[i], vec2i(-1,0));
-							newGuiQuickText(gui, quickRowNext(&qr), stats[i], vec2i(1,0));
-						}
-					}
-
-					eh = elementHeight;
-
-					{
-						p.y -= separatorHeight/2;
-						drawLineH(p + vec2(0,0.5f), p + vec2(ew,0) + vec2(0,0.5f), cSeparatorDark);
-						drawLineH(p + vec2(0,-0.5f), p + vec2(ew,0) + vec2(0,-0.5f), cSeparatorBright);
-						p.y -= separatorHeight/2;
-					}
-
-					//
 
 					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
 					newGuiQuickTextBox(gui, r, "<b>Scene<b>", vec2i(0,0), &headerSettings);
@@ -2822,7 +2812,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		#endif
 
 		// @RightPanel.
-		if(entityPanelActive)
+		if(entityPanelActive && ad->drawSceneWired)
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
 
@@ -3136,7 +3126,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		// @ColorPicker.
-		if(entityPanelActive)
+		if(entityPanelActive && ad->drawSceneWired)
 		{
 			Rect rEntities = ad->panelRightRect;
 
@@ -3636,8 +3626,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#endif
 
 
-
-	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha);
+	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha, ad->dt);
 
 	// @AppSessionWrite
 	if(*isRunning == false) {

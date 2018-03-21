@@ -173,19 +173,13 @@ OrientationVectors getVectorsFromRotation(Vec3 rot) {
 enum SampleMode {
 	SAMPLE_MODE_GRID = 0,
 	SAMPLE_MODE_BLUE,
-	SAMPLE_MODE_BLUE_MULTI,
-	SAMPLE_MODE_MSAA4X,
-	SAMPLE_MODE_MSAA8X,
 
 	SAMPLE_MODE_COUNT,	
 };
 
 char* sampleModeStrings[] = {
 	"GRID",
-	"BLUE",
-	"BLUE_MULTI",
-	"MSAA4X",
-	"MSAA8X",
+	"BLUE_NOISE",
 };
 
 struct World {
@@ -326,7 +320,7 @@ void processPixelsThreaded(void* data) {
 		int x = pixelIndex % texDim.w;
 		int y = pixelIndex / texDim.w;
 
-		if(settings.sampleMode == SAMPLE_MODE_BLUE_MULTI) {
+		if(settings.sampleMode == SAMPLE_MODE_BLUE) {
 			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
 			int offset = settings.sampleGridOffsets[index];
 			samples = settings.samples + offset;
@@ -1229,14 +1223,23 @@ bool isObjectSelected(EntityUI* eui, int index) {
 }
 
 Vec3 selectedObjectsGetCenter(DArray<Object>* objects, DArray<int>* selected) {
-	Vec3 center = vec3(0,0,0);
+
+	Vec3 pMin = vec3(FLT_MAX);
+	Vec3 pMax = vec3(-FLT_MAX);
 	for(int i = 0; i < selected->count; i++) {
 		Object* obj = objects->atr(selected->at(i));
-		center += obj->pos;
-	}
-	center = center / selected->count;
 
-	return center;
+		pMin.x = min(pMin.x, obj->pos.x);
+		pMin.y = min(pMin.y, obj->pos.y);
+		pMin.z = min(pMin.z, obj->pos.z);
+		pMax.x = max(pMax.x, obj->pos.x);
+		pMax.y = max(pMax.y, obj->pos.y);
+		pMax.z = max(pMax.z, obj->pos.z);
+
+	}
+	Vec3 result = pMin + (pMax - pMin)/2;
+
+	return result;
 }
 
 void openSceneDialog(DialogData* dd, bool saveMode = false) {

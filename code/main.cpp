@@ -32,10 +32,6 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 	HotloadDll hotloadDll;
 	initDll(&hotloadDll, "app.dll", "appTemp.dll", "lock.tmp");
 
-// #else 
-
-	// initDll(&hotloadDll, "app.dll", "appTemp.dll", "lock.tmp", false);
-
 #endif 
 
 	WindowsData wData = windowsData(instance, prevInstance, commandLine, showCode);

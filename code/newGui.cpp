@@ -527,6 +527,8 @@ struct NewGui {
 	bool disable;
 	bool setInactive;
 
+	bool mouseInClient;
+
 	int test;
 
 	// Temp vars for convenience.
@@ -579,7 +581,7 @@ struct NewGui {
 
 LayoutData* newGuiLayoutPush(NewGui* gui, LayoutData ld);
 LayoutData* newGuiLayoutPop(NewGui* gui, bool updateY = true);
-void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws, float dt = 0) {
+void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws, float dt = 0, bool mouseInClient = true) {
 	int voidId = 0;
 
 	gui->id = 1;
@@ -612,6 +614,8 @@ void newGuiBegin(NewGui* gui, Input* input, WindowSettings* ws, float dt = 0) {
 	gui->windowSettings = ws;
 	gui->dt = dt;
 
+	gui->mouseInClient = mouseInClient;
+
 	gui->currentCursor = IDC_ARROW;
 
 	gui->scissor = rectCenDim(0,0,10000000,10000000);
@@ -629,7 +633,7 @@ void newGuiPopupSetup(NewGui* gui);
 void newGuiUpdateComboBoxPopups(NewGui* gui);
 void newGuiEnd(NewGui* gui) {
 
-	if(gui->currentCursor != IDC_ARROW) {
+	if(gui->currentCursor != IDC_ARROW && gui->mouseInClient) {
 		setCursor(gui->windowSettings, gui->currentCursor);
 	}
 
@@ -637,6 +641,12 @@ void newGuiEnd(NewGui* gui) {
 
 	for(int i = 0; i < Gui_Focus_Size; i++) {
 		gui->hotId[i] = gui->contenderId[i];
+	}
+
+	if(!gui->mouseInClient) {
+		for(int i = 0; i < Gui_Focus_Size; i++) {
+			gui->hotId[i] = 0;
+		}
 	}
 
 	scissorState(false);
