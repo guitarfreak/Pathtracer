@@ -509,6 +509,9 @@ struct NewGui {
 	int contenderId[Gui_Focus_Size];
 	int contenderIdZ[Gui_Focus_Size];
 
+	// Used for text edits right now.
+	int activeSignalId;
+
 	int storedIds[10];
 	int storedIdCount;
 
@@ -728,11 +731,29 @@ void newGuiSetNotActiveWhenActive(NewGui* gui, int id) {
 }
 
 void newGuiSetActive(NewGui* gui, int id, bool input, int focus = 0) {
-	if(!newGuiIsActive(gui, id))
-		if(input && newGuiIsHot(gui, id, focus)) {
-			gui->activeId = id;
-			gui->gotActiveId = id;
+	bool setActive = false;
+
+	if(id == gui->activeSignalId) {
+		setActive = true;
+		gui->activeSignalId = 0;
+	} else {
+		
+		if(!newGuiIsActive(gui, id)) {
+			if(input && newGuiIsHot(gui, id, focus)) {
+
+				if(newGuiSomeoneActive(gui)) { 
+					gui->activeSignalId = id;
+				} else {
+					setActive = true;
+				}
+			}
 		}
+	}
+
+	if(setActive) {
+		gui->activeId = id;
+		gui->gotActiveId = id;
+	}
 }
 
 bool newGuiFocusCanBeHot(NewGui* gui, int focus) {
@@ -850,7 +871,10 @@ bool newGuiGoButtonAction(NewGui* gui, Rect r) {
 
 int newGuiDragAction(NewGui* gui, int id, Rect r, float z, Vec2 mousePos, bool input, bool inputRelease, int focus = 0) {
 	newGuiSetActive(gui, id, input, focus);
-	if(newGuiIsActive(gui, id) && inputRelease) newGuiSetNotActive(gui, id);
+	if(newGuiIsActive(gui, id) && (inputRelease || gui->activeSignalId)) {
+		newGuiSetNotActive(gui, id);
+		printf("asdf\n");
+	}
 	newGuiSetHotMouseOver(gui, id, mousePos, r, z, focus);
 
 	return id;

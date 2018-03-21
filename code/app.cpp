@@ -2,32 +2,34 @@
 =================================================================================
 
 	ToDo:
+	- Clean global light and multiple lights
 	- Depth of field.
 	- Refraction.
-	- Clean global light and multiple lights
 	- Ellipses.
-	- Make pixel processing use tiles instead of vertical lines.
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 
-	- More advanced lighting function
+	- More advanced lighting function.
 	- Have cam independent, mini window.
 	- Spacial data structure to speed up processing.
 	- Converge method on sampling for speed up.
-	- Clean up repetitive gui code. (Layout.)
 
 	- Turning while dragging is glitchy.
 	- Title buttons don't scale nicely.
 	- Redraw menu buttons to look better at smaller sizes.
-	- Do stencil outline selection instead of polygon grid selection.
+	- Clean up repetitive gui code. (Layout.)
+
 	- Simd.
+	- Do stencil outline selection instead of polygon grid selection.
+	- Float not good enough.
+	- App hangs when calculating blueNoise samples.
 
 	Bugs:
 	- Windows key slow often.
 	- Memory leak? Flashing when drawing scene in opengl.
 	- Saving sometimes crashes. Hard to debug...
-	- Gui text edit going from right to left doesn't work.
 	- If framerate to low we generate too many timer messages and the mouse locks up.
 	- If multiple objects selected and hold ctrl+v and let mouse go it doesn't set inactive.
+	- Original window titlebar shows through for one frame sometimes when switching focus between apps.
 
 =================================================================================
 */
@@ -177,9 +179,10 @@ struct AppData {
 	bool fitToScreen;
 	bool drawSceneWired;
 
+	bool startProcessing;
 	bool activeProcessing;
 	int threadCount;
-	ProcessPixelsData threadData[RAYTRACE_THREAD_JOB_COUNT];
+	ProcessPixelsData threadData[THREAD_JOB_MAX];
 
 	bool abortProcessing;
 	bool tracerFinished;
@@ -522,9 +525,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->settings.sampleCountGrid = 10;
 		ad->settings.sampleGridWidth = 10;
 		ad->settings.rayBouncesMax = 10;
-
-		ad->threadCount = RAYTRACE_THREAD_JOB_COUNT;
-		// ad->threadCount = 1;
 
 		ad->drawSceneWired = true;
 		ad->fitToScreen = false;
@@ -950,8 +950,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 
-		if((keyPressed(gui, input, KEYCODE_SPACE)) && (!ad->activeProcessing && ad->drawSceneWired) && !ad->fpsMode) {
+		if(keyPressed(gui, input, KEYCODE_SPACE) && !ad->activeProcessing) {
+			ad->startProcessing = true;
+		}
 
+		if(ad->startProcessing && (!ad->activeProcessing && ad->drawSceneWired) && !ad->fpsMode) {
+
+			ad->startProcessing = false;
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
 			ad->tracerFinished = false;
@@ -1061,25 +1066,70 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			int threadCount = ad->threadCount;
-			int pixelCountPerThread = pixelCount/threadCount;
-			int pixelCountRest = pixelCount % threadCount;
+			// Push thread jobs in circles.
+			{
+				Vec2 dim = vec2(ad->settings.texDim);
 
-			Vec2i d = ad->settings.texDim;
+				int count = arrayCount(ad->threadData) * 0.8f;
+				float size = sqrt(((dim.w*dim.h) / count));
+				int tileSize = (int)size;
+				Vec2 realCount = vec2(dim.x / tileSize, dim.y / tileSize);
 
-			for(int i = 0; i < threadCount; i++) {
-				ProcessPixelsData* data = ad->threadData + i;
-				*data = {};
-				data->pixelIndex = i*pixelCountPerThread;
-				data->pixelCount = i < threadCount-1 ? pixelCountPerThread : pixelCountPerThread + pixelCountRest;
-				data->world = &ad->world;
-				data->settings = settings;
-				data->buffer = ad->buffer;
+				Vec2 cen = realCount/2;
+				Vec2i startIndex = vec2i(cen);
 
-				threadQueueAdd(globalThreadQueue, processPixelsThreaded, data);
+				int threadJobCount = 0;
+
+				{
+					int threadIndex = 0;
+					Vec2i si = startIndex;
+
+					int maxOff = (max(realCount.x, realCount.y)/2) + 1;
+					for(int off = 0; off < maxOff+1; off++) {
+
+						Vec2i startP = vec2i(-off, off-1);
+						if(off == 0) startP = vec2i(0,0);
+						Vec2i p = startP;
+						int counter = 0;
+						Vec2i dir = vec2i(0,-1);
+						for(;;) {
+							Vec2i rp = vec2i(si.x + p.x, si.y + p.y);
+							if(rp.x >= 0 && rp.x < roundUpInt(realCount.x) && 
+							   rp.y >= 0 && rp.y < roundUpInt(realCount.y)) {
+
+								Vec2i topLeft = vec2i(0,0);
+								Vec2i pixelPos = vec2i(rp.x * tileSize, rp.y * tileSize);
+
+								ProcessPixelsData* data = ad->threadData + threadIndex++;
+								*data = {};
+								data->pixelPos = pixelPos;
+								data->pixelDim = vec2i(tileSize);
+
+								data->world = &ad->world;
+								data->settings = settings;
+								data->buffer = ad->buffer;
+
+								threadQueueAdd(globalThreadQueue, processPixelsThreaded, data);
+								threadJobCount++;
+							}
+
+							if(off == 0) break;
+
+							if(abs(p.x) == off && abs(p.y) == off) {
+								// dir = vec2i(-dir.y, dir.x);
+								dir = vec2i(-dir.y, dir.x);
+							}
+							p += dir;
+							if(p == startP) break;
+						}
+					}
+				}
+
+				ad->threadCount = threadJobCount;
 			}
 
 			ad->processStartTime = ad->time;
+			ad->processTime = 0;
 		}
 
 		if(keyPressed(gui, input, KEYCODE_ESCAPE) && !ad->drawSceneWired) {
@@ -1693,10 +1743,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Light light;
 		light.type = LIGHT_TYPE_DIRECTION;
-		light.pos = normVec3(vec3(-1.5f,-1,-2.0f));
+		light.pos = normVec3(world->globalLightDir);
 		// light.diffuseColor = vec3(0.9,0,0);
-		light.diffuseColor = vec3(0.9f);
-		light.specularColor = vec3(1.0f);
+		light.diffuseColor = world->globalLightColor;
+		light.specularColor = world->globalLightColor;
 		light.brightness = 1.0f;
 
 			Vec4 lp = vec4(-light.dir, 0);
@@ -2546,13 +2596,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				RaytraceSettings* settings = &ad->settings;
 
-				i64 totalSampleCount = ((i64)settings->texDim.x * (i64)settings->texDim.h * (i64)ad->settings.sampleCount);
+				int samplesPerPixel;
+				if(settings->sampleMode == SAMPLE_MODE_GRID) {
+					samplesPerPixel = settings->sampleCount;
+				} else {
+					samplesPerPixel = settings->sampleCount/pow(ad->settings.sampleGridWidth,2);
+				}
+
+				i64 totalSampleCount = ((i64)settings->texDim.x * (i64)settings->texDim.h * (i64)samplesPerPixel);
 				char* stats[] = {
 					fillString("Pixels: %i.", settings->texDim.x * settings->texDim.h),
-					fillString("Samples/Pixels: %i.", ad->settings.sampleCount), 
-					fillString("Samples: %i.m", (totalSampleCount/(i64)1000000)),
+					fillString("Samples/Pixel: %i.", samplesPerPixel), 
+					fillString("Samples: %i.", (totalSampleCount)),
 					fillString("Time: %fs", (float)ad->processTime),
-					fillString("Time/Pixels: %fms", (float)(ad->processTime/(settings->texDim.x*settings->texDim.y)*1000000)),
+					fillString("Time/Pixel: %fms", (float)(ad->processTime/(settings->texDim.x*settings->texDim.y)*1000000)),
 				};
 
 				float statsWidth = 0;
@@ -2702,23 +2759,24 @@ extern "C" APPMAINFUNCTION(appMain) {
 					//
 
 					r = rectTLDim(p, vec2(ew, headerHeight)); p.y -= headerHeight+pad.y;
-					newGuiQuickTextBox(gui, r, "<b>Pathtracer Settings<b>", vec2i(0,0), &headerSettings);
+					newGuiQuickTextBox(gui, r, "<b>Render Settings<b>", vec2i(0,0), &headerSettings);
 
 					{
-						char* labels[] = {"TextureDim", "SampleMode", "SampleGridDim", "MaxRayBounces"};
+						char* labels[] = {"Texture dim", "Sample mode", "Sample grid dim", "Max ray bounces"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
 							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
 						}
+						labelsMaxWidth += padding.w;
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.w);
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.h);
-						clampInt(&settings->texDim.w, 10, 10000);
-						clampInt(&settings->texDim.h, 10, 10000);
+						clampInt(&settings->texDim.w, arrayCount(ad->threadData), 10000);
+						clampInt(&settings->texDim.h, arrayCount(ad->threadData), 10000);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
@@ -2730,10 +2788,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
 
+						settings->sampleCountGrid = clampMinInt(settings->sampleCountGrid, 1);
+
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMax);
+
+						settings->rayBouncesMax = clampMinInt(settings->rayBouncesMax, 1);
 					}
 
 					{
@@ -2754,12 +2816,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Cam pos", "Cam rot", "Cam Fov", "SnapGridSize"};
+						char* labels[] = {"Cam pos", "Cam rot", "Cam fov", "Grid size", "Emit color", "Light dir", "Light color"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
 							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
 						}
+						labelsMaxWidth += padding.w;
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -2779,11 +2842,33 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->camera.fov, 20, 150);
 
-
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickSlider(gui, quickRowNext(&qr), &eui->snapGridSize, 1,10);
+
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->defaultEmitColor.r, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->defaultEmitColor.g, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->defaultEmitColor.b, 0, 1);
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.x, -1, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.y, -1, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.z, -1, 1);
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.r, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.g, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.b, 0, 1);
+
 
 						{
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2800,6 +2885,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 						}
 
+						{
+							char* text = "Render";
+							float padding = ad->fontHeight * 0.9f;
+							float renderButtonWidth = getTextDim(text, font).w + padding*2;
+							renderButtonWidth = min(ew, renderButtonWidth);
+							float height = eh*1.2f;
+
+							r = rectTLDim(p, vec2(ew, height)); p.y -= height+pad.y;
+							rectSetW(&r, renderButtonWidth);
+							if(newGuiQuickButton(gui, r, text)) {
+								if(!ad->activeProcessing) ad->startProcessing = true;
+							}
+						}
 					}
 
 				}
@@ -2979,6 +3077,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						for(int i = 0; i < arrayCount(labels); i++) {
 							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
 						}
+						labelsMaxWidth += padding.w;
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -3625,6 +3724,67 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
+	if(false)
+	{
+		drawRect(rectCenDim(0,0,100000,100000), vec4(0.2f,1));
+
+		Vec2 dim = vec2(400,200);
+
+		Rect r = rectTLDim(vec2(100,-100), dim);
+		drawRect(r, vec4(0.1f,1));
+
+		int count = 200;
+		float size = sqrt(((dim.w*dim.h) / count));
+		int tileSize = (int)size;
+		Vec2 realCount = vec2(dim.x / tileSize, dim.y / tileSize);
+
+		printf("S:\n");
+		printf("%f %f\n", dim.x, dim.y);
+		printf("%f %i\n", size, tileSize);
+		printf("%f %f\n", realCount.x, realCount.y);
+
+		Vec2 p = rectTL(r);
+		for(int y = 0; y < dim.h; y += size) {
+			for(int x = 0; x < dim.w; x += size) {
+				Vec2 p = rectTL(r) + vec2(x, - y);
+				drawRect(rectTLDim(p, vec2(tileSize-1)), vec4(0.5f,1));
+			}
+		}
+
+		Vec2 cen = realCount/2;
+		Vec2i startIndex = vec2i(cen);
+		// drawRect(rectTLDim(rectTL(r) + vec2(startIndex.x * tileSize, -startIndex.y * tileSize), vec2(tileSize)), vec4(1,0,0,1));
+
+		{
+			Vec2i si = startIndex;
+
+			int maxOff = (max(realCount.x, realCount.y)/2) + 1;
+			for(int off = 1; off < maxOff; off++) {
+
+				Vec2i startP = vec2i(-off, 0);
+				Vec2i p = startP;
+				int counter = 0;
+				Vec2i dir = vec2i(0,1);
+				for(;;) {
+					Vec2i rp = vec2i(si.x + p.x, si.y + p.y);
+					if(rp.x >= 0 && rp.x < roundUpFloat(realCount.x) && 
+					   rp.y >= 0 && rp.y < roundUpFloat(realCount.y)) {
+
+						Rect rr = rectTLDim(rectTL(r) + vec2(rp.x * tileSize, -rp.y * tileSize), vec2(tileSize));
+						drawRect(rr, vec4(1,0,0,1));
+					}
+
+					if(abs(p.x) == off && abs(p.y) == off) {
+						dir = vec2i(dir.y, -dir.x);
+					}
+					p += dir;
+					if(p == startP) break;
+				}
+			}
+		}
+
+		drawRect(r, vec4(0.1f,0.5f));
+	}
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha, ad->dt);
 

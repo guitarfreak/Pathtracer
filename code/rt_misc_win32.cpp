@@ -12,6 +12,8 @@ struct ThreadJob {
     void* data;
 };
 
+#define THREAD_JOB_MAX 256
+
 struct ThreadQueue {
     volatile uint completionGoal;
     volatile uint completionCount;
@@ -22,7 +24,7 @@ struct ThreadQueue {
     int threadIds[16];
     int threadCount;
 
-    ThreadJob jobs[256];
+    ThreadJob jobs[THREAD_JOB_MAX];
 };
 
 int getThreadQueueId(ThreadQueue* queue) {

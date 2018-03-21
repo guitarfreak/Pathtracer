@@ -280,6 +280,10 @@ inline float roundUpFloat(float i) {
 	return ceil(i);
 }
 
+inline int roundUpInt(float i) {
+	return ceil(i);
+}
+
 inline float roundDownFloat(float i) {
 	float result = i < 0 ? ((int)i)-1 : (int)i;
 	return result;

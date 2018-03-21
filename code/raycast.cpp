@@ -1,8 +1,6 @@
 
 #include "external\iacaMarks.h"
 
-#define RAYTRACE_THREAD_JOB_COUNT 7*4
-
 
 enum {
 	GEOM_TYPE_SPHERE = 0,
@@ -254,8 +252,11 @@ struct ProcessPixelsData {
 	RaytraceSettings* settings;
 
 	Vec3* buffer;
-	int pixelIndex;
-	int pixelCount;
+	// int pixelIndex;
+	// int pixelCount;
+
+	Vec2i pixelPos;
+	Vec2i pixelDim;
 
 	bool stopProcessing;
 };
@@ -306,10 +307,11 @@ void processPixelsThreaded(void* data) {
 	Vec3 black = vec3(0.0f);
 	Vec3 white = vec3(1.0f);
 
+	Vec3 globalLightDir = -normVec3(world.globalLightDir);
+
 	Vec2i texDim = settings.texDim;
-	int totalPixelCount = texDim.w * texDim.h;
-	int pixelRangeEnd = d->pixelIndex+d->pixelCount;
-	for(int pixelIndex = d->pixelIndex; pixelIndex < pixelRangeEnd; pixelIndex++) {
+	int pixelCount = d->pixelDim.x * d->pixelDim.y;
+	for(int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
 		startTimer(0);
 
 		if(d->stopProcessing) {
@@ -317,8 +319,13 @@ void processPixelsThreaded(void* data) {
 			break;
 		}
 		
-		int x = pixelIndex % texDim.w;
-		int y = pixelIndex / texDim.w;
+		int x = pixelIndex % d->pixelDim.w;
+		int y = pixelIndex / d->pixelDim.w;
+		x += d->pixelPos.x;
+		y += d->pixelPos.y;
+
+		if(x < 0 || x >= texDim.w || 
+		   y < 0 || y >= texDim.h) continue;
 
 		if(settings.sampleMode == SAMPLE_MODE_BLUE) {
 			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
@@ -331,7 +338,7 @@ void processPixelsThreaded(void* data) {
 			// IACA_VC64_START;
 
 			Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
-			Vec3 finalColor = black;
+			Vec3 pixelColor = black;
 
 			for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
 				startTimer(1);
@@ -341,6 +348,8 @@ void processPixelsThreaded(void* data) {
 				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
 
 				Vec3 rayDir = normVec3(rayPos - camera.pos);
+
+				Vec3 sampleColor = black;
 
 				Vec3 attenuation = white;
 				int lastObjectIndex = -1;
@@ -423,17 +432,16 @@ void processPixelsThreaded(void* data) {
 						Material* m = &obj->material;
 						lastObjectIndex = objectIndex;
 
-
 						// Color calculation.
 
-						finalColor += attenuation * m->emitColor;
+						// pixelColor += attenuation * m->emitColor;
+						sampleColor += attenuation * m->emitColor;
 						attenuation = attenuation * obj->color;
 			
 						if(attenuation == black) {
 							endTimer(4);
 							break;
 						}
-
 
 						// Calculate new direction.
 
@@ -456,14 +464,16 @@ void processPixelsThreaded(void* data) {
 					} else {
 
 						if(rayIndex == 0) {
-							finalColor += world.defaultEmitColor; // Sky hit.
+							// pixelColor += world.defaultEmitColor; // Sky hit.
+							sampleColor += world.defaultEmitColor; // Sky hit.
 						} else {
-							float lightDot = dot(rayDir, -world.globalLightDir);
+							float lightDot = dot(rayDir, globalLightDir);
 							lightDot = clampMin(lightDot, 0);
 							// lightDot = dotUnitToPercent(lightDot);
 							Vec3 light = world.globalLightColor * lightDot;
 
-							finalColor += attenuation * (world.defaultEmitColor + light);
+							// pixelColor += attenuation * (world.defaultEmitColor + light);
+							sampleColor += attenuation * (world.defaultEmitColor + light);
 						}
 
 						break;
@@ -474,13 +484,20 @@ void processPixelsThreaded(void* data) {
 					endTimer(2);
 				}
 
+				// Sample end.
+
+				sampleColor = clampMax(sampleColor, white);
+				pixelColor += sampleColor;
+
 				endTimer(1);
 			}
 
-			finalColor = finalColor/(float)sampleCount;
-			finalColor = clampMax(finalColor, white);
+			// Pixel end.
 
-			buffer[y*texDim.w + x] = finalColor;
+			pixelColor = pixelColor/(float)sampleCount;
+			pixelColor = clampMax(pixelColor, white);
+
+			buffer[y*texDim.w + x] = pixelColor;
 
 			// IACA_VC64_END;
 		}
@@ -561,7 +578,7 @@ void getDefaultScene(World* world) {
 	float zLevel = 7;
 
 	Camera* cam = &world->camera;
-	cam->pos = vec3(0, -50, zLevel);
+	cam->pos = vec3(0, -30, zLevel);
 	cam->rot = vec3(0, 0, 0);
 	cam->fov = 90;
 	cam->dim.w = 10;
@@ -569,32 +586,29 @@ void getDefaultScene(World* world) {
 
 
 	world->defaultEmitColor = vec3(1,1,1);
+	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
+	world->globalLightColor = vec3(1,1,1);
 
 	world->ambientRatio = 0.2f;
 	world->ambientColor = vec3(1.0f);
-
-	// world->defaultEmitColor = vec3(0.7f, 0.8f, 0.9f);
-	// world->defaultEmitColor = vec3(1.0f);
-	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
-	world->globalLightColor = vec3(1,1,1);
 
 	world->objects.init();
 
 	Material materials[10] = {};
 	materials[0].emitColor = vec3(0,0,0);
-	materials[0].reflectionMod = 0.8f;
+	materials[0].reflectionMod = 0.7f;
 
 	materials[1].emitColor = vec3(0,0,0);
-	materials[1].reflectionMod = 0.2f;
+	materials[1].reflectionMod = 1.0f;
 
 	Object obj;
 
 	// Ground plane.
 
 	obj = {};
-	obj.pos = vec3(0,0,0);
+	obj.pos = vec3(0,0,0.1f);
 	obj.rot = quat();
-	obj.color = vec3(0.5f);
+	obj.color = vec3(0.4f);
 	obj.material = materials[0];
 	obj.geometry.type = GEOM_TYPE_BOX;
 	obj.dim = vec3(50, 50, 0.01f);
@@ -605,9 +619,9 @@ void getDefaultScene(World* world) {
 	obj = {};
 	obj.pos = vec3(0,0,zLevel);
 	obj.rot = quat();
-	obj.color = vec3(0.7f,0.7f,0.7f);
+	obj.color = vec3(0.5f,0.5f,0.5f);
 	obj.material = materials[1];
-	obj.dim = vec3(5.0f);
+	obj.dim = vec3(8.0f);
 	obj.geometry.type = GEOM_TYPE_SPHERE;
 	world->objects.push(obj);
 	
