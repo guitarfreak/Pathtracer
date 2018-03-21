@@ -193,11 +193,11 @@ struct AppData {
 
 
 
-// #ifdef SHIPPING_MODE
-// #pragma optimize( "", on )
-// #else 
+#ifdef FULL_OPTIMIZE
+#pragma optimize( "", on )
+#else 
 #pragma optimize( "", off )
-// #endif
+#endif
 
 extern "C" APPMAINFUNCTION(appMain) {
 

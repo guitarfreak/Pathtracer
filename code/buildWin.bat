@@ -70,6 +70,10 @@ if "%~4"=="-ship" (
 	set RUNTIME=-MT
 )
 
+if "%~5"=="-fullOptimize" (
+	set MODE_DEFINE=%MODE_DEFINE% -DFULL_OPTIMIZE
+)
+
 rem -d2cgsummary -Bt
 set COMPILER_OPTIONS= %RUNTIME% %BUILD_MODE% -nologo -Oi -FC -wd4838 -wd4005 -fp:fast -fp:except- -Gm- -GR- -EHa- -Z7
 set LINKER_OPTIONS= -link -SUBSYSTEM:WINDOWS -OUT:"%APP_NAME%.exe" -incremental:no -opt:ref
