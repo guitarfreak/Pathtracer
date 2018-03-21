@@ -776,6 +776,11 @@ struct EntityUI {
 	
 	Vec3 currentObjectDistanceVector;
 	Vec3 currentPos;
+
+	//
+
+	Object temp;
+	bool changedGeomType;
 };
 
 bool keyPressed(NewGui* gui, Input* input, int keycode) {

@@ -248,8 +248,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		getPMemory(sizeof(AppData));
 		*ad = {};
 
-		// int windowStyle = (WS_POPUP | WS_BORDER);
-		// int windowStyle = (WS_POPUP);
 		int windowStyle = WS_OVERLAPPEDWINDOW & ~WS_SYSMENU;
 		initSystem(systemData, ws, windowsData, vec2i(1920*0.85f, 1080*0.85f), windowStyle, 1);
 
@@ -308,8 +306,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 		#endif
 	
-		gs->useSRGB = true;
-
 		//
 		// Setup Textures.
 		//
@@ -404,6 +400,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->dt = 1/(float)60;
 
 		ad->graphicsState.zOrder = 0;
+		gs->useSRGB = true;
 
 		//
 		// FrameBuffers.
@@ -3132,16 +3129,26 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->color.b)) offSize = memberOffsetSize(Object, color.b);
 
 
+						// Hack.
+
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						if(newGuiQuickComboBox(gui, quickRowNext(&qr), &obj->geometry.type, geometryTypeStrings, arrayCount(geometryTypeStrings))) {
+						if(!eui->changedGeomType) eui->temp.geometry.type = obj->geometry.type;
+						if(newGuiQuickComboBox(gui, quickRowNext(&qr), &eui->temp.geometry.type, geometryTypeStrings, arrayCount(geometryTypeStrings))) {
+							obj->geometry.type = eui->temp.geometry.type;
+							eui->changedGeomType = false;
+
 							offSize = memberOffsetSize(Object, geometry.type);
 
 							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
 								obj->dim = vec3(max(obj->dim.x, obj->dim.y, obj->dim.z));
 								offSize2 = memberOffsetSize(Object, dim);
 							}
+						}
+						if(newGuiGotActive(gui, newGuiCurrentId(gui)-2)) {
+							eui->temp.geometry.type = obj->geometry.type;
+							eui->changedGeomType = true;
 						}
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -3203,6 +3210,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 								for(int i = 0; i < eui->selectedObjects.count; i++) {
 									Object* o = world->objects + eui->selectedObjects[i];
 									memCpy((char*)(o) + offSize.x, (char*)(obj) + offSize.x, offSize.y);
+									int stop = 234;
 								}
 
 								if(offSize2.y) {
@@ -3724,67 +3732,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 	#endif
 
-	if(false)
-	{
-		drawRect(rectCenDim(0,0,100000,100000), vec4(0.2f,1));
-
-		Vec2 dim = vec2(400,200);
-
-		Rect r = rectTLDim(vec2(100,-100), dim);
-		drawRect(r, vec4(0.1f,1));
-
-		int count = 200;
-		float size = sqrt(((dim.w*dim.h) / count));
-		int tileSize = (int)size;
-		Vec2 realCount = vec2(dim.x / tileSize, dim.y / tileSize);
-
-		printf("S:\n");
-		printf("%f %f\n", dim.x, dim.y);
-		printf("%f %i\n", size, tileSize);
-		printf("%f %f\n", realCount.x, realCount.y);
-
-		Vec2 p = rectTL(r);
-		for(int y = 0; y < dim.h; y += size) {
-			for(int x = 0; x < dim.w; x += size) {
-				Vec2 p = rectTL(r) + vec2(x, - y);
-				drawRect(rectTLDim(p, vec2(tileSize-1)), vec4(0.5f,1));
-			}
-		}
-
-		Vec2 cen = realCount/2;
-		Vec2i startIndex = vec2i(cen);
-		// drawRect(rectTLDim(rectTL(r) + vec2(startIndex.x * tileSize, -startIndex.y * tileSize), vec2(tileSize)), vec4(1,0,0,1));
-
-		{
-			Vec2i si = startIndex;
-
-			int maxOff = (max(realCount.x, realCount.y)/2) + 1;
-			for(int off = 1; off < maxOff; off++) {
-
-				Vec2i startP = vec2i(-off, 0);
-				Vec2i p = startP;
-				int counter = 0;
-				Vec2i dir = vec2i(0,1);
-				for(;;) {
-					Vec2i rp = vec2i(si.x + p.x, si.y + p.y);
-					if(rp.x >= 0 && rp.x < roundUpFloat(realCount.x) && 
-					   rp.y >= 0 && rp.y < roundUpFloat(realCount.y)) {
-
-						Rect rr = rectTLDim(rectTL(r) + vec2(rp.x * tileSize, -rp.y * tileSize), vec2(tileSize));
-						drawRect(rr, vec4(1,0,0,1));
-					}
-
-					if(abs(p.x) == off && abs(p.y) == off) {
-						dir = vec2i(dir.y, -dir.x);
-					}
-					p += dir;
-					if(p == startP) break;
-				}
-			}
-		}
-
-		drawRect(r, vec4(0.1f,0.5f));
-	}
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha, ad->dt);
 

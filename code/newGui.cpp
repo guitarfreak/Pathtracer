@@ -873,7 +873,6 @@ int newGuiDragAction(NewGui* gui, int id, Rect r, float z, Vec2 mousePos, bool i
 	newGuiSetActive(gui, id, input, focus);
 	if(newGuiIsActive(gui, id) && (inputRelease || gui->activeSignalId)) {
 		newGuiSetNotActive(gui, id);
-		printf("asdf\n");
 	}
 	newGuiSetHotMouseOver(gui, id, mousePos, r, z, focus);
 
