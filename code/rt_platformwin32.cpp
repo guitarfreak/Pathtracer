@@ -504,6 +504,7 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	HDC hdc = BeginPaint(window, &ps); 
         	EndPaint(window, &ps);
 
+        	sd->vsyncTempTurnOff = true;
         	SwitchToFiber(sd->mainFiber);
 
         	return 0;

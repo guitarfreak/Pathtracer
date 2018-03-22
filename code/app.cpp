@@ -30,7 +30,7 @@
 	- If framerate to low we generate too many timer messages and the mouse locks up.
 	- If multiple objects selected and hold ctrl+v and let mouse go it doesn't set inactive.
 	- Original window titlebar shows through for one frame sometimes when switching focus between apps.
-	- Old windows frame flashing when defocusing app in vsync windows mode.
+	- Maximizing mode in Aero is distorted on right side.
 
 =================================================================================
 */
@@ -641,12 +641,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		systemData->fontHeight = getSystemFontHeight(systemData->windowHandle);
 		ad->fontHeight = roundInt(ad->fontScale*systemData->fontHeight);
-	}
-
-	if(input->keysPressed[KEYCODE_ESCAPE]) {
-		if(ws->fullscreen) {
-			if(input->keysPressed[KEYCODE_ESCAPE]) setWindowMode(windowHandle, ws, WINDOW_MODE_WINDOWED);
-		}
 	}
 
 	if(input->keysPressed[KEYCODE_F11] && !systemData->maximized) {
