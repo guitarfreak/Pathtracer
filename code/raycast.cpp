@@ -486,7 +486,7 @@ void processPixelsThreaded(void* data) {
 
 				// Sample end.
 
-				sampleColor = clampMax(sampleColor, white);
+				// sampleColor = clampMax(sampleColor, white);
 				pixelColor += sampleColor;
 
 				endTimer(1);

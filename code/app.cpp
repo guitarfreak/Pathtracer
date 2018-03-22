@@ -30,6 +30,7 @@
 	- If framerate to low we generate too many timer messages and the mouse locks up.
 	- If multiple objects selected and hold ctrl+v and let mouse go it doesn't set inactive.
 	- Original window titlebar shows through for one frame sometimes when switching focus between apps.
+	- Old windows frame flashing when defocusing app in vsync windows mode.
 
 =================================================================================
 */

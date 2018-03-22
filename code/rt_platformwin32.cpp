@@ -511,11 +511,17 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
 
         case WM_GETMINMAXINFO: {
             LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
-            lpMMI->ptMinTrackSize.x = sd->minWindowDim.w;
-            lpMMI->ptMinTrackSize.y = sd->minWindowDim.h;
-
-            lpMMI->ptMaxTrackSize.x = sd->maxWindowDim.w;
-            lpMMI->ptMaxTrackSize.y = sd->maxWindowDim.h;
+            if(sd) {
+	            lpMMI->ptMinTrackSize.x = sd->minWindowDim.w;
+	            lpMMI->ptMinTrackSize.y = sd->minWindowDim.h;
+	            lpMMI->ptMaxTrackSize.x = sd->maxWindowDim.w;
+	            lpMMI->ptMaxTrackSize.y = sd->maxWindowDim.h;
+            } else {
+            	lpMMI->ptMinTrackSize.x = 200;
+            	lpMMI->ptMinTrackSize.y = 200;
+            	lpMMI->ptMaxTrackSize.x = 300;
+            	lpMMI->ptMaxTrackSize.y = 300;
+            }
         } break;
 
         case WM_SETFOCUS: {
@@ -530,8 +536,8 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
 		    sd->killedFocus = true;
         	sd->windowIsFocused = false;
 
-        	// sd->vsyncTempTurnOff = true;
-        	// SwitchToFiber(sd->mainFiber);
+        	sd->vsyncTempTurnOff = true;
+        	SwitchToFiber(sd->mainFiber);
         } break;
 
         case WM_TIMER: {
@@ -800,13 +806,11 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     systemData->windowHandle = CreateWindowEx(0, windowClass.lpszClassName, "", ws->style, wx,wy,ww,wh, 0, 0, systemData->instance, 0);
 
     HWND windowHandle = systemData->windowHandle;
-
     if(!windowHandle) {
         DWORD errorCode = GetLastError();
     }
 
-	SetFocus(windowHandle);
-	systemData->windowIsFocused = true;
+    SetWindowLongPtr(windowHandle, GWLP_USERDATA, (LONG_PTR)systemData);
 
     PIXELFORMATDESCRIPTOR pixelFormatDescriptor =
     {
@@ -860,7 +864,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
     assert(r);
 
     systemData->mainFiber = ConvertThreadToFiber(0);
-    SetWindowLongPtr(windowHandle, GWLP_USERDATA, (LONG_PTR)systemData);
     systemData->messageFiber = CreateFiber(0, (PFIBER_START_ROUTINE)updateInput, systemData);
 
     SYSTEM_INFO sysinfo;
@@ -895,7 +898,9 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 		// GetWindowLong(windowHandle, GWL_EXSTYLE) | WS_EX_LAYERED);
 	// SetLayeredWindowAttributes(windowHandle, 0, (255 * 70) / 100, LWA_ALPHA);
 	// SetLayeredWindowAttributes(windowHandle, RGB(255,255,255), 255, LWA_COLORKEY);
-
+	
+	SetFocus(windowHandle);
+	systemData->windowIsFocused = true;
 }
 
 void makeWindowTopmost(SystemData* sd) {
