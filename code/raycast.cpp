@@ -185,10 +185,6 @@ struct World {
 
 	DArray<Object> objects;
 
-	// Object* objects;
-	// int objectCount;
-	// int objectCountMax;
-
 	float ambientRatio;
 	Vec3 ambientColor;
 
@@ -196,8 +192,13 @@ struct World {
 
 	Vec3 globalLightDir;
 	Vec3 globalLightColor;
-};
 
+	float focalPointDistance;
+	float apertureSize;
+
+	bool lockFocalPoint;
+	Vec3 focalPoint;
+};
 
 
 enum {
@@ -212,6 +213,8 @@ struct RaytraceSettings {
 	int sampleCountGrid;
 	int sampleGridWidth;
 	int rayBouncesMax;
+
+	int sampleCountWanted;
 
 	// Precalc.
 
@@ -260,6 +263,13 @@ struct ProcessPixelsData {
 
 	bool stopProcessing;
 };
+
+
+// void cameraToWorldSpace(Vec3 camTopLeft, Camera* cam, Vec2i texDim, Vec2i pixelPos) {
+// 	Vec3 rayPos = settings.camTopLeft;
+// 	rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
+// 	rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
+// }
 
 struct TimeStamp {
 	i64 cycleStart;
@@ -327,6 +337,8 @@ void processPixelsThreaded(void* data) {
 		if(x < 0 || x >= texDim.w || 
 		   y < 0 || y >= texDim.h) continue;
 
+		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
+
 		if(settings.sampleMode == SAMPLE_MODE_BLUE) {
 			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
 			int offset = settings.sampleGridOffsets[index];
@@ -337,7 +349,6 @@ void processPixelsThreaded(void* data) {
 		{
 			// IACA_VC64_START;
 
-			Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
 			Vec3 pixelColor = black;
 
 			for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
@@ -348,9 +359,23 @@ void processPixelsThreaded(void* data) {
 				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
 
 				Vec3 rayDir = normVec3(rayPos - camera.pos);
+				
+				if(world.apertureSize > 0.0f) {
+					Vec3 focalPoint;
+
+					Vec3 focalPlanePos = camera.pos + camera.ovecs.dir * world.focalPointDistance;
+					float distance = linePlaneIntersection(rayPos, rayDir, focalPlanePos, -camera.ovecs.dir, &focalPoint);
+
+					Vec2 randomOffset = vec2(randomFloatPCG(0.0f, world.apertureSize, 0.01f), 
+					                         randomFloatPCG(0.0f, world.apertureSize, 0.01f));
+
+					rayPos += camera.ovecs.right * randomOffset.x;
+					rayPos += -camera.ovecs.up * randomOffset.y;
+
+					rayDir = normVec3(focalPoint - rayPos);
+				}
 
 				Vec3 sampleColor = black;
-
 				Vec3 attenuation = white;
 				int lastObjectIndex = -1;
 				for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
@@ -514,7 +539,7 @@ void processPixelsThreaded(void* data) {
 }
 
 // @Duplication with processPixels.
-int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects) {
+int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects, Vec3* intersection = 0) {
 
 	int objectIndex = -1;
 
@@ -542,12 +567,14 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects) {
 						// }
 
 						int face;
-						Vec3 intersection;
-						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &intersection, &face);
+						Vec3 inters;
+						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &inters, &face);
 						if(hit) {
-							reflectionPos = intersection;
+							reflectionPos = inters;
 							reflectionNormal = boxRaycastNormals[face];
-							distance = lenVec3(intersection - rayPos);
+							distance = lenVec3(inters - rayPos);
+
+							if(intersection) *intersection = inters;
 						}
 
 					} break;
@@ -556,6 +583,7 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects) {
 						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos);
 						if(distance > 0) {
 							reflectionNormal = normVec3(reflectionPos - obj->pos);
+							if(intersection) *intersection = rayPos + rayDir * distance;
 						}
 					} break;
 				}
@@ -584,6 +612,8 @@ void getDefaultScene(World* world) {
 	cam->dim.w = 10;
 	cam->farDist = 10000;
 
+	world->focalPointDistance = 30.0f;
+	world->apertureSize = 1;
 
 	world->defaultEmitColor = vec3(1,1,1);
 	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
@@ -781,6 +811,11 @@ struct EntityUI {
 
 	Object temp;
 	bool changedGeomType;
+	bool mouseOverScene;
+
+	//
+
+	bool setFocalDistance;
 };
 
 bool keyPressed(NewGui* gui, Input* input, int keycode) {

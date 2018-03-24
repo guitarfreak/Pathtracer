@@ -757,14 +757,15 @@ void newGuiSetActive(NewGui* gui, int id, bool input, int focus = 0) {
 }
 
 bool newGuiFocusCanBeHot(NewGui* gui, int focus) {
-	Input* input = gui->input;
+	// Input* input = gui->input;
+	// bool result = true;
+	// switch(focus) {
+	// 	case Gui_Focus_MLeft:   if(input->mouseButtonDown[0]) result = false; break;
+	// 	case Gui_Focus_MRight:  if(input->mouseButtonDown[1]) result = false; break;
+	// 	case Gui_Focus_MMiddle: if(input->mouseButtonDown[2]) result = false; break;
+	// }
+	
 	bool result = true;
-	switch(focus) {
-		case Gui_Focus_MLeft:   if(input->mouseButtonDown[0]) result = false; break;
-		case Gui_Focus_MRight:  if(input->mouseButtonDown[1]) result = false; break;
-		case Gui_Focus_MMiddle: if(input->mouseButtonDown[2]) result = false; break;
-	}
-
 	return result;
 }
 
@@ -1183,6 +1184,7 @@ int newGuiGoTextEdit(NewGui* gui, Rect textRect, float z, void* var, int mode, T
 	}
 
 	if(event == 1 || event == 2) {
+		if(event == 1) editVars->cursorTimer = 0;
 		textEditBox(gui->editText, maxTextSize, editSettings.textBoxSettings.textSettings.font, textRect, input, vec2i(-1,1), editSettings, editVars);
 	}
 
@@ -1284,8 +1286,14 @@ void newGuiRectsFromWidths(Rect r, float* widths, int size, Rect* rects, float o
 
 bool getRectScissor(Rect* scissor, Rect r) {
 	*scissor = rectIntersect(*scissor, r);
-	if(rectEmpty(*scissor)) return false;
+	if(rectEmpty(*scissor) || 
+	   rectW(*scissor) == 0 || rectH(*scissor) == 0) return false;
 	return true;
+}
+
+bool testRectScissor(Rect scissor, Rect r) {
+	bool result = getRectScissor(&scissor, r);
+	return result;
 }
 
 Rect getRectScissor(Rect scissor, Rect r) {
@@ -1309,12 +1317,7 @@ void drawText(Rect r, char* text, Vec2i align, Rect scissor, TextSettings settin
 void drawBox(Rect r, Rect scissor, BoxSettings settings, bool round = true) {
 	scissorTestScreen(scissor);
 
-	if(round) {
-		r.left = roundFloat(r.left);
-		r.right = roundFloat(r.right);
-		r.top = roundFloat(r.top);
-		r.bottom = roundFloat(r.bottom);
-	}
+	if(round) r = rectRound(r);
 
 	bool hasBorder = settings.borderColor.a != 0 ? true : false;
 	int borderSize = 1;
@@ -1431,6 +1434,7 @@ enum {
 };
 
 void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSettings settings) {
+	scissor = getRectScissor(br, scissor);
 	scissorTestScreen(scissor);
 
 	BoxSettings* boSettings = &settings.textBoxSettings.boxSettings;
@@ -1445,11 +1449,13 @@ void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSett
 		drawLine(rectL(br), rectR(br), settings.lineColor);
 	}
 
-
 	BoxSettings sliderBoxSettings = boxSettings(settings.color, settings.rounding, settings.borderColor);
+	int border = 1;
+	scissor = rectExpand(scissor, vec2(-border*2));
+
 	drawBox(sr, scissor, sliderBoxSettings);
 
-	scissorTestScreen(rectExpand(getRectScissor(br, scissor), vec2(-2,-2)));
+	scissorTestScreen(scissor);
 
 	char* text = type == SLIDER_TYPE_FLOAT ? fillString("%f", *((float*)val)) : fillString("%i", *((int*)val)) ;
 
@@ -1545,6 +1551,8 @@ void newGuiQuickTextBox(NewGui* gui, Rect r, char* t, TextBoxSettings* settings 
 }
 
 bool _newGuiQuickButton(NewGui* gui, Rect r, char* text, Vec2i align, TextBoxSettings* settings, bool highlightOnActive) {
+	r = rectRound(r);
+
 	Rect intersection = getRectScissor(gui->scissor, r);
 	bool active = newGuiGoButtonAction(gui, intersection, gui->zLevel);
 	if(rectEmpty(intersection)) return false;
@@ -1740,8 +1748,8 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 
 	Rect slider = newGuiCalcSlider(floatVal, r, sliderSize, floatMin, floatMax, true);
 
-	int event = newGuiGoDragAction(gui, slider, gui->zLevel);
-	if(rectEmpty(getRectScissor(gui->scissor, r))) return false;
+	int event = newGuiGoDragAction(gui, getRectScissor(r, slider), gui->zLevel);
+	if(!testRectScissor(gui->scissor, r)) return false;
 
 	if(event == 1 && set.useDefaultValue && gui->input->doubleClick) {
 		newGuiSetNotActive(gui, newGuiCurrentId(gui));

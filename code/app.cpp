@@ -22,6 +22,9 @@
 	- Do stencil outline selection instead of polygon grid selection.
 	- Float not good enough.
 	- App hangs when calculating blueNoise samples.
+	- Disable mouse click when not in opengl window.
+
+	- Check out setTimer for pitfalls.
 
 	Bugs:
 	- Windows key slow often.
@@ -30,7 +33,6 @@
 	- If framerate to low we generate too many timer messages and the mouse locks up.
 	- If multiple objects selected and hold ctrl+v and let mouse go it doesn't set inactive.
 	- Original window titlebar shows through for one frame sometimes when switching focus between apps.
-	- Maximizing mode in Aero is distorted on right side.
 
 =================================================================================
 */
@@ -147,6 +149,7 @@ struct AppData {
 	NewGui gui;
 	float panelHeightLeft;
 	float panelHeightRight;
+	float oldPanelHeightRight;
 
 	float panelWidthLeft;
 	float panelWidthRight;
@@ -520,7 +523,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->settings.texDim = vec2i(768, 432);
 
 		ad->settings.sampleMode = SAMPLE_MODE_BLUE;
-		ad->settings.sampleCountGrid = 10;
+		ad->settings.sampleCountWanted = 100;
 		ad->settings.sampleGridWidth = 10;
 		ad->settings.rayBouncesMax = 10;
 
@@ -703,6 +706,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
 	if(!ws->fullscreen)
 	{
+		if(systemData->maximized) {
+			int stop = 234;
+		}
+
 		// @DrawFrame
 		{
 			scissorState(false);
@@ -727,6 +734,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		sd->normalTitleHeight = sd->fontHeight*1.4f;
 		sd->normalBorderSize = 5;
 		sd->normalVisualBorderSize = 1;
+
 		sd->buttonMargin = 3;
 		sd->cornerGrabSize = 20;
 
@@ -942,7 +950,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 
-		if(keyPressed(gui, input, KEYCODE_SPACE) && !ad->activeProcessing) {
+		if(keyPressed(gui, input, KEYCODE_SPACE) && ad->drawSceneWired) {
 			ad->startProcessing = true;
 		}
 
@@ -969,6 +977,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				int mode = settings->sampleMode;
 
 				Vec2* blueNoiseSamples;
+
+				settings->sampleCountGrid = sqrt(settings->sampleCountWanted);
 
 				int sampleCount;
 				if(mode == SAMPLE_MODE_GRID) {
@@ -1209,6 +1219,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Camera* cam = &ad->world.camera;
 
 		eui->guiHasFocus = guiHotMouseClick(gui);
+		if(!eui->mouseOverScene) eui->guiHasFocus = true;
 
 		// @Dialogs.
 		{
@@ -1266,6 +1277,20 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		if(ad->drawSceneWired) {
+
+			// if(world->lockFocalPoint) {
+			// 	float distance = linePlaneIntersection(intersection, -cam->ovecs.dir, cam->pos, cam->ovecs.dir);
+
+			// 	world->focalPoint = intersection;
+			// 	world->focalPointDistance = distance;
+			// }
+
+			if(pointInRectEx(input->mousePosNegative, ad->textureScreenRectFitted)) {
+				eui->mouseOverScene = true;
+			} else {
+				gui->contenderId[Gui_Focus_MLeft] = -1;
+				eui->mouseOverScene = false;
+			}
 
 			if(mouseWheel(gui, input)) { 
 				if(eui->selectionState != ENTITYUI_ACTIVE) {
@@ -2114,19 +2139,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 								if(centerIndex) {
 									eui->axis = cam->pos - pos;
 									eui->centerDistanceToCam = lenVec3(vectorToCam(pos, cam));
-									eui->selectionState = ENTITYUI_HOT;
 									eui->translateMode = TRANSLATE_MODE_CENTER;
 								} else if(planeIndex) {
 									eui->axis = axis[planeIndex-1];
 									eui->axisIndex = planeIndex;
-									eui->selectionState = ENTITYUI_HOT;
 									eui->translateMode = TRANSLATE_MODE_PLANE;
 								} else if(axisIndex) {
 									eui->axis = axis[axisIndex-1];
 									eui->axisIndex = axisIndex;
-									eui->selectionState = ENTITYUI_HOT;
 									eui->translateMode = TRANSLATE_MODE_AXIS;
 								}
+
+								eui->selectionState = ENTITYUI_HOT;
 								for(int i = 0; i < 3; i++) {
 									eui->axes[i] = axis[i];
 								}
@@ -2212,6 +2236,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						// Paint over hot/active ring.
 						if(axisIndex && (!eui->guiHasFocus || eui->selectionState == ENTITYUI_ACTIVE)) {
+
 							glDisable(GL_DEPTH_TEST);
 	
 							int i = axisIndex-1;
@@ -2416,7 +2441,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			BoxSettings cbs = boxSettings(c.edit, buttonRounding, c.outline);
 			gui->checkBoxSettings = checkBoxSettings(cbs, c.button, 0.5f);
 		}
-
 
 		// @Menu.
 		{
@@ -2717,9 +2741,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			newGuiQuickBox(gui, rectPanelLeft);
 
 			{
-				newGuiScissorPush(gui, rectExpand(rectPanelLeft, vec2(-2)));
+				// newGuiScissorPush(gui, rectExpand(rectPanelLeft, vec2(-2)));
 
 				Rect pri = rectExpand(rectPanelLeft, -vec2(panelBorder*2));
+				newGuiScissorPush(gui, rectExpand(pri, vec2(0)));
 
 				Font* font = gui->textSettings.font;
 
@@ -2754,7 +2779,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickTextBox(gui, r, "<b>Render Settings<b>", vec2i(0,0), &headerSettings);
 
 					{
-						char* labels[] = {"Texture dim", "Sample mode", "Sample grid dim", "Max ray bounces"};
+						char* labels[] = {"Texture dim", "Sample mode", "Sample count", "Max ray bounces"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2778,7 +2803,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountGrid);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->sampleCountWanted);
 
 						settings->sampleCountGrid = clampMinInt(settings->sampleCountGrid, 1);
 
@@ -2808,7 +2833,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Cam pos", "Cam rot", "Cam fov", "Grid size", "Emit color", "Light dir", "Light color"};
+						char* labels[] = {"Cam pos", "Cam rot", "Cam fov", "Grid size", "Emit color", "Light dir", "Light color", "Focal distance", "Aperture size"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2857,10 +2882,81 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.r, 0, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.g, 0, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.b, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.r, 0, 10);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.g, 0, 10);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.b, 0, 10);
 
+
+						{
+							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+							qr = quickRow(r, pad.x, labelsMaxWidth, 0, rectH(r), rectH(r));
+							newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+							newGuiQuickTextEdit(gui, quickRowNext(&qr), &world->focalPointDistance);
+
+							Vec4 bc = ad->colors.background;
+							Vec4 c = vec4(gui->textSettings.color.rgb, 0.3f);
+							Vec4 cActive = vec4(c.rgb, 0.8f);
+							float margin = rectH(r)*0.2f;
+							{
+								Rect pr = quickRowNext(&qr);
+								if(newGuiGoButtonAction(gui, pr, gui->zLevel)) {
+									world->lockFocalPoint = !world->lockFocalPoint;
+								}
+								Texture* tex = getTexture("lock.png");
+								drawRect(pr, bc + newGuiHotActiveColorMod(newGuiIsHot(gui), false));
+
+								Vec4 col = !world->lockFocalPoint ? c : cActive;
+								drawRect(rectExpand(pr, vec2(-margin)), col, rect(0,0,1,1), tex->id);
+							}
+
+							bool updateFocalDistance = false;
+							Rect r = quickRowNext(&qr);
+							int event = newGuiGoDragAction(gui, r, gui->zLevel, Gui_Focus_MLeft);
+
+							{
+								drawRect(r, bc + newGuiHotActiveColorMod(newGuiIsHot(gui) && event < 1, false));
+
+								Rect pr = rectExpand(r, vec2(-margin));
+
+								float off = (rectH(pr)/2) * 0.3f;
+								float w = rectH(pr)*0.1f;
+
+								int index = 0;
+								Rect lines[] = {
+									rectSetH(rect(rectL(pr), rectCen(pr)+vec2(-off,0)), w),
+									rectSetH(rect(rectCen(pr)+vec2(off,0), rectR(pr)), w),
+									rectSetW(rect(rectB(pr), rectCen(pr)+vec2(0,-off)), w),
+									rectSetW(rect(rectCen(pr)+vec2(0,off), rectT(pr)), w),
+								};
+								for(int i = 0; i < arrayCount(lines); i++) 
+									drawRect(lines[index++], cActive);
+							}
+
+							if(event >= 1) {
+								newGuiSetCursor(gui, IDC_CROSS);
+
+								Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
+
+								Vec3 intersection;
+								int objectIndex = castRay(cam->pos, rayDir, ad->world.objects, &intersection);
+								if(objectIndex != -1) {
+									world->focalPoint = intersection;
+									updateFocalDistance = true;
+								}
+							}
+
+							// Update focal distance.
+							if(updateFocalDistance || world->lockFocalPoint) {
+								float distance = linePlaneIntersection(world->focalPoint, -cam->ovecs.dir, cam->pos, cam->ovecs.dir);
+
+								world->focalPointDistance = distance;
+							}
+						}
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->apertureSize, 0, 5);
 
 						{
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2953,7 +3049,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float eh = elementHeight;
 				float ew = elementWidth;
 				Vec2 pad = padding;
-
 
 				{
 					TextSettings headerTextSettings = textSettings(gui->textSettings.font, gui->textSettings.color, TEXTSHADOW_MODE_SHADOW, 1.0f, vec4(0, 1));
@@ -3221,6 +3316,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				}
 
+				ad->oldPanelHeightRight = ad->panelHeightRight;
 				ad->panelHeightRight = rectPanelRight.top - p.y - pad.y + panelBorder;
 
 				newGuiScissorPop(gui);
@@ -3228,7 +3324,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		// @ColorPicker.
-		if(entityPanelActive && ad->drawSceneWired)
+		if(entityPanelActive && ad->oldPanelHeightRight != 0 && ad->drawSceneWired)
 		{
 			Rect rEntities = ad->panelRightRect;
 

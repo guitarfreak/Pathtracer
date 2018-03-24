@@ -257,6 +257,9 @@ struct SystemData {
 	bool mouseInClient;
 
 	int ncTestRegion;
+
+	// Duplication with WindowSettings.
+	int styleBorderSize;
 };
 
 void systemDataInit(SystemData* sd, HINSTANCE instance) {
@@ -396,11 +399,18 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
             PostMessage(window, message, wParam, lParam);
         } break;
 
+        #ifdef ENABLE_CUSTOM_WINDOW_FRAME
+        case WM_NCACTIVATE: {
+        	sd->vsyncTempTurnOff = true;
+        	SwitchToFiber(sd->mainFiber);
+        } break;
+        #endif
+
         case WM_SIZE: {
         	if(wParam == SIZE_MAXIMIZED) sd->maximized = true;
         	else if(wParam == SIZE_RESTORED) sd->maximized = false;
 
-        	sd->vsyncTempTurnOff = true;
+        	// sd->vsyncTempTurnOff = true;
         	sd->input->resize = true;
         } break;
 
@@ -410,6 +420,11 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
 
         	int x = GET_X_LPARAM(lParam);
         	int y = GET_Y_LPARAM(lParam);
+
+        	if(sd->maximized) {
+        		x -= sd->styleBorderSize;
+        		y -= sd->styleBorderSize;
+        	}
 
         	RECT wr; 
         	GetWindowRect(window, &wr);
@@ -457,9 +472,6 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	}
 
         	Vec2 off = vec2(0,0);
-        	if(sd->maximized) {
-        		off.y = GetSystemMetrics(SM_CXSIZEFRAME);
-        	}
 
         	Vec2 p = vec2(x,y);
         	if(pointInRect(p+off, sd->rMinimize)) return sd->ncTestRegion = HTMINBUTTON;
@@ -478,6 +490,9 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
 	        hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
 	        // Paint into this DC 
 	        ReleaseDC(window, hdc);
+
+	        sd->vsyncTempTurnOff = true;
+	        SwitchToFiber(sd->mainFiber);
 
         	return 0;
         } break;
@@ -729,7 +744,7 @@ void CALLBACK updateInput(SystemData* sd) {
 	    	float xOff = -sd->visualBorderSize;
 	    	float yOff = sd->visualBorderSize+sd->titleHeight;
 
-	    	int frameSize = GetSystemMetrics(SM_CXSIZEFRAME);
+	    	int frameSize = sd->styleBorderSize;
 		    if(sd->maximized) {
 		    	xOff -= frameSize;
 		    	yOff += frameSize;
@@ -1029,12 +1044,26 @@ DWORD getWindowStyle(HWND hwnd) {
 }
 
 void updateResolution(HWND windowHandle, SystemData* sd, WindowSettings* ws) {
-	getWindowProperties(windowHandle, &ws->currentRes.x, &ws->currentRes.y,0,0,0,0);
+	getWindowProperties(windowHandle, &ws->currentRes.x, &ws->currentRes.y, 0,0,0,0);
 
 	#ifdef ENABLE_CUSTOM_WINDOW_FRAME
 	if(sd->maximized) {
-		ws->currentRes.w -= ws->styleBorderSize*2;
-		ws->currentRes.h -= ws->styleBorderSize*2;
+		// Windows returns us the wrong client resolution so we have to do some workaround.
+
+		HMONITOR monitorHandle = MonitorFromWindow(windowHandle, MONITOR_DEFAULTTONEAREST);
+		MONITORINFO monitorInfo;
+		monitorInfo.cbSize = sizeof(MONITORINFO);
+		bool result = GetMonitorInfo(monitorHandle, &monitorInfo);
+
+		Vec2i windowsClientRes = ws->currentRes;
+
+		RECT rWork = monitorInfo.rcWork;
+		Vec2i workRes = vec2i(rWork.right - rWork.left, rWork.bottom - rWork.top);
+
+		ws->styleBorderSize = (windowsClientRes.w - workRes.w) / 2;
+		sd->styleBorderSize = ws->styleBorderSize;
+
+		ws->currentRes = workRes;
 	}
 	#endif ENABLE_CUSTOM_WINDOW_FRAME
 
