@@ -230,8 +230,8 @@ struct World {
 
 	DArray<Object> objects;
 
-	float ambientRatio;
-	Vec3 ambientColor;
+	// float ambientRatio;
+	// Vec3 ambientColor;
 
 	Vec3 defaultEmitColor;
 
@@ -438,9 +438,9 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 
 		// Color calculation.
 
-		// pixelColor += attenuation * m->emitColor;
 		sampleColor += attenuation * m->emitColor;
-		attenuation = attenuation * obj->color;
+		attenuation = attenuation * colorSRGB(obj->color);
+		// attenuation = attenuation * obj->color;
 	
 		if(attenuation == vec3(0,0,0)) return sampleColor;
 
@@ -458,8 +458,6 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 
 			Vec3 reflectionColor = vec3(0,0,0);
 			Vec3 refractionColor = vec3(0,0,0);
-
-			// if(ratio < 0.05f) ratio = 0;
 
 			if(ratio != 0.0f) {
 				Vec3 objectReflectionDir = reflectVector(rayDir, objectReflectionNormal);
@@ -625,245 +623,6 @@ void processPixelsThreaded(void* data) {
 	}
 }
 
-#if 0
-void processPixelsThreaded(void* data) {
-	TimeStamp pixelTimings[5] = {};
-
-	ProcessPixelsData* d = (ProcessPixelsData*)data;
-
-	World world = *d->world;
-	RaytraceSettings settings = *d->settings;	
-	Vec3* buffer = d->buffer;
-
-	int sampleCount = settings.sampleCount;	
-	Vec2* samples = settings.samples;
-	Camera camera = world.camera;
-
-	Vec3 black = vec3(0.0f);
-	Vec3 white = vec3(1.0f);
-
-	Vec3 globalLightDir = -normVec3(world.globalLightDir);
-
-	Vec2i texDim = settings.texDim;
-	int pixelCount = d->pixelDim.x * d->pixelDim.y;
-	for(int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
-		startTimer(0);
-
-		if(d->stopProcessing) {
-			d->stopProcessing = false;
-			break;
-		}
-		
-		int x = pixelIndex % d->pixelDim.w;
-		int y = pixelIndex / d->pixelDim.w;
-		x += d->pixelPos.x;
-		y += d->pixelPos.y;
-
-		if(x < 0 || x >= texDim.w || 
-		   y < 0 || y >= texDim.h) continue;
-
-		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
-
-		if(settings.sampleMode == SAMPLE_MODE_BLUE) {
-			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
-			int offset = settings.sampleGridOffsets[index];
-			samples = settings.samples + offset;
-			sampleCount = settings.sampleGridOffsets[index+1] - offset;
-		}
-
-		{
-			// IACA_VC64_START;
-
-			Vec3 pixelColor = black;
-
-			for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-				startTimer(1);
-
-				Vec3 rayPos = settings.camTopLeft;
-				rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
-				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
-
-				Vec3 rayDir = normVec3(rayPos - camera.pos);
-				
-				if(world.apertureSize > 0.0f) {
-					Vec3 focalPoint;
-
-					Vec3 focalPlanePos = camera.pos + camera.ovecs.dir * world.focalPointDistance;
-					float distance = linePlaneIntersection(rayPos, rayDir, focalPlanePos, -camera.ovecs.dir, &focalPoint);
-
-					Vec2 randomOffset = vec2(randomFloatPCG(0.0f, world.apertureSize, 0.01f), 
-					                         randomFloatPCG(0.0f, world.apertureSize, 0.01f));
-
-					rayPos += camera.ovecs.right * randomOffset.x;
-					rayPos += -camera.ovecs.up * randomOffset.y;
-
-					rayDir = normVec3(focalPoint - rayPos);
-				}
-
-				Vec3 sampleColor = black;
-				Vec3 attenuation = white;
-				int lastObjectIndex = -1;
-				for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
-					startTimer(2);
-
-					// Find object with closest intersection.
-
-					Vec3 objectReflectionPos, objectReflectionDir, objectReflectionNormal;
-					int objectIndex = -1;
-					{
-						startTimer(3);
-
-						float minDistance = FLT_MAX;
-						for(int i = 0; i < world.objects.count; i++) {
-							if(lastObjectIndex == i) continue;
-
-							Object* obj = world.objects + i;
-							Geometry* g = &obj->geometry;
-
-							// Check collision with bounding sphere.
-							bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
-							if(possibleIntersection) {
-
-								Vec3 reflectionPos, reflectionNormal;
-								float distance = -1;
-								{
-									switch(g->type) {
-										case GEOM_TYPE_BOX: {
-
-											// Check for rotation.
-
-											if(obj->rot == quat()) {
-												int face;
-												bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, obj->dim), &distance, &face);
-												if(hit) {
-													reflectionPos = rayPos + rayDir*distance;
-													reflectionNormal = boxRaycastNormals[face];
-												}
-											} else {
-												int face;
-												Vec3 intersection;
-												bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &intersection, &face);
-												if(hit) {
-													reflectionPos = intersection;
-													reflectionNormal = boxRaycastNormals[face];
-													distance = lenVec3(intersection - rayPos);
-												}
-											}
-										} break;
-
-										case GEOM_TYPE_SPHERE: {
-											distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos);
-											if(distance > 0) {
-												reflectionNormal = normVec3(reflectionPos - obj->pos);
-											}
-										} break;
-									}
-								}
-
-								if(distance > 0 && distance < minDistance) {
-									minDistance = distance;
-									objectIndex = i;
-
-									objectReflectionPos = reflectionPos;
-									objectReflectionNormal = reflectionNormal;
-								}
-							}
-						}
-
-						endTimer(3);
-					}
-
-
-					if(objectIndex != -1) {
-						startTimer(4);
-
-						Object* obj = world.objects + objectIndex;
-						// Geometry* g = &world.objects[objectIndex].geometry;
-						Material* m = &obj->material;
-						lastObjectIndex = objectIndex;
-
-						// Color calculation.
-
-						// pixelColor += attenuation * m->emitColor;
-						sampleColor += attenuation * m->emitColor;
-						attenuation = attenuation * obj->color;
-			
-						if(attenuation == black) {
-							endTimer(4);
-							break;
-						}
-
-						// Calculate new direction.
-
-						int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
-						Vec3 randomDir = settings.randomDirections[dirIndex];
-
-						// Reflect.
-						float d = dot(randomDir, objectReflectionNormal);
-						if(d <= 0) randomDir = reflectVector(randomDir, objectReflectionNormal);
-
-						Vec3 objectReflectionDir = reflectVector(rayDir, objectReflectionNormal);
-
-						randomDir = lerp(m->reflectionMod, randomDir, objectReflectionDir);
-
-						rayPos = objectReflectionPos;
-						rayDir = randomDir;
-
-
-						endTimer(4);
-					} else {
-
-						if(rayIndex == 0) {
-							// pixelColor += world.defaultEmitColor; // Sky hit.
-							sampleColor += world.defaultEmitColor; // Sky hit.
-						} else {
-							float lightDot = dot(rayDir, globalLightDir);
-							lightDot = clampMin(lightDot, 0);
-							// lightDot = dotUnitToPercent(lightDot);
-							Vec3 light = world.globalLightColor * lightDot;
-
-							// pixelColor += attenuation * (world.defaultEmitColor + light);
-							sampleColor += attenuation * (world.defaultEmitColor + light);
-						}
-
-						break;
-					}
-
-
-
-					endTimer(2);
-				}
-
-				// Sample end.
-
-				// sampleColor = clampMax(sampleColor, white);
-				pixelColor += sampleColor;
-
-				endTimer(1);
-			}
-
-			// Pixel end.
-
-			pixelColor = pixelColor/(float)sampleCount;
-			pixelColor = clampMax(pixelColor, white);
-
-			buffer[y*texDim.w + x] = pixelColor;
-
-			// IACA_VC64_END;
-		}
-
-		endTimer(0);
-	}
-
-	if(printRaytraceTimings) {
-		for(int i = 0; i < arrayCount(pixelTimings); i++) {
-			processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
-			processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
-		}
-	}
-}
-#endif
-
 // @Duplication with processPixels.
 int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects, Vec3* intersection = 0) {
 
@@ -885,13 +644,6 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects, Vec3* intersection
 			{
 				switch(g->type) {
 					case GEOM_TYPE_BOX: {
-						// int face;
-						// bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, obj->dim), &distance, &face);
-						// if(hit) {
-						// 	reflectionPos = rayPos + rayDir*distance;
-						// 	reflectionNormal = boxRaycastNormals[face];
-						// }
-
 						int face;
 						Vec3 inters;
 						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &inters, &face);
@@ -902,7 +654,6 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects, Vec3* intersection
 
 							if(intersection) *intersection = inters;
 						}
-
 					} break;
 
 					case GEOM_TYPE_SPHERE: {
@@ -940,21 +691,18 @@ void getDefaultScene(World* world) {
 
 	world->focalPoint = vec3(0,0,zLevel);
 	// world->focalPointDistance = 30.0f;
-	world->apertureSize = 1;
-	world->lockFocalPoint = true;
+	world->apertureSize = 0;
+	world->lockFocalPoint = false;
 
 	world->defaultEmitColor = vec3(1,1,1);
-	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
+	world->globalLightDir = normVec3(vec3(0,0,1));
 	world->globalLightColor = vec3(1,1,1);
-
-	world->ambientRatio = 0.2f;
-	world->ambientColor = vec3(1.0f);
 
 	world->objects.init();
 
 	Material materials[10] = {};
 	materials[0].emitColor = vec3(0,0,0);
-	materials[0].reflectionMod = 0.7f;
+	materials[0].reflectionMod = 0.5f;
 	materials[0].refractiveIndex = 1.0f;
 
 	materials[1].emitColor = vec3(0,0,0);
@@ -968,7 +716,7 @@ void getDefaultScene(World* world) {
 	obj = {};
 	obj.pos = vec3(0,0,0.1f);
 	obj.rot = quat();
-	obj.color = vec3(0.4f);
+	obj.color = vec3(0.5f);
 	obj.material = materials[0];
 	obj.geometry.type = GEOM_TYPE_BOX;
 	obj.dim = vec3(50, 50, 0.01f);
@@ -979,7 +727,7 @@ void getDefaultScene(World* world) {
 	obj = {};
 	obj.pos = vec3(0,0,zLevel);
 	obj.rot = quat();
-	obj.color = vec3(0.5f,0.5f,0.5f);
+	obj.color = vec3(0.7f,0.7f,0.7f);
 	obj.material = materials[1];
 	obj.dim = vec3(8.0f);
 	obj.geometry.type = GEOM_TYPE_SPHERE;
@@ -1528,7 +1276,7 @@ Object defaultObject() {
 	Object obj = {};
 	obj.pos = vec3(0,0,0);
 	obj.rot = quat();
-	obj.dim = vec3(3);
+	obj.dim = vec3(5);
 	obj.color = vec3(0.5f,0.5f,0.5f);
 	obj.material = m;
 	obj.geometry.type = GEOM_TYPE_SPHERE;

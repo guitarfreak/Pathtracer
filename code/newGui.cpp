@@ -1482,7 +1482,7 @@ void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSett
 				Vec2 brRight = rectR(br) - vec2(off,0);
 				Vec2 brLeft = rectL(br) + vec2(off,0);
 
-				if(rectCen(sr).x < rectCen(br).x) {
+				if(rectCen(sr).x+0.1f < rectCen(br).x) {
 					Vec2 nextToSlider = rectR(sr) + vec2(off,0);
 					// Clamp.
 					if(brRight.x - nextToSlider.x < tDim.w) {

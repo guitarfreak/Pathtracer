@@ -2080,6 +2080,13 @@ inline Vec3 operator/(Vec3 a, float b) {
 	return a;
 }
 
+inline Vec3 operator/(float b, Vec3 a) {
+	a.x = b / a.x;
+	a.y = b / a.y;
+	a.z = b / a.z;
+	return a;
+}
+
 inline Vec3 operator/(Vec3 a, Vec3 b) {
 	a.x /= b.x;
 	a.y /= b.y;
@@ -2620,7 +2627,7 @@ inline void rowToColumn(Mat4* m) {
 	}
 }
 
-inline void  scaleMatrix(Mat4* m, Vec3 a) {
+inline void scaleMatrix(Mat4* m, Vec3 a) {
 	*m = {};
 	m->x1 = a.x;
 	m->y2 = a.y;
@@ -3518,6 +3525,19 @@ inline float gammaToLinear(float a) {
 	return powf(a, 2.2f);
 }
 
+Vec3 gammaToLinear(Vec3 c) {
+	c.x = powf(c.r, 2.2f);
+	c.y = powf(c.g, 2.2f);
+	c.z = powf(c.b, 2.2f);
+	return c;
+}
+Vec3 linearToGamma(Vec3 c) {
+	c.x = powf(c.r, 1/2.2f);
+	c.y = powf(c.g, 1/2.2f);
+	c.z = powf(c.b, 1/2.2f);
+	return c;
+}
+
 // These should be called srgbToLinearSpace or something.
 // Also these are regular gamma and not srgb.
 Vec4 colorSRGB(Vec4 color) {
@@ -3534,6 +3554,22 @@ Vec3 colorSRGB(Vec3 color) {
 	color.y = powf(color.y, 2.2f);
 	color.z = powf(color.z, 2.2f);
 	return color;
+}
+
+// Taken from d3dx_dxgiformatconvert.inl.
+inline float srgbToFloat(float val) {
+    if( val < 0.04045f )
+        val /= 12.92f;
+    else
+        val = pow((val + 0.055f)/1.055f,2.4f);
+    return val;
+}
+inline float floatToSrgb(float val) { 
+    if( val < 0.0031308f )
+        val *= 12.92f;
+    else
+        val = 1.055f * pow(val,1.0f/2.4f) - 0.055f;
+    return val;
 }
 
 

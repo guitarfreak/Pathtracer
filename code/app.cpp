@@ -3,7 +3,7 @@
 
 	ToDo:
 	- Clean global light and multiple lights.
-	- Ellipses.
+	- Ellipsoids.
 
 	- More advanced lighting function.
 	- Have cam independent, mini window.
@@ -22,7 +22,7 @@
 	- App hangs when calculating blueNoise samples.
 
 	- Check out setTimer for pitfalls.
-
+	
 	Bugs:
 	- Windows key slow often.
 	- Memory leak? Flashing when drawing scene in opengl.
@@ -947,11 +947,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(!texture->isCreated || (texDim != texture->dim)) {
 				if(texDim != texture->dim) deleteTexture(texture);
 
-				initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
+				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_NEAREST, GL_CLAMP);
 				// initTexture(texture, -1, INTERNAL_TEXTURE_FORMAT, texDim, 3, GL_LINEAR, GL_CLAMP);
 
+				initTexture(texture, -1, GL_RGBA8, texDim, 3, GL_NEAREST, GL_CLAMP);
+
 				Texture* t = &ad->raycastTexture;
-				Vec3 black = vec3(0.2f);
 
 				// glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 			}
@@ -1209,9 +1210,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glEnable(GL_DEPTH_TEST);
 
 			if(!ad->drawSceneWired) {
-				glDepthMask(false);
+				glDisable(GL_DEPTH_TEST);
 				drawRect(ad->textureScreenRect, vec4(1,1,1,1), rect(0,0,1,1), ad->raycastTexture.id);
-				glDepthMask(true);
+				glEnable(GL_DEPTH_TEST);
 			}
 		}
 
@@ -1227,16 +1228,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		eui->guiHasFocus = guiHotMouseClick(gui);
 		if(!eui->mouseOverScene) eui->guiHasFocus = true;
-
-		// if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_N)) {
-		// 	newSceneCommand(world, ad->sceneFile, &ad->sceneHasFile, &ad->entityUI);
-		// }
-		// if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_O)) {
-		// 	openSceneCommand(&ad->dialogData);
-		// }
-		// if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_S)) {
-		// 	saveSceneCommand(world, ad->sceneFile, ad->sceneHasFile, &ad->dialogData);
-		// }
 
 		// @Dialogs.
 		{
@@ -1268,9 +1259,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						Vec3* floatBuffer = ad->buffer;
 						for(int i = 0; i < size; i++) {
-							intBuffer[i*3 + 0] = colorFloatToInt(floatBuffer[i].r);
-							intBuffer[i*3 + 1] = colorFloatToInt(floatBuffer[i].g);
-							intBuffer[i*3 + 2] = colorFloatToInt(floatBuffer[i].b);
+							Vec3 c = floatBuffer[i];
+							intBuffer[i*3 + 0] = colorFloatToInt(floatToSrgb(c.r));
+							intBuffer[i*3 + 1] = colorFloatToInt(floatToSrgb(c.g));
+							intBuffer[i*3 + 2] = colorFloatToInt(floatToSrgb(c.b));
 						}
 
 						stbi_write_png(ad->dialogData.filePath, texDim.w, texDim.h, 3, intBuffer, 0);
@@ -1294,13 +1286,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		if(ad->drawSceneWired) {
-
-			// if(world->lockFocalPoint) {
-			// 	float distance = linePlaneIntersection(intersection, -cam->ovecs.dir, cam->pos, cam->ovecs.dir);
-
-			// 	world->focalPoint = intersection;
-			// 	world->focalPointDistance = distance;
-			// }
 
 			if(pointInRectEx(input->mousePosNegative, ad->textureScreenRectFitted)) {
 				eui->mouseOverScene = true;
@@ -1743,22 +1728,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 		drawRect(rectCenDim(0,0,10000,10000), vec4(cc,1));
 		glDepthMask(true);
 
-			// GLfloat mat_specular[] = { 1.0, 1.0, 1.0, 1.0 };
-			// GLfloat mat_shininess[] = { 50.0 };
-			// // glClearColor (0.0, 0.0, 0.0, 0.0);
-			// glShadeModel (GL_SMOOTH);
-
-			// glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
-			// glMaterialfv(GL_FRONT, GL_SHININESS, mat_shininess);
-			// glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-
-			// glShadeModel(GL_FLAT);
-			glShadeModel(GL_SMOOTH);
-
-			glEnable(GL_LIGHTING);
-			glEnable(GL_LIGHT0);
-
-			glEnable(GL_NORMALIZE);
+		glShadeModel(GL_SMOOTH);
+		glEnable(GL_LIGHTING);
+		glEnable(GL_LIGHT0);
+		glEnable(GL_NORMALIZE);
 
 		glMatrixMode(GL_PROJECTION);
 		glPushMatrix();
@@ -1778,14 +1751,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 		Vec4 lp = vec4(world->globalLightDir, 0);
 		glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
 
-		Vec4 light = COLOR_SRGB(vec4(world->defaultEmitColor,1));
-		glLightfv(GL_LIGHT0, GL_AMBIENT, light.e);
+		Vec4 light;
+		
+		// light = vec4(world->defaultEmitColor,1);
+		// glLightfv(GL_LIGHT0, GL_AMBIENT, light.e);
 
-		light = COLOR_SRGB(vec4(world->globalLightColor,1));
+		light = vec4(world->globalLightColor,1);
 		glLightfv(GL_LIGHT0, GL_DIFFUSE, light.e);
 
-		light = COLOR_SRGB(vec4(world->globalLightColor,1));
-		glLightfv(GL_LIGHT0, GL_SPECULAR, light.e);
+		// light = vec4(world->globalLightColor,1);
+		// glLightfv(GL_LIGHT0, GL_SPECULAR, light.e);
 
 		glEnable(GL_DEPTH_TEST);
 		glBindTexture(GL_TEXTURE_2D, 0);
@@ -1815,13 +1790,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		{
-			// glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-			// glDisable(GL_CULL_FACE);
-
-			// Vec4 ambientColor = COLOR_SRGB(vec4(world->defaultEmitColor, 1));
-			// Vec4 ambientColor = COLOR_SRGB(vec4(vec3(1,0,0), 1));
-			// glMaterialfv(GL_FRONT, GL_AMBIENT, ambientColor.e);
-
 			glPushMatrix();
 			glLoadIdentity();
 
@@ -1831,21 +1799,24 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Geometry* g = &obj->geometry;
 				Material* m = &obj->material;
 
-				Vec4 color = COLOR_SRGB(vec4(vec3(0.2f), 1));
-				glMaterialfv(GL_FRONT, GL_AMBIENT, color.e);
+				Vec4 color;
+
+				// color = vec4(vec3(0.1f), 1);
+				// glMaterialfv(GL_FRONT, GL_AMBIENT, color.e);
+
+				// color = vec4(obj->color, 1);
+				// glMaterialfv(GL_FRONT, GL_DIFFUSE, color.e);
 
 				color = COLOR_SRGB(vec4(obj->color, 1));
-				glMaterialfv(GL_FRONT, GL_DIFFUSE, color.e);
+				glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, color.e);
 
-				color = COLOR_SRGB(vec4(m->emitColor, 1));
+				color = vec4(m->emitColor, 1);
 				glMaterialfv(GL_FRONT, GL_EMISSION, color.e);
 
 				float shininess = lerp(m->reflectionMod, 0,128);
 				glMaterialf(GL_FRONT, GL_SHININESS, shininess);
 
 
-				Vec4 c = COLOR_SRGB(vec4(obj->color, 1));
-				glColor4f(c.r, c.g, c.b, c.a);
 
 				Vec3 scale = vec3(1,1,1);
 				scale = obj->dim;
@@ -1908,7 +1879,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 					}
 
-					c = COLOR_SRGB(color);
+					Vec4 c = COLOR_SRGB(color);
 					glColor4f(c.r, c.g, c.b, c.a);
 
 					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -1936,131 +1907,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			glPopMatrix();
-
-			{
-				glDisable(GL_LIGHTING);
-
-				// float refractionIndex = 1.5f;
-
-					// Vec3 pos = vec3(0,0,30);
-					// float radius = 10;
-					// drawSphere(pos, radius, vec4(0.5f,1));
-					// Vec3 lp = pos + vec3(14,0,0);
-					// Vec3 ld = normVec3(pos - lp);
-					// ld.y = 0;
-					// ld.z = 0;
-					// lp.y += 7;
-					// lp += vec3(0,0,sin(ad->time*0.5f)*12);
-
-					// drawSphere(lp, 0.5f, vec4(0,1));
-
-					// Vec3 intersection, intersectionNormal;
-					// float distance = lineSphereIntersection(lp, ld, pos, radius, &intersection, &intersectionNormal);
-
-					// glDisable(GL_DEPTH_TEST);
-					// if(distance != -1) {
-					// 	drawLine(lp, intersection, vec4(1,0,0,1));
-					// 	Vec3 lp2 = intersection;
-					// 	ld = refract(ld, intersectionNormal, refractionIndex);
-
-					// 	distance = lineSphereIntersection(intersection, ld, pos, radius, &intersection, &intersectionNormal, true);
-
-					// 	if(distance != -1) {
-					// 		drawLine(lp2, intersection, vec4(0,1,0,1));
-					// 		Vec3 lp3 = intersection;
-
-					// 		ld = refract(ld, intersectionNormal, refractionIndex);
-
-
-					// 		drawLine(lp3, lp3 + ld*10, vec4(0,0,1,1));
-
-					// 		if(distance != -1) {
-					// 			Vec3 dir = vec3(1,0,0);
-					// 		}
-					// 	}
-
-					// 	// drawLine(lp, intersection, vec4(1,0,0,1));
-					// }
-					// glEnable(GL_DEPTH_TEST);
-
-
-
-				#if 0
-				glDisable(GL_DEPTH_TEST);
-
-				Object* obj = &world->objects.at(0);
-
-				float refractionIndex = 1.2f;
-
-				Vec3 pos = obj->pos;
-				float radius = obj->dim.x/2.0f;
-				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-				// drawBox(pos, vec3(radius*2), vec4(0.5f,1));
-				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-				Vec3 lp = vec3(0,0,30) + vec3(14,0,-9);
-				Vec3 ld = normVec3(vec3(-1,0.2f,2));
-				// lp += vec3(0,0,sin(ad->time*0.5f)*2);
-				lp += vec3(0,0,1);
-
-				drawSphere(lp, 0.5f, vec4(0,1));
-
-				Vec3 intersection, intersectionNormal;
-				int face;
-				bool hit = boxRaycastRotated(lp, ld, pos, vec3(radius*2), obj->rot, &intersection, &face);
-				if(hit) {
-					intersectionNormal = boxRaycastNormals[face];
-					intersectionNormal = obj->rot * intersectionNormal;
-					drawLine(lp, intersection, vec4(1,0,0,1));
-					drawLine(intersection, intersection+intersectionNormal*1, vec4(0,1,1,1));
-					lp = intersection;
-
-					float ratio = fresnel(ld, intersectionNormal, refractionIndex);
-					ld = refract(ld, intersectionNormal, refractionIndex);
-					hit = boxRaycastRotated(lp, ld, pos, vec3(radius*2), obj->rot, &intersection, &face, true);
-					if(hit) {
-						intersectionNormal = boxRaycastNormals[face];
-						intersectionNormal = obj->rot * intersectionNormal;
-						drawLine(lp, intersection, vec4(0,1,0,1));
-						drawLine(intersection, intersection+intersectionNormal*1, vec4(0,1,1,1));
-						drawSphere(lp, 0.2f, vec4(0,0,0,1));
-
-						lp = intersection;
-
-
-						ld = refract(ld, intersectionNormal, refractionIndex);
-						// hit = boxRaycast(lp, ld, rect3CenDim(pos, vec3(radius*2)), &distance, &face);
-
-						// printf("%f %f %f, %f %f %f, %f\n", PVEC3(ld), PVEC3(intersectionNormal), ratio);
-
-						drawSphere(lp, 0.2f, vec4(0,0,0,1));
-						drawLine(lp, lp+ld*10, vec4(0,0,1,1));
-					}
-
-					// distance = lineSphereIntersection(intersection, ld, pos, radius, &intersection, &intersectionNormal, true);
-
-					// if(distance != -1) {
-					// 	drawLine(lp2, intersection, vec4(0,1,0,1));
-					// 	Vec3 lp3 = intersection;
-
-					// 	ld = refract(ld, intersectionNormal, refractionIndex);
-
-
-					// 	drawLine(lp3, lp3 + ld*10, vec4(0,0,1,1));
-
-					// 	if(distance != -1) {
-					// 		Vec3 dir = vec3(1,0,0);
-					// 	}
-					// }
-
-					// drawLine(lp, intersection, vec4(1,0,0,1));
-				}
-				#endif
-
-				glEnable(GL_DEPTH_TEST);
-
-				glEnable(GL_LIGHTING);
-			}
 
 			// @EntityUI draw.
 			{
