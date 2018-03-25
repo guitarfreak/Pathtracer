@@ -849,9 +849,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glEnable(GL_DEPTH_TEST);
 	}
 
-	#if 1
 
 	{
+		if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_N)) {
+			newSceneCommand(&ad->world, ad->sceneFile, &ad->sceneHasFile, &ad->entityUI);
+		}
+		if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_O)) {
+			openSceneCommand(&ad->dialogData);
+		}
+		if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_S)) {
+			saveSceneCommand(&ad->world, ad->sceneFile, ad->sceneHasFile, &ad->dialogData);
+		}
+
 		// Mouse capture.
 		{
 			if(!ad->captureMouse) {
@@ -919,15 +928,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(input->keysDown[KEYCODE_SHIFT]) speed *= 2;
 
 			Vec3 vel = vec3(0,0,0);
-			if(input->keysDown[KEYCODE_CTRL]) o.dir = normVec3(cross(vec3(0,0,1), o.right));
-			if(keyDown(gui, input, KEYCODE_W)) vel += o.dir;
-			if(keyDown(gui, input, KEYCODE_S)) vel += -o.dir;
-			if(keyDown(gui, input, KEYCODE_A)) vel += -o.right;
-			if(keyDown(gui, input, KEYCODE_D)) vel += o.right;
-			if(keyDown(gui, input, KEYCODE_E)) vel += vec3(0,0,1);
-			if(keyDown(gui, input, KEYCODE_Q)) vel += vec3(0,0,-1);
-
-			if(vel != vec3(0,0,0)) cam->pos += normVec3(vel) * speed;
+			// if(input->keysDown[KEYCODE_CTRL]) o.dir = normVec3(cross(vec3(0,0,1), o.right));
+			if(!input->keysDown[KEYCODE_CTRL]) {
+				if(keyDown(gui, input, KEYCODE_W)) vel += o.dir;
+				if(keyDown(gui, input, KEYCODE_S)) vel += -o.dir;
+				if(keyDown(gui, input, KEYCODE_A)) vel += -o.right;
+				if(keyDown(gui, input, KEYCODE_D)) vel += o.right;
+				if(keyDown(gui, input, KEYCODE_E)) vel += vec3(0,0,1);
+				if(keyDown(gui, input, KEYCODE_Q)) vel += vec3(0,0,-1);
+	
+				if(vel != vec3(0,0,0)) cam->pos += normVec3(vel) * speed;
+			}
 		}
 
 		{
@@ -1216,6 +1227,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		eui->guiHasFocus = guiHotMouseClick(gui);
 		if(!eui->mouseOverScene) eui->guiHasFocus = true;
+
+		// if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_N)) {
+		// 	newSceneCommand(world, ad->sceneFile, &ad->sceneHasFile, &ad->entityUI);
+		// }
+		// if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_O)) {
+		// 	openSceneCommand(&ad->dialogData);
+		// }
+		// if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_S)) {
+		// 	saveSceneCommand(world, ad->sceneFile, ad->sceneHasFile, &ad->dialogData);
+		// }
 
 		// @Dialogs.
 		{
@@ -1754,26 +1775,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 		rowToColumn(&temp);
 		glLoadMatrixf(temp.e);
 
-		Light light;
-		light.type = LIGHT_TYPE_DIRECTION;
-		light.pos = normVec3(world->globalLightDir);
-		// light.diffuseColor = vec3(0.9,0,0);
-		light.diffuseColor = world->globalLightColor;
-		light.specularColor = world->globalLightColor;
-		light.brightness = 1.0f;
+		Vec4 lp = vec4(world->globalLightDir, 0);
+		glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
 
-			Vec4 lp = vec4(-light.dir, 0);
-			glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
+		Vec4 light = COLOR_SRGB(vec4(world->defaultEmitColor,1));
+		glLightfv(GL_LIGHT0, GL_AMBIENT, light.e);
 
-		// Vec4 lightAmbientColor = vec4(world->defaultEmitColor,1);
-		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightAmbientColor.e);
+		light = COLOR_SRGB(vec4(world->globalLightColor,1));
+		glLightfv(GL_LIGHT0, GL_DIFFUSE, light.e);
 
-		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
-			Vec4 lightDiffuseColor = vec4(light.diffuseColor,1);
-			glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
-
-		// Vec4 lightDiffuseColor = vec4(world->globalLightColor,1);
-		// glLightfv(GL_LIGHT0, GL_AMBIENT, lightDiffuseColor.e);
+		light = COLOR_SRGB(vec4(world->globalLightColor,1));
+		glLightfv(GL_LIGHT0, GL_SPECULAR, light.e);
 
 		glEnable(GL_DEPTH_TEST);
 		glBindTexture(GL_TEXTURE_2D, 0);
@@ -1819,12 +1831,14 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Geometry* g = &obj->geometry;
 				Material* m = &obj->material;
 
-				Vec4 diffuseColor = COLOR_SRGB(vec4(obj->color, 1));
-				// glMaterialfv(GL_FRONT, GL_DIFFUSE, diffuseColor.e);
-				glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, diffuseColor.e);
+				Vec4 color = COLOR_SRGB(vec4(vec3(0.2f), 1));
+				glMaterialfv(GL_FRONT, GL_AMBIENT, color.e);
 
-				Vec4 emissionColor = COLOR_SRGB(vec4(m->emitColor, 1));
-				glMaterialfv(GL_FRONT, GL_EMISSION, emissionColor.e);
+				color = COLOR_SRGB(vec4(obj->color, 1));
+				glMaterialfv(GL_FRONT, GL_DIFFUSE, color.e);
+
+				color = COLOR_SRGB(vec4(m->emitColor, 1));
+				glMaterialfv(GL_FRONT, GL_EMISSION, color.e);
 
 				float shininess = lerp(m->reflectionMod, 0,128);
 				glMaterialf(GL_FRONT, GL_SHININESS, shininess);
@@ -1926,7 +1940,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			{
 				glDisable(GL_LIGHTING);
 
-					// float refractionIndex = 1.5f;
+				// float refractionIndex = 1.5f;
 
 					// Vec3 pos = vec3(0,0,30);
 					// float radius = 10;
@@ -1970,48 +1984,80 @@ extern "C" APPMAINFUNCTION(appMain) {
 					// glEnable(GL_DEPTH_TEST);
 
 
-				// Vec3 pos = vec3(0,0,30);
-				// float radius = 10;
-				// drawBox(pos, vec3(radius), vec4(0.5f,1));
-				// Vec3 lp = pos + vec3(14,0,0);
-				// Vec3 ld = normVec3(pos - lp);
-				// ld.y = 0;
-				// ld.z = 0;
-				// lp.y += 7;
-				// lp += vec3(0,0,sin(ad->time*0.5f)*12);
 
-				// drawSphere(lp, 0.5f, vec4(0,1));
+				#if 0
+				glDisable(GL_DEPTH_TEST);
 
-				// Vec3 intersection, intersectionNormal;
-				// float distance = lineSphereIntersection(lp, ld, pos, radius, &intersection, &intersectionNormal);
+				Object* obj = &world->objects.at(0);
 
-				// glDisable(GL_DEPTH_TEST);
-				// if(distance != -1) {
-				// 	drawLine(lp, intersection, vec4(1,0,0,1));
-				// 	Vec3 lp2 = intersection;
-				// 	ld = refract(ld, intersectionNormal, refractionIndex);
+				float refractionIndex = 1.2f;
 
-				// 	distance = lineSphereIntersection(intersection, ld, pos, radius, &intersection, &intersectionNormal, true);
+				Vec3 pos = obj->pos;
+				float radius = obj->dim.x/2.0f;
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+				// drawBox(pos, vec3(radius*2), vec4(0.5f,1));
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-				// 	if(distance != -1) {
-				// 		drawLine(lp2, intersection, vec4(0,1,0,1));
-				// 		Vec3 lp3 = intersection;
+				Vec3 lp = vec3(0,0,30) + vec3(14,0,-9);
+				Vec3 ld = normVec3(vec3(-1,0.2f,2));
+				// lp += vec3(0,0,sin(ad->time*0.5f)*2);
+				lp += vec3(0,0,1);
 
-				// 		ld = refract(ld, intersectionNormal, refractionIndex);
+				drawSphere(lp, 0.5f, vec4(0,1));
+
+				Vec3 intersection, intersectionNormal;
+				int face;
+				bool hit = boxRaycastRotated(lp, ld, pos, vec3(radius*2), obj->rot, &intersection, &face);
+				if(hit) {
+					intersectionNormal = boxRaycastNormals[face];
+					intersectionNormal = obj->rot * intersectionNormal;
+					drawLine(lp, intersection, vec4(1,0,0,1));
+					drawLine(intersection, intersection+intersectionNormal*1, vec4(0,1,1,1));
+					lp = intersection;
+
+					float ratio = fresnel(ld, intersectionNormal, refractionIndex);
+					ld = refract(ld, intersectionNormal, refractionIndex);
+					hit = boxRaycastRotated(lp, ld, pos, vec3(radius*2), obj->rot, &intersection, &face, true);
+					if(hit) {
+						intersectionNormal = boxRaycastNormals[face];
+						intersectionNormal = obj->rot * intersectionNormal;
+						drawLine(lp, intersection, vec4(0,1,0,1));
+						drawLine(intersection, intersection+intersectionNormal*1, vec4(0,1,1,1));
+						drawSphere(lp, 0.2f, vec4(0,0,0,1));
+
+						lp = intersection;
 
 
-				// 		drawLine(lp3, lp3 + ld*10, vec4(0,0,1,1));
+						ld = refract(ld, intersectionNormal, refractionIndex);
+						// hit = boxRaycast(lp, ld, rect3CenDim(pos, vec3(radius*2)), &distance, &face);
 
-				// 		if(distance != -1) {
-				// 			Vec3 dir = vec3(1,0,0);
-				// 		}
-				// 	}
+						// printf("%f %f %f, %f %f %f, %f\n", PVEC3(ld), PVEC3(intersectionNormal), ratio);
 
-				// 	// drawLine(lp, intersection, vec4(1,0,0,1));
-				// }
-				// glEnable(GL_DEPTH_TEST);
+						drawSphere(lp, 0.2f, vec4(0,0,0,1));
+						drawLine(lp, lp+ld*10, vec4(0,0,1,1));
+					}
+
+					// distance = lineSphereIntersection(intersection, ld, pos, radius, &intersection, &intersectionNormal, true);
+
+					// if(distance != -1) {
+					// 	drawLine(lp2, intersection, vec4(0,1,0,1));
+					// 	Vec3 lp3 = intersection;
+
+					// 	ld = refract(ld, intersectionNormal, refractionIndex);
 
 
+					// 	drawLine(lp3, lp3 + ld*10, vec4(0,0,1,1));
+
+					// 	if(distance != -1) {
+					// 		Vec3 dir = vec3(1,0,0);
+					// 	}
+					// }
+
+					// drawLine(lp, intersection, vec4(1,0,0,1));
+				}
+				#endif
+
+				glEnable(GL_DEPTH_TEST);
 
 				glEnable(GL_LIGHTING);
 			}
@@ -2300,7 +2346,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(eui->selectionState != ENTITYUI_ACTIVE) {
 								Vec3 intersection;
 								float sphereDistance = lineSphereIntersection(cam->pos, rayDir, pos, radius-thickness, &intersection);
-								if(sphereDistance) {
+								if(sphereDistance != -1) {
 									float distToCam = -(vm*intersection).z;
 									if(distToCam < closestDistance) axisIndex = 0;
 								}
@@ -2422,9 +2468,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glDisable(GL_LIGHTING);
 		glDisable(GL_NORMALIZE);
 	}
-	#endif
 
-	#if 1
 	{
 		setClientViewport(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
 		setClientScissor(ws, rect(0,0,ws->clientRes.w, ws->clientRes.h));
@@ -2797,7 +2841,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glDisable(GL_DEPTH_TEST);
 
 		// Left panel.
-		#if 1
 		if(ad->drawSceneWired)
 		{
 			glDisable(GL_DEPTH_TEST);
@@ -2906,10 +2949,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					{
 						p.y -= separatorHeight/2;
-						Vec2 vo = vec2(0,0);
-						drawLineH(p - vo + vec2(0,0.5f), p + vo + vec2(ew,0) + vec2(0,0.5f), cSeparatorDark);
-						drawLineH(p - vo + vec2(0,-0.5f), p + vo + vec2(ew,0) + vec2(0,-0.5f), cSeparatorBright);
-						p.y -= separatorHeight/2;
+						drawLineH(p+vec2(0,0.5f), p+vec2(ew,0)+vec2(0,0.5f), cSeparatorDark);
+						drawLineH(p+vec2(0,-0.5f), p+vec2(ew,0)+vec2(0,-0.5f), cSeparatorBright);
+						p.y -= separatorHeight/2+pad.y;
 					}
 
 					// 
@@ -2922,13 +2964,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Cam pos", "Cam rot", "Cam fov", "Grid size", "Emit color", "Light dir", "Light color", "Aperture size", "Focal distance"};
+						char* labels[] = {"Grid size", "Cam position", "Cam rotation", "Cam fov", "Default light", "Global light", "Global light dir", "Aperture size", "Focal distance"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
 							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
 						}
 						labelsMaxWidth += padding.w;
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &eui->snapGridSize, 1,10);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -2948,11 +2995,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->camera.fov, 20, 150);
 
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &eui->snapGridSize, 1,10);
-
+						{
+							p.y -= separatorHeight/2;
+							drawLineH(p+vec2(0,0.5f), p+vec2(ew,0)+vec2(0,0.5f), cSeparatorDark);
+							drawLineH(p+vec2(0,-0.5f), p+vec2(ew,0)+vec2(0,-0.5f), cSeparatorBright);
+							p.y -= separatorHeight/2+pad.y;
+						}
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -2964,19 +3012,23 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.x, -1, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.y, -1, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.z, -1, 1);
-
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.r, 0, 10);
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.g, 0, 10);
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.b, 0, 10);
 
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.x, -1, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.y, -1, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.z, -1, 1);
 
-
+						{
+							p.y -= separatorHeight/2;
+							drawLineH(p+vec2(0,0.5f), p+vec2(ew,0)+vec2(0,0.5f), cSeparatorDark);
+							drawLineH(p+vec2(0,-0.5f), p+vec2(ew,0)+vec2(0,-0.5f), cSeparatorBright);
+							p.y -= separatorHeight/2+pad.y;
+						}
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
@@ -3049,18 +3101,24 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 						}
 
+						{
+							p.y -= separatorHeight/2;
+							drawLineH(p+vec2(0,0.5f), p+vec2(ew,0)+vec2(0,0.5f), cSeparatorDark);
+							drawLineH(p+vec2(0,-0.5f), p+vec2(ew,0)+vec2(0,-0.5f), cSeparatorBright);
+							p.y -= separatorHeight/2+pad.y;
+						}
 
 						{
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 							qr = quickRow(r, pad.x, 0.0f, 0.0f);
 
-							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Default")) {
+							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert default")) {
 								eui->objectTempArray.clear();
 								eui->objectTempArray.push(defaultObject());
 								insertObjects(&ad->world, &eui->objectTempArray, &eui->selectedObjects, &eui->objectsEdited, &eui->history, false);
 							}
 
-							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert Copies")) {
+							if(newGuiQuickButton(gui, quickRowNext(&qr), "Insert copies")) {
 								insertObjects(&ad->world, &eui->objectCopies, &eui->selectedObjects, &eui->objectsEdited, &eui->history, false);
 							}
 						}
@@ -3087,7 +3145,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				newGuiScissorPop(gui);
 			}
 		}
-		#endif
 
 		// @RightPanel.
 		if(entityPanelActive && ad->drawSceneWired)
@@ -3131,6 +3188,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float elementHeight = font->height * 1.5f;
 				float elementWidth = rectW(pri);
 				Vec2 padding = vec2(panelMargin-1, panelMargin-1);
+
+				float separatorHeight = font->height * 0.3f;
+				Vec4 cSeparatorDark = ad->colors.ledgeDark;
+				Vec4 cSeparatorBright = ad->colors.ledgeBright;
 
 				float headerHeight = elementHeight * 1.2f;
 
@@ -3252,7 +3313,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} else quickRowNext(&qr);
 
 					{
-						char* labels[] = {"Position", "Rotation", "Color", "Type", "Dimension", "EmitColor", "Reflection", "Refractive Index"};
+						char* labels[] = {"Position", "Rotation", "Color", "Type", "Dimension", "EmitColor", "Reflection", "Refraction"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -3355,6 +3416,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 						}
 
+						{
+							p.y -= separatorHeight/2;
+							drawLineH(p+vec2(0,0.5f), p+vec2(ew,0)+vec2(0,0.5f), cSeparatorDark);
+							drawLineH(p+vec2(0,-0.5f), p+vec2(ew,0)+vec2(0,-0.5f), cSeparatorBright);
+							p.y -= separatorHeight/2+pad.y+0.5f;
+						}
+
+						//
+
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
@@ -3372,7 +3442,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						if(newGuiQuickSlider(gui, quickRowNext(&qr), &obj->material.refractiveIndex, 1, 3)) offSize = memberOffsetSize(Object, material.refractiveIndex);
 
-
+						{
+							p.y -= separatorHeight/2;
+							drawLineH(p+vec2(0,0.5f), p+vec2(ew,0)+vec2(0,0.5f), cSeparatorDark);
+							drawLineH(p+vec2(0,-0.5f), p+vec2(ew,0)+vec2(0,-0.5f), cSeparatorBright);
+							p.y -= separatorHeight/2+pad.y+0.5f;
+						}
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, 0.0f, 0.0f);
@@ -3736,7 +3811,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float padding = 0;
 				float border = 1;
 				float eh = fontHeight * 1.4;
-				float ew = popupWidth;
 				float ep = fontHeight * 0.7f;
 
 				float textSidePadding = fontHeight*0.7f;
@@ -3751,6 +3825,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float popupHeight;
 
 				if(strCompare(pd.name, "FileMenu")) {
+					popupWidth = ad->fontHeight * 8.5f;
 					elementCount = 5;
 					separatorCount = 2;
 					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount;
@@ -3759,6 +3834,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					separatorCount = 1;
 					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount + topBottomPadding*0.5f;
 				}
+
+				float ew = popupWidth;
 
 
 				Rect rPop = rectTLDim(pd.p-vec2(0,popupOffset), vec2(popupWidth,popupHeight));
@@ -3797,6 +3874,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 					gui->buttonSettings = textBoxSettings(bs.textSettings, boxSettings(cButton));
 					gui->buttonSettings.sideAlignPadding = textSidePadding;
 
+					TextSettings ts = gui->textSettings;
+					ts.color.a = 0.5f;
+
 					Vec2 p = rectTL(rPop);
 					Rect r;
 					char* s;
@@ -3816,21 +3896,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "New...", vec2i(-1,0))) {
-							getDefaultScene(world);
-							ad->sceneHasFile = false;
-							strClear(ad->sceneFile);
-
-							historyReset(&ad->entityUI.history);
-							ad->entityUI.selectedObjects.count = 0;
+							newSceneCommand(world, ad->sceneFile, &ad->sceneHasFile, &ad->entityUI);
 
 							close = true;
 						}
+						newGuiQuickText(gui, rectAddR(r,-textSidePadding), "Ctrl+N", vec2i(1,0), &ts);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Open...", vec2i(-1,0))) {
-							openSceneDialog(&ad->dialogData);
+							openSceneCommand(&ad->dialogData);
+
 							close = true;
 						}
+						newGuiQuickText(gui, rectAddR(r,-textSidePadding), "Ctrl+O", vec2i(1,0), &ts);
 
 						{
 							p.y -= separatorHeight*0.5f;
@@ -3841,11 +3919,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Save", vec2i(-1,0))) {
-							if(ad->sceneHasFile) saveScene(world, ad->sceneFile);
-							else openSceneDialog(&ad->dialogData, true);
+							saveSceneCommand(world, ad->sceneFile, ad->sceneHasFile, &ad->dialogData);
 
 							close = true;
 						}
+						newGuiQuickText(gui, rectAddR(r,-textSidePadding), "Ctrl+S", vec2i(1,0), &ts);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						if(newGuiQuickPButton(gui, r, "Save as...", vec2i(-1,0))) {
@@ -3920,7 +3998,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		newGuiEnd(gui);
 	}
-	#endif
 
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha, ad->dt);

@@ -1435,7 +1435,6 @@ enum {
 
 void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSettings settings) {
 	scissor = getRectScissor(br, scissor);
-	scissorTestScreen(scissor);
 
 	BoxSettings* boSettings = &settings.textBoxSettings.boxSettings;
 	TextSettings* textSettings = &settings.textBoxSettings.textSettings;
@@ -1454,8 +1453,6 @@ void drawSlider(void* val, bool type, Rect br, Rect sr, Rect scissor, SliderSett
 	scissor = rectExpand(scissor, vec2(-border*2));
 
 	drawBox(sr, scissor, sliderBoxSettings);
-
-	scissorTestScreen(scissor);
 
 	char* text = type == SLIDER_TYPE_FLOAT ? fillString("%f", *((float*)val)) : fillString("%i", *((int*)val)) ;
 
@@ -1783,7 +1780,11 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 	}
 
 	set.color += newGuiColorMod(gui);
-	if(!editMode) drawSlider(val, type, r, slider, gui->scissor, set);
+	if(!editMode) {
+		newGuiScissorPush(gui, r);
+		drawSlider(val, type, r, slider, gui->scissor, set);
+		newGuiScissorPop(gui);
+	}
 
 	if(event == 3) {
 		if(set.applyAfter) {

@@ -84,7 +84,7 @@ float lineShapeIntersection(Vec3 lp, Vec3 ld, Object* obj, Vec3* reflectionPos, 
 		case GEOM_TYPE_SPHERE: {
 			distance = lineSphereIntersection(lp, ld, obj->pos, obj->dim.x*0.5f, reflectionPos);
 
-			if(distance > 0) {
+			if(distance != -1) {
 				*reflectionNormal = normVec3(*reflectionPos - obj->pos);
 
 				return distance;
@@ -189,6 +189,10 @@ float fresnel(Vec3 incident, Vec3 normal, float refractiveIndex) {
 	float cosi = clamp(-1, 1, dot(incident, normal)); 
 	float etai = 1; 
 	float etat = refractiveIndex; 
+
+	if(cosi > 0) {
+		swap(&etai, &etat); 
+	}
 
     // Compute sini using Snell's law
     float sint = etai / etat * sqrtf(max(0.0f, 1 - cosi * cosi)); 
@@ -386,7 +390,7 @@ int castRayX(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectIn
 							bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &intersection, &face, insideObject);
 							if(hit) {
 								reflectionPos = intersection;
-								reflectionNormal = boxRaycastNormals[face];
+								reflectionNormal = obj->rot * boxRaycastNormals[face];
 								distance = lenVec3(intersection - rayPos);
 							}
 						}
@@ -452,7 +456,7 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 			// Cast ray in mirror direction and refraction direction and
 			// then combine the results based on the fresnel ratio.
 
-			Vec3 reflectionColor = vec3(0,0,0); 
+			Vec3 reflectionColor = vec3(0,0,0);
 			Vec3 refractionColor = vec3(0,0,0);
 
 			// if(ratio < 0.05f) ratio = 0;
@@ -464,7 +468,13 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 
 			if(ratio != 1.0f) {
 				Vec3 refractionDir = refract(rayDir, objectReflectionNormal, m->refractiveIndex);
-				refractionColor = processSample(objectReflectionPos, refractionDir, world, settings, -objectIndex, attenuation, rayIndex + 1);
+
+				// Refract is not quite in sync with the fresnal calculation.
+				if(refractionDir == vec3(0,0,0)) {
+					ratio = 1;
+				} else {
+					refractionColor = processSample(objectReflectionPos, refractionDir, world, settings, -objectIndex, attenuation, rayIndex + 1);
+				}
 			}
 
 			sampleColor += lerp(ratio, refractionColor, reflectionColor);
@@ -528,7 +538,7 @@ void processPixelsThreaded(void* data) {
 	Vec3 black = vec3(0.0f);
 	Vec3 white = vec3(1.0f);
 
-	Vec3 globalLightDir = -normVec3(world.globalLightDir);
+	world.globalLightDir = normVec3(world.globalLightDir);
 
 	Vec2i texDim = settings.texDim;
 	int pixelCount = d->pixelDim.x * d->pixelDim.y;
@@ -1651,3 +1661,21 @@ void openScreenshotDialog(DialogData* dd) {
     HANDLE thread = CreateThread(0, 0, openDialogProc, dd, 0, 0);
 }
 
+
+void newSceneCommand(World* world, char* sceneFile, bool* sceneHasFile, EntityUI* eui) {
+	getDefaultScene(world);
+	*sceneHasFile = false;
+	strClear(sceneFile);
+
+	historyReset(&eui->history);
+	eui->selectedObjects.count = 0;
+}
+
+void openSceneCommand(DialogData* dialogData) {
+	openSceneDialog(dialogData);
+}
+
+void saveSceneCommand(World* world, char* sceneFile, bool sceneHasFile, DialogData* dialogData) {
+	if(sceneHasFile) saveScene(world, sceneFile);
+	else openSceneDialog(dialogData, true);
+}
