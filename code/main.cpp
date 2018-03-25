@@ -42,6 +42,7 @@ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE prevInstance, LPSTR commandLi
 
 	ThreadQueue threadQueue;
 	threadInit(&threadQueue, coreCount-1);
+	// threadInit(&threadQueue, 1);
 
 	AppMemory appMemory = {};
 

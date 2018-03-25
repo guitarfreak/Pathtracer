@@ -2,17 +2,16 @@
 =================================================================================
 
 	ToDo:
-	- Clean global light and multiple lights
-	- Depth of field.
-	- Refraction.
+	- Clean global light and multiple lights.
 	- Ellipses.
-	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 
 	- More advanced lighting function.
 	- Have cam independent, mini window.
 	- Spacial data structure to speed up processing.
 	- Converge method on sampling for speed up.
+	- Float not good enough.
 
+	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Turning while dragging is glitchy.
 	- Title buttons don't scale nicely.
 	- Redraw menu buttons to look better at smaller sizes.
@@ -20,9 +19,7 @@
 
 	- Simd.
 	- Do stencil outline selection instead of polygon grid selection.
-	- Float not good enough.
 	- App hangs when calculating blueNoise samples.
-	- Disable mouse click when not in opengl window.
 
 	- Check out setTimer for pitfalls.
 
@@ -32,7 +29,6 @@
 	- Saving sometimes crashes. Hard to debug...
 	- If framerate to low we generate too many timer messages and the mouse locks up.
 	- If multiple objects selected and hold ctrl+v and let mouse go it doesn't set inactive.
-	- Original window titlebar shows through for one frame sometimes when switching focus between apps.
 
 =================================================================================
 */
@@ -1927,6 +1923,99 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			glPopMatrix();
 
+			{
+				glDisable(GL_LIGHTING);
+
+					// float refractionIndex = 1.5f;
+
+					// Vec3 pos = vec3(0,0,30);
+					// float radius = 10;
+					// drawSphere(pos, radius, vec4(0.5f,1));
+					// Vec3 lp = pos + vec3(14,0,0);
+					// Vec3 ld = normVec3(pos - lp);
+					// ld.y = 0;
+					// ld.z = 0;
+					// lp.y += 7;
+					// lp += vec3(0,0,sin(ad->time*0.5f)*12);
+
+					// drawSphere(lp, 0.5f, vec4(0,1));
+
+					// Vec3 intersection, intersectionNormal;
+					// float distance = lineSphereIntersection(lp, ld, pos, radius, &intersection, &intersectionNormal);
+
+					// glDisable(GL_DEPTH_TEST);
+					// if(distance != -1) {
+					// 	drawLine(lp, intersection, vec4(1,0,0,1));
+					// 	Vec3 lp2 = intersection;
+					// 	ld = refract(ld, intersectionNormal, refractionIndex);
+
+					// 	distance = lineSphereIntersection(intersection, ld, pos, radius, &intersection, &intersectionNormal, true);
+
+					// 	if(distance != -1) {
+					// 		drawLine(lp2, intersection, vec4(0,1,0,1));
+					// 		Vec3 lp3 = intersection;
+
+					// 		ld = refract(ld, intersectionNormal, refractionIndex);
+
+
+					// 		drawLine(lp3, lp3 + ld*10, vec4(0,0,1,1));
+
+					// 		if(distance != -1) {
+					// 			Vec3 dir = vec3(1,0,0);
+					// 		}
+					// 	}
+
+					// 	// drawLine(lp, intersection, vec4(1,0,0,1));
+					// }
+					// glEnable(GL_DEPTH_TEST);
+
+
+				// Vec3 pos = vec3(0,0,30);
+				// float radius = 10;
+				// drawBox(pos, vec3(radius), vec4(0.5f,1));
+				// Vec3 lp = pos + vec3(14,0,0);
+				// Vec3 ld = normVec3(pos - lp);
+				// ld.y = 0;
+				// ld.z = 0;
+				// lp.y += 7;
+				// lp += vec3(0,0,sin(ad->time*0.5f)*12);
+
+				// drawSphere(lp, 0.5f, vec4(0,1));
+
+				// Vec3 intersection, intersectionNormal;
+				// float distance = lineSphereIntersection(lp, ld, pos, radius, &intersection, &intersectionNormal);
+
+				// glDisable(GL_DEPTH_TEST);
+				// if(distance != -1) {
+				// 	drawLine(lp, intersection, vec4(1,0,0,1));
+				// 	Vec3 lp2 = intersection;
+				// 	ld = refract(ld, intersectionNormal, refractionIndex);
+
+				// 	distance = lineSphereIntersection(intersection, ld, pos, radius, &intersection, &intersectionNormal, true);
+
+				// 	if(distance != -1) {
+				// 		drawLine(lp2, intersection, vec4(0,1,0,1));
+				// 		Vec3 lp3 = intersection;
+
+				// 		ld = refract(ld, intersectionNormal, refractionIndex);
+
+
+				// 		drawLine(lp3, lp3 + ld*10, vec4(0,0,1,1));
+
+				// 		if(distance != -1) {
+				// 			Vec3 dir = vec3(1,0,0);
+				// 		}
+				// 	}
+
+				// 	// drawLine(lp, intersection, vec4(1,0,0,1));
+				// }
+				// glEnable(GL_DEPTH_TEST);
+
+
+
+				glEnable(GL_LIGHTING);
+			}
+
 			// @EntityUI draw.
 			{
 				EntityUI* eui = &ad->entityUI;
@@ -2354,9 +2443,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				float bottom = min(start.y, end.y);
 				float top = max(start.y, end.y);
 
-				Rect r = rect(left, bottom, right, top);
-				drawRectOutline(r, cDragOutline);
+				Rect r = rectRound(rect(left, bottom, right, top));
 				drawRect(r, cDrag);
+				drawRectOutline(r, cDragOutline);
 
 				Camera* cam = &ad->world.camera;
 				Vec3 rayDirLeft = mouseRayCast(ad->textureScreenRectFitted, rectL(r), cam);
@@ -2833,7 +2922,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Cam pos", "Cam rot", "Cam fov", "Grid size", "Emit color", "Light dir", "Light color", "Focal distance", "Aperture size"};
+						char* labels[] = {"Cam pos", "Cam rot", "Cam fov", "Grid size", "Emit color", "Light dir", "Light color", "Aperture size", "Focal distance"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2886,6 +2975,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.g, 0, 10);
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.b, 0, 10);
 
+
+
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->apertureSize, 0, 5);
 
 						{
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -2953,10 +3049,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 							}
 						}
 
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->apertureSize, 0, 5);
 
 						{
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
@@ -3096,6 +3188,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(o.material.emitColor.g != obj->material.emitColor.g) o.material.emitColor.g = -1;
 							if(o.material.emitColor.b != obj->material.emitColor.b) o.material.emitColor.b = -1;
 							if(o.material.reflectionMod != obj->material.reflectionMod) o.material.reflectionMod = -1;
+							if(o.material.refractiveIndex != obj->material.refractiveIndex) o.material.refractiveIndex = -1;
 						}
 
 						objectDiffs = o;
@@ -3119,6 +3212,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(o.material.emitColor.g == -1) o.material.emitColor.g = 0;
 							if(o.material.emitColor.b == -1) o.material.emitColor.b = 0;
 							if(o.material.reflectionMod == -1) o.material.reflectionMod = 0;
+							if(o.material.refractiveIndex == -1) o.material.refractiveIndex = 0;
 						}
 						eui->multiChangeObject = o;
 
@@ -3158,7 +3252,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} else quickRowNext(&qr);
 
 					{
-						char* labels[] = {"Position", "Rotation", "Color", "Type", "Dimension", "EmitColor", "Reflection"};
+						char* labels[] = {"Position", "Rotation", "Color", "Type", "Dimension", "EmitColor", "Reflection", "Refractive Index"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -3272,6 +3366,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						if(newGuiQuickSlider(gui, quickRowNext(&qr), &obj->material.reflectionMod, 0, 1)) offSize = memberOffsetSize(Object, material.reflectionMod);
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						if(newGuiQuickSlider(gui, quickRowNext(&qr), &obj->material.refractiveIndex, 1, 3)) offSize = memberOffsetSize(Object, material.refractiveIndex);
 
 
 

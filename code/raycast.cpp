@@ -15,12 +15,10 @@ char* geometryTypeStrings[] = {
 };
 
 struct Material {
-	// float diffuseRatio;
-	// float specularRatio;
-	// float shininess;
-
 	Vec3 emitColor;
 	float reflectionMod;
+
+	float refractiveIndex;
 };
 
 struct Geometry {
@@ -163,9 +161,52 @@ OrientationVectors getVectorsFromRotation(Vec3 rot) {
 	return o;
 }
 
+// https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-shading/reflection-refraction-fresnel
+Vec3 refract(Vec3 incident, Vec3 normal, float refractiveIndex) {
+    float cosi = clamp(-1, 1, dot(incident, normal)); 
+    float etai = 1; 
+    float etat = refractiveIndex; 
 
+    Vec3 n = normal; 
+    if(cosi < 0) cosi = -cosi; 
+    else { 
+    	swap(&etai, &etat); 
+    	n = -normal; 
+    } 
 
+    float eta = etai / etat; 
+    float k = 1 - eta * eta * (1 - cosi * cosi); 
 
+    if(k < 0) {
+    	return vec3(0,0,0);
+    } else {
+    	Vec3 result = eta * incident + (eta * cosi - sqrtf(k)) * n;	
+    	return result;
+    }
+}
+
+float fresnel(Vec3 incident, Vec3 normal, float refractiveIndex) {
+	float cosi = clamp(-1, 1, dot(incident, normal)); 
+	float etai = 1; 
+	float etat = refractiveIndex; 
+
+    // Compute sini using Snell's law
+    float sint = etai / etat * sqrtf(max(0.0f, 1 - cosi * cosi)); 
+
+    float kr;
+    // Total internal reflection
+    if(sint >= 1) { 
+        kr = 1; 
+    } else { 
+        float cost = sqrtf(max(0.0f, 1 - sint * sint)); 
+        cosi = fabsf(cosi); 
+        float Rs = ((etat * cosi) - (etai * cost)) / ((etat * cosi) + (etai * cost)); 
+        float Rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost)); 
+        kr = (Rs * Rs + Rp * Rp) / 2; 
+    } 
+
+    return kr;
+} 
 
 
 enum SampleMode {
@@ -301,6 +342,280 @@ TimeStamp processPixelsThreadedTimings[5] = {};
 #define endTimer(i)
 #endif
 
+int castRayX(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectIndex, Vec3* objectReflectionPos, Vec3* objectReflectionNormal) {
+
+	int objectIndex = 0;
+
+	// Were inside a transparent object.
+
+	bool insideObject = lastObjectIndex < 0;
+
+	float minDistance = FLT_MAX;
+	for(int i = 0; i < objects->count; i++) {
+		if(lastObjectIndex-1 == i) continue;
+
+		if(insideObject) i = (-lastObjectIndex) - 1;
+
+		Object* obj = &objects->at(i);
+		Geometry* g = &obj->geometry;
+
+		bool possibleIntersection;
+		if(!insideObject) possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
+		else possibleIntersection = true;
+
+		if(possibleIntersection) {
+
+			Vec3 reflectionPos, reflectionNormal;
+			float distance = -1;
+			{
+				switch(g->type) {
+					case GEOM_TYPE_BOX: {
+
+						// Check for rotation.
+
+						if(obj->rot == quat()) {
+							int face;
+							bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, obj->dim), &distance, &face, insideObject);
+							if(hit) {
+								reflectionPos = rayPos + rayDir*distance;
+								reflectionNormal = boxRaycastNormals[face];
+							}
+						} else {
+							int face;
+							Vec3 intersection;
+							bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &intersection, &face, insideObject);
+							if(hit) {
+								reflectionPos = intersection;
+								reflectionNormal = boxRaycastNormals[face];
+								distance = lenVec3(intersection - rayPos);
+							}
+						}
+					} break;
+
+					case GEOM_TYPE_SPHERE: {
+						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos, &reflectionNormal, insideObject);
+					} break;
+				}
+			}
+
+			if(insideObject) {
+				*objectReflectionPos = reflectionPos;
+				*objectReflectionNormal = reflectionNormal;
+
+				return lastObjectIndex;
+			}
+
+			if(distance > 0 && distance < minDistance) {
+				minDistance = distance;
+				objectIndex = i+1;
+
+				*objectReflectionPos = reflectionPos;
+				*objectReflectionNormal = reflectionNormal;
+			}
+		}
+	}
+
+	return objectIndex;
+}
+
+Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* settings, int lastObjectIndex = 0, Vec3 attenuation = vec3(1,1,1), int rayIndex = 0) {
+
+	Vec3 sampleColor = vec3(0,0,0);
+
+	// Find object with closest intersection.
+
+	Vec3 objectReflectionPos, objectReflectionNormal;
+	int objectIndex = castRayX(rayPos, rayDir, &world->objects, lastObjectIndex, &objectReflectionPos, &objectReflectionNormal);
+
+	if(objectIndex != 0) {
+
+		Object* obj = world->objects + ((objectIndex<0?(-objectIndex):objectIndex)-1);
+		Material* m = &obj->material;
+
+		// Color calculation.
+
+		// pixelColor += attenuation * m->emitColor;
+		sampleColor += attenuation * m->emitColor;
+		attenuation = attenuation * obj->color;
+	
+		if(attenuation == vec3(0,0,0)) return sampleColor;
+
+		if(rayIndex == settings->rayBouncesMax) return sampleColor;
+
+
+		if(m->refractiveIndex != 1.0f) {
+
+			// Transparent objects.
+
+			float ratio = fresnel(rayDir, objectReflectionNormal, m->refractiveIndex);
+
+			// Cast ray in mirror direction and refraction direction and
+			// then combine the results based on the fresnel ratio.
+
+			Vec3 reflectionColor = vec3(0,0,0); 
+			Vec3 refractionColor = vec3(0,0,0);
+
+			// if(ratio < 0.05f) ratio = 0;
+
+			if(ratio != 0.0f) {
+				Vec3 objectReflectionDir = reflectVector(rayDir, objectReflectionNormal);
+				reflectionColor = processSample(objectReflectionPos, objectReflectionDir, world, settings, objectIndex, attenuation, rayIndex + 1);
+			}
+
+			if(ratio != 1.0f) {
+				Vec3 refractionDir = refract(rayDir, objectReflectionNormal, m->refractiveIndex);
+				refractionColor = processSample(objectReflectionPos, refractionDir, world, settings, -objectIndex, attenuation, rayIndex + 1);
+			}
+
+			sampleColor += lerp(ratio, refractionColor, reflectionColor);
+
+		} else {
+
+			// Reflection direction.
+
+			rayDir = reflectVector(rayDir, objectReflectionNormal);
+
+			if(m->reflectionMod != 1.0f) {
+
+				// If not mirror, scatter randomly.
+
+				int dirIndex = randomIntPCG(0, settings->randomDirectionCount-1);
+				Vec3 randomDir = settings->randomDirections[dirIndex];
+
+				float d = dot(randomDir, objectReflectionNormal);
+				if(d <= 0) randomDir = reflectVector(randomDir, objectReflectionNormal);
+
+				rayDir = lerp(m->reflectionMod, randomDir, rayDir);
+			}
+
+			sampleColor += processSample(objectReflectionPos, rayDir, world, settings, objectIndex, attenuation, rayIndex + 1);
+
+		}
+
+	} else if(rayIndex == 0) {
+
+		// Sky hit.
+		sampleColor += world->defaultEmitColor;
+
+	} else {
+
+		float lightDot = dot(rayDir, world->globalLightDir);
+		lightDot = clampMin(lightDot, 0);
+		// lightDot = dotUnitToPercent(lightDot);
+		Vec3 light = world->globalLightColor * lightDot;
+
+		// pixelColor += attenuation * (world.defaultEmitColor + light);
+		sampleColor += attenuation * (world->defaultEmitColor + light);
+
+	}
+
+	return sampleColor;
+}
+
+void processPixelsThreaded(void* data) {
+	TimeStamp pixelTimings[5] = {};
+
+	ProcessPixelsData* d = (ProcessPixelsData*)data;
+
+	World world = *d->world;
+	RaytraceSettings settings = *d->settings;	
+	Vec3* buffer = d->buffer;
+
+	int sampleCount = settings.sampleCount;	
+	Vec2* samples = settings.samples;
+	Camera camera = world.camera;
+
+	Vec3 black = vec3(0.0f);
+	Vec3 white = vec3(1.0f);
+
+	Vec3 globalLightDir = -normVec3(world.globalLightDir);
+
+	Vec2i texDim = settings.texDim;
+	int pixelCount = d->pixelDim.x * d->pixelDim.y;
+	for(int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
+		startTimer(0);
+
+		if(d->stopProcessing) {
+			d->stopProcessing = false;
+			break;
+		}
+		
+		int x = pixelIndex % d->pixelDim.w;
+		int y = pixelIndex / d->pixelDim.w;
+		x += d->pixelPos.x;
+		y += d->pixelPos.y;
+
+		if(x < 0 || x >= texDim.w || 
+		   y < 0 || y >= texDim.h) continue;
+
+		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
+
+		if(settings.sampleMode == SAMPLE_MODE_BLUE) {
+			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
+			int offset = settings.sampleGridOffsets[index];
+			samples = settings.samples + offset;
+			sampleCount = settings.sampleGridOffsets[index+1] - offset;
+		}
+
+		{
+			// IACA_VC64_START;
+
+			Vec3 pixelColor = black;
+
+			for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+				startTimer(1);
+
+				Vec3 rayPos = settings.camTopLeft;
+				rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
+				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
+
+				Vec3 rayDir = normVec3(rayPos - camera.pos);
+				
+				if(world.apertureSize > 0.0f) {
+					Vec3 focalPoint;
+
+					Vec3 focalPlanePos = camera.pos + camera.ovecs.dir * world.focalPointDistance;
+					float distance = linePlaneIntersection(rayPos, rayDir, focalPlanePos, -camera.ovecs.dir, &focalPoint);
+
+					Vec2 randomOffset = vec2(randomFloatPCG(0.0f, world.apertureSize, 0.01f), 
+					                         randomFloatPCG(0.0f, world.apertureSize, 0.01f));
+
+					rayPos += camera.ovecs.right * randomOffset.x;
+					rayPos += -camera.ovecs.up * randomOffset.y;
+
+					rayDir = normVec3(focalPoint - rayPos);
+				}
+
+				Vec3 sampleColor = processSample(rayPos, rayDir, &world, &settings);
+
+				// sampleColor = clampMax(sampleColor, white);
+				pixelColor += sampleColor;
+
+				endTimer(1);
+			}
+
+			// Pixel end.
+
+			pixelColor = pixelColor/(float)sampleCount;
+			pixelColor = clampMax(pixelColor, white);
+
+			buffer[y*texDim.w + x] = pixelColor;
+
+			// IACA_VC64_END;
+		}
+
+		endTimer(0);
+	}
+
+	if(printRaytraceTimings) {
+		for(int i = 0; i < arrayCount(pixelTimings); i++) {
+			processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
+			processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
+		}
+	}
+}
+
+#if 0
 void processPixelsThreaded(void* data) {
 	TimeStamp pixelTimings[5] = {};
 
@@ -381,7 +696,7 @@ void processPixelsThreaded(void* data) {
 				for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
 					startTimer(2);
 
-					// Find shape with closest intersection.
+					// Find object with closest intersection.
 
 					Vec3 objectReflectionPos, objectReflectionDir, objectReflectionNormal;
 					int objectIndex = -1;
@@ -537,6 +852,7 @@ void processPixelsThreaded(void* data) {
 		}
 	}
 }
+#endif
 
 // @Duplication with processPixels.
 int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects, Vec3* intersection = 0) {
@@ -612,8 +928,10 @@ void getDefaultScene(World* world) {
 	cam->dim.w = 10;
 	cam->farDist = 10000;
 
-	world->focalPointDistance = 30.0f;
+	world->focalPoint = vec3(0,0,zLevel);
+	// world->focalPointDistance = 30.0f;
 	world->apertureSize = 1;
+	world->lockFocalPoint = true;
 
 	world->defaultEmitColor = vec3(1,1,1);
 	world->globalLightDir = normVec3(vec3(-1.5f,-1,-2.0f));
@@ -627,9 +945,11 @@ void getDefaultScene(World* world) {
 	Material materials[10] = {};
 	materials[0].emitColor = vec3(0,0,0);
 	materials[0].reflectionMod = 0.7f;
+	materials[0].refractiveIndex = 1.0f;
 
 	materials[1].emitColor = vec3(0,0,0);
 	materials[1].reflectionMod = 1.0f;
+	materials[1].refractiveIndex = 1.0f;
 
 	Object obj;
 
@@ -730,6 +1050,7 @@ Object objectDiff(Object o0, Object o1) {
 	diff.geometry.type = o0.geometry.type - o1.geometry.type;
 	diff.material.emitColor = o0.material.emitColor - o1.material.emitColor;
 	diff.material.reflectionMod = o0.material.reflectionMod - o1.material.reflectionMod;
+	diff.material.refractiveIndex = o0.material.refractiveIndex - o1.material.refractiveIndex;
 
 	return diff;
 }
@@ -742,6 +1063,7 @@ Object objectAdd(Object obj, Object diff) {
 	obj.geometry.type = obj.geometry.type + diff.geometry.type;
 	obj.material.emitColor = obj.material.emitColor + diff.material.emitColor;
 	obj.material.reflectionMod = obj.material.reflectionMod + diff.material.reflectionMod;
+	obj.material.refractiveIndex = obj.material.refractiveIndex + diff.material.refractiveIndex;
 
 	return obj;
 }
@@ -1191,6 +1513,7 @@ Object defaultObject() {
 	Material m = {};
 	m.emitColor = vec3(0,0,0);
 	m.reflectionMod = 0.5f;
+	m.refractiveIndex = 1.0f;
 
 	Object obj = {};
 	obj.pos = vec3(0,0,0);

@@ -2159,7 +2159,7 @@ inline float angleBetweenVectors(Vec3 a, Vec3 b) {
 
 Vec3 boxRaycastNormals[6] = {vec3(-1,0,0), vec3(1,0,0), vec3(0,-1,0), vec3(0,1,0), vec3(0,0,-1), vec3(0,0,1)};
 
-bool boxRaycast(Vec3 lp, Vec3 ld, Rect3 box, float* distance = 0, int* face = 0) {
+bool boxRaycast(Vec3 lp, Vec3 ld, Rect3 box, float* distance = 0, int* face = 0, bool secondIntersection = false) {
 	// ld is unit
 	Vec3 dirfrac;
 	dirfrac.x = 1.0f / ld.x;
@@ -2179,15 +2179,13 @@ bool boxRaycast(Vec3 lp, Vec3 ld, Rect3 box, float* distance = 0, int* face = 0)
 
 	float t;
 	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behind us
-	if (tmax < 0) {
-	    t = tmax;
-	    return false;
-	}
+	if (tmax < 0) return false;
 
 	// if tmin > tmax, ray doesn't intersect AABB
-	if (tmin > tmax) {
-	    t = tmax;
-	    return false;
+	if (tmin > tmax) return false;
+
+	if(secondIntersection) {
+		tmin = tmax;
 	}
 
 	if(face) {
@@ -2342,7 +2340,7 @@ bool lineSphereCollision(Vec3 lp, Vec3 ld, Vec3 sp, float sr) {
 	return b >= 0;
 }
 
-float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
 	// ld must be unit.
 
 	Vec3 oldP = lp;
@@ -2352,14 +2350,19 @@ float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersec
 	float lenLp = lenVec3(lp);
 	float b = dotLdLp*dotLdLp - lenLp*lenLp + sr*sr;
 
-	if(b < 0) return false;
+	if(b < 0) return -1;
 
 	// Always choose shorter distance to get intersection that's closest.
-	float distance = -(dot(ld, lp)) - sqrt(b);
+
+	float distance = -(dot(ld, lp));
+	if(secondIntersection) distance += sqrt(b);
+	else distance += -sqrt(b);
 
 	if(intersection) {
 		*intersection = oldP + ld*distance;
-		if(intersectionNormal) *intersectionNormal = normVec3(*intersection - sp);
+		if(intersectionNormal) {
+			(*intersectionNormal) = normVec3((*intersection) - sp);
+		}
 	}
 
     return distance;
@@ -2933,14 +2936,14 @@ bool operator==(Quat q0, Quat q1) {
 // 
 
 Rect3 rect3CenDim(Vec3 cen, Vec3 dim);
-bool boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* intersection = 0, int* face = 0) {
+bool boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* intersection = 0, int* face = 0, bool secondIntersection = false) {
 
 	Vec3 rotatedPos = rotateVec3Around(lp, quatInverse(rot), pos);
 	Vec3 rotatedDir = rotateVec3Around(lp + ld, quatInverse(rot), pos);
 	rotatedDir = normVec3(rotatedDir - rotatedPos);
 
 	float distance;
-	bool result = boxRaycast(rotatedPos, rotatedDir, rect3CenDim(pos, dim), &distance, face);
+	bool result = boxRaycast(rotatedPos, rotatedDir, rect3CenDim(pos, dim), &distance, face, secondIntersection);
 	if(result) {
 		*intersection = lp + ld*distance;
 	}
