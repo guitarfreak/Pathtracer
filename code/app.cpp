@@ -23,6 +23,8 @@
 
 	- Check out setTimer for pitfalls.
 	
+	- Cylinder, Cone, Pyramid, Torus for rotation widget.
+
 	Bugs:
 	- Windows key slow often.
 	- Memory leak? Flashing when drawing scene in opengl.
@@ -464,7 +466,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				
 				ad->fontHeight = roundInt(at.fontScale*systemData->fontHeight);
 
-				at.panelWidthLeft = ad->fontHeight*16;
+				at.panelWidthLeft = ad->fontHeight*18;
 				at.panelWidthRight = ad->fontHeight*16;
 
 				strClear(at.sceneFile);
@@ -1191,7 +1193,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			{
-				Vec2 c = rectCen(sr);
+				Vec2 c = rectCen(tr);
 				Vec2i td = ad->raycastTexture.dim;
 				c.x -= td.w/2.0f;
 				c.y += td.h/2.0f;
@@ -1320,6 +1322,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// @Selection.
 
+			// Bad.
+			for(int i = 0; i < world->objects.count; i++) {
+				Object* obj = world->objects + i;
+				geometryBoundingSphere(obj);
+			}
+
 			bool multipleSelectionMode = input->keysDown[KEYCODE_CTRL];
 			eui->multipleSelectionMode = multipleSelectionMode;
 
@@ -1344,8 +1352,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
-				int objectIndex = castRay(ad->world.camera.pos, rayDir, ad->world.objects);
-				if(objectIndex != -1) {
+				int objectIndex = castRay(ad->world.camera.pos, rayDir, &ad->world.objects);
+				if(objectIndex) {
+					objectIndex--;
+
 					if(multipleSelectionMode) {
 						if(isObjectSelected(eui, objectIndex)) {
 							// Deselect.
@@ -1686,10 +1696,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 								currentAxisLength = roundMod(currentAxisLength, roundFloat(eui->snapGridSize));
 							}
 
-							if(obj->geometry.type == GEOM_TYPE_SPHERE || eui->enableScaleEqually) {
+							// if(obj->geometry.type == GEOM_TYPE_SPHERE || eui->enableScaleEqually) {
+							// 	obj->dim = vec3(currentAxisLength);
+							// } else if(obj->geometry.type == GEOM_TYPE_BOX) {
+							// 	obj->dim = eui->startDim;
+							// 	obj->dim.e[eui->axisIndex-1] = currentAxisLength;
+							// }
+
+							if(eui->enableScaleEqually) {
 								obj->dim = vec3(currentAxisLength);
-							} else if(obj->geometry.type == GEOM_TYPE_BOX) {
+							} else if(obj->geometry.type == GEOM_TYPE_BOX || obj->geometry.type == GEOM_TYPE_SPHERE) {
 								obj->dim = eui->startDim;
+								clampMin(&currentAxisLength, 0.0001f);
 								obj->dim.e[eui->axisIndex-1] = currentAxisLength;
 							}
 
@@ -1908,6 +1926,79 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			glPopMatrix();
 
+			// @Testing.
+			#if 0
+			{
+				glDisable(GL_LIGHTING);
+
+				Object* obj1 = &world->objects.at(1);
+				Object* obj2 = &world->objects.at(0);
+
+				Object* obj3 = &world->objects.at(2);
+				Object* obj4 = &world->objects.at(3);
+
+				Object* obj5 = &world->objects.at(4);
+
+				Vec3 ld = normVec3(obj5->pos - obj1->pos);
+
+
+				// -Translate, -rotate, -scale -> scale, rotate, translate.
+
+				// Vec3 ldp = obj1->pos + ld;
+
+				obj3->pos = obj1->pos;
+				obj3->pos = obj3->pos - obj2->pos;
+				obj3->pos = quatInverse(obj2->rot) * obj3->pos;
+				obj3->pos = obj3->pos * (1/obj2->dim);
+
+				// ldp = ldp - obj2->pos;
+				// ldp = quatInverse(obj2->rot) * ldp;
+				// ldp = ldp * (1/obj2->dim);
+
+				// ld = normVec3(ldp - obj3->pos);
+
+				ld = quatInverse(obj2->rot) * ld;
+				ld = ld * (1/obj2->dim);
+				ld = normVec3(ld);
+
+				obj4->pos = vec3(0,0,0);
+				obj4->dim = vec3(1,1,1);
+
+				Vec3 intersection, intersectionNormal;
+				float distance = lineSphereIntersection(obj3->pos, ld, obj4->pos, 0.5f, &intersection, &intersectionNormal);
+
+				if(distance != -1) {
+					glLineWidth(2);
+					drawSphere(intersection, 0.1f, vec4(0,0,0,1));
+					drawLine(obj3->pos, intersection, vec4(1,0,0,1));
+					drawLine(intersection, intersection+intersectionNormal, vec4(0,1,0,1));
+
+					intersection = intersection * obj2->dim;
+					intersection = obj2->rot * intersection;
+					intersection = intersection + obj2->pos;
+
+					intersectionNormal = intersectionNormal * (1/obj2->dim);
+					intersectionNormal = obj2->rot * intersectionNormal;
+					intersectionNormal = normVec3(intersectionNormal);
+
+					// intersectionNormal = intersectionNormal * (1/obj2->dim);
+					// intersectionNormal = quatInverse(obj3->rot) * intersectionNormal;
+					// intersectionNormal = normVec3(intersectionNormal);
+
+
+					drawSphere(intersection, 0.1f, vec4(0,0,0,1));
+					drawLine(obj1->pos, intersection, vec4(1,0,0,1));
+					drawLine(intersection, intersection+intersectionNormal, vec4(0,0,1,1));
+
+					glLineWidth(1);
+				} else {
+					// drawLine(lp, lp + ld*5, vec4(0,0,0,1));
+				}
+			
+				glEnable(GL_LIGHTING);
+			}
+			#endif
+
 			// @EntityUI draw.
 			{
 				EntityUI* eui = &ad->entityUI;
@@ -2059,8 +2150,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							{
 								Vec3 intersection;
-								bool result = boxRaycastRotated(cam->pos, rayDir, pos, vec3(translationCenterBoxSize), rot, &intersection);
-								if(result) {
+								float distance = boxRaycastRotated(cam->pos, rayDir, pos, vec3(translationCenterBoxSize), rot, &intersection);
+								if(distance != -1) {
 									eui->centerOffset = intersection - pos;
 									centerIndex = 1;
 
@@ -2264,8 +2355,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(eui->selectionState != ENTITYUI_ACTIVE) {
 								Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
 								Vec3 intersection;
-								bool result = boxRaycastRotated(cam->pos, rayDir, p, vec3(scaleArrowBoxDim), rot, &intersection);
-								if(result) {
+								float distance = boxRaycastRotated(cam->pos, rayDir, p, vec3(scaleArrowBoxDim), rot, &intersection);
+								if(distance != -1) {
 									hotAxisIndex = i+1;
 									hotAxis = normVec3(p - pos);
 									eui->centerOffset = intersection - p;
@@ -2810,18 +2901,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Grid size", "Cam position", "Cam rotation", "Cam fov", "Default light", "Global light", "Global light dir", "Aperture size", "Focal distance"};
+						char* labels[] = {"Cam position", "Cam rotation", "Cam fov", "Default light", "Global light", "Global light dir", "Aperture size", "Focal distance"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
 							labelsMaxWidth = max(labelsMaxWidth, getTextDim(labels[i], font).w);
 						}
 						labelsMaxWidth += padding.w;
-
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &eui->snapGridSize, 1,10);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -2932,8 +3018,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 								Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
 
 								Vec3 intersection;
-								int objectIndex = castRay(cam->pos, rayDir, ad->world.objects, &intersection);
-								if(objectIndex != -1) {
+								int objectIndex = castRay(cam->pos, rayDir, &ad->world.objects, 0, &intersection);
+								if(objectIndex) {
 									world->focalPoint = intersection;
 									updateFocalDistance = true;
 								}
@@ -3676,8 +3762,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					separatorCount = 2;
 					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount;
 				} else if(strCompare(pd.name, "SettingsMenu")) {
-					elementCount = 4;
-					separatorCount = 1;
+					elementCount = 6;
+					separatorCount = 2;
 					popupHeight = elementCount*(eh) - padding + border*2 + topBottomPadding*2 + separatorHeight*separatorCount + topBottomPadding*0.5f;
 				}
 
@@ -3817,7 +3903,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 						gui->sliderSettings.applyAfter = false;
 
+
 						p.y -= separatorHeight;
+
 
 						s = "Mouse sensitivity";
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
@@ -3825,6 +3913,17 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
 						newGuiQuickSlider(gui, r, &ad->mouseSpeed, 0, 2); 
+
+
+						p.y -= separatorHeight;
+
+
+						s = "Snap grid size";
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						newGuiQuickText(gui, r, s, vec2i(-1,0)); 
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh + padding;
+						newGuiQuickSlider(gui, r, &ad->entityUI.snapGridSize, 1, 10); 
 
 
 						if(reopenPopup) {

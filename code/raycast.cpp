@@ -101,7 +101,9 @@ void geometryBoundingSphere(Object* obj) {
 	float r;
 	switch(obj->geometry.type) {
 		case GEOM_TYPE_BOX:    r = lenVec3(obj->dim)*0.5f; break;
-		case GEOM_TYPE_SPHERE: r = obj->dim.x*0.5f; break;
+		case GEOM_TYPE_SPHERE: {
+			r = max(obj->dim.x, obj->dim.y, obj->dim.z)*0.5f;
+		} break;
 	}
 
 	obj->geometry.boundingSphereRadius = r;
@@ -346,7 +348,7 @@ TimeStamp processPixelsThreadedTimings[5] = {};
 #define endTimer(i)
 #endif
 
-int castRayX(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectIndex, Vec3* objectReflectionPos, Vec3* objectReflectionNormal) {
+int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectIndex = 0, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
 
 	int objectIndex = 0;
 
@@ -369,42 +371,56 @@ int castRayX(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectIn
 
 		if(possibleIntersection) {
 
-			Vec3 reflectionPos, reflectionNormal;
+			Vec3 position, normal;
 			float distance = -1;
-			{
-				switch(g->type) {
-					case GEOM_TYPE_BOX: {
 
-						// Check for rotation.
+			switch(g->type) {
 
-						if(obj->rot == quat()) {
-							int face;
-							bool hit = boxRaycast(rayPos, rayDir, rect3CenDim(obj->pos, obj->dim), &distance, &face, insideObject);
-							if(hit) {
-								reflectionPos = rayPos + rayDir*distance;
-								reflectionNormal = boxRaycastNormals[face];
-							}
-						} else {
-							int face;
-							Vec3 intersection;
-							bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &intersection, &face, insideObject);
-							if(hit) {
-								reflectionPos = intersection;
-								reflectionNormal = obj->rot * boxRaycastNormals[face];
-								distance = lenVec3(intersection - rayPos);
-							}
+				case GEOM_TYPE_BOX: {
+					distance = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &position, &normal, insideObject);
+				} break;
+
+				case GEOM_TYPE_SPHERE: {
+					if(equal(obj->dim.x, obj->dim.y, obj->dim.z)) {
+						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &position, &normal, insideObject);
+					} else {
+						// Transform a vector to unit system and back:
+						//   -translate, -rotate, -scale -> scale, rotate, translate.
+						// Transform a direction to unit system and back:
+						//   -rotate, -scale -> -scale, rotate.
+
+						Vec3 lp = rayPos;
+						Vec3 ld = rayDir;
+
+						lp = lp - obj->pos;
+						lp = quatInverse(obj->rot) * lp;
+						lp = lp * (1/obj->dim);
+
+						ld = quatInverse(obj->rot) * ld;
+						ld = ld * (1/obj->dim);
+						ld = normVec3(ld);
+
+						distance = lineSphereIntersection(lp, ld, vec3(0,0,0), 0.5f, &position, &normal, insideObject);
+
+						if(distance != -1) {
+							position = position * obj->dim;
+							position = obj->rot * position;
+							position = position + obj->pos;
+
+							distance = lenVec3(rayPos - position);
+
+							normal = normal * (1/obj->dim);
+							normal = obj->rot * normal;
+							normal = normVec3(normal);
 						}
-					} break;
+					}
+				} break;
 
-					case GEOM_TYPE_SPHERE: {
-						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos, &reflectionNormal, insideObject);
-					} break;
-				}
 			}
 
 			if(insideObject) {
-				*objectReflectionPos = reflectionPos;
-				*objectReflectionNormal = reflectionNormal;
+				if(intersection) *intersection = position;
+				if(intersectionNormal) *intersectionNormal = normal;
 
 				return lastObjectIndex;
 			}
@@ -413,8 +429,8 @@ int castRayX(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectIn
 				minDistance = distance;
 				objectIndex = i+1;
 
-				*objectReflectionPos = reflectionPos;
-				*objectReflectionNormal = reflectionNormal;
+				if(intersection) *intersection = position;
+				if(intersectionNormal) *intersectionNormal = normal;
 			}
 		}
 	}
@@ -429,7 +445,7 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 	// Find object with closest intersection.
 
 	Vec3 objectReflectionPos, objectReflectionNormal;
-	int objectIndex = castRayX(rayPos, rayDir, &world->objects, lastObjectIndex, &objectReflectionPos, &objectReflectionNormal);
+	int objectIndex = castRay(rayPos, rayDir, &world->objects, lastObjectIndex, &objectReflectionPos, &objectReflectionNormal);
 
 	if(objectIndex != 0) {
 
@@ -509,12 +525,9 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 
 		float lightDot = dot(rayDir, world->globalLightDir);
 		lightDot = clampMin(lightDot, 0);
-		// lightDot = dotUnitToPercent(lightDot);
 		Vec3 light = world->globalLightColor * lightDot;
-
-		// pixelColor += attenuation * (world.defaultEmitColor + light);
+		
 		sampleColor += attenuation * (world->defaultEmitColor + light);
-
 	}
 
 	return sampleColor;
@@ -596,7 +609,7 @@ void processPixelsThreaded(void* data) {
 
 				Vec3 sampleColor = processSample(rayPos, rayDir, &world, &settings);
 
-				// sampleColor = clampMax(sampleColor, white);
+				sampleColor = clampMax(sampleColor, white);
 				pixelColor += sampleColor;
 
 				endTimer(1);
@@ -623,58 +636,58 @@ void processPixelsThreaded(void* data) {
 	}
 }
 
-// @Duplication with processPixels.
-int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object> objects, Vec3* intersection = 0) {
+// // @Duplication with processPixels.
+// int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, Vec3* intersection = 0) {
 
-	int objectIndex = -1;
+// 	int objectIndex = -1;
 
-	float minDistance = FLT_MAX;
-	for(int i = 0; i < objects.count; i++) {
-		Object* obj = objects + i;
-		Geometry* g = &obj->geometry;
+// 	float minDistance = FLT_MAX;
+// 	for(int i = 0; i < objects->count; i++) {
+// 		Object* obj = &objects->at(i);
+// 		Geometry* g = &obj->geometry;
 
-		geometryBoundingSphere(obj);
+// 		geometryBoundingSphere(obj);
 
-		// Check collision with bounding sphere.
-		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
-		if(possibleIntersection) {
+// 		// Check collision with bounding sphere.
+// 		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
+// 		if(possibleIntersection) {
 
-			Vec3 reflectionPos, reflectionNormal;
-			float distance = -1;
-			{
-				switch(g->type) {
-					case GEOM_TYPE_BOX: {
-						int face;
-						Vec3 inters;
-						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &inters, &face);
-						if(hit) {
-							reflectionPos = inters;
-							reflectionNormal = boxRaycastNormals[face];
-							distance = lenVec3(inters - rayPos);
+// 			Vec3 reflectionPos, reflectionNormal;
+// 			float distance = -1;
+// 			Vec3 inters;
+// 			{
+// 				switch(g->type) {
+// 					case GEOM_TYPE_BOX: {
+// 						int face;
+// 						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &inters, &face);
+// 						if(hit) {
+// 							reflectionPos = inters;
+// 							reflectionNormal = obj->rot * boxRaycastNormals[face];
+// 							distance = lenVec3(inters - rayPos);
+// 						}
+// 					} break;
 
-							if(intersection) *intersection = inters;
-						}
-					} break;
+// 					case GEOM_TYPE_SPHERE: {
+// 						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos);
+// 						if(distance > 0) {
+// 							reflectionNormal = normVec3(reflectionPos - obj->pos);
+// 							inters = rayPos + rayDir * distance;
+// 						}
+// 					} break;
+// 				}
+// 			}
 
-					case GEOM_TYPE_SPHERE: {
-						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos);
-						if(distance > 0) {
-							reflectionNormal = normVec3(reflectionPos - obj->pos);
-							if(intersection) *intersection = rayPos + rayDir * distance;
-						}
-					} break;
-				}
-			}
+// 			if(distance > 0 && distance < minDistance) {
+// 				minDistance = distance;
+// 				objectIndex = i;
 
-			if(distance > 0 && distance < minDistance) {
-				minDistance = distance;
-				objectIndex = i;
-			}
-		}
-	}
+// 				if(intersection) *intersection = inters;
+// 			}
+// 		}
+// 	}
 
-	return objectIndex;
-}
+// 	return objectIndex;
+// }
 
 
 

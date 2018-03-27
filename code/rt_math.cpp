@@ -91,6 +91,10 @@ inline int maxReturnIndex(float a, float b, float c) {
 	return index;
 }
 
+inline float equal(float a, float b, float c) {
+	return a == b && a == c;
+}
+
 inline float diff(float a, float b) {
 	return abs(a - b);
 }
@@ -2344,7 +2348,12 @@ bool lineSphereCollision(Vec3 lp, Vec3 ld, Vec3 sp, float sr) {
 	float lenLp = lenVec3(lp);
 	float b = dotLdLp*dotLdLp - lenLp*lenLp + sr*sr;
 
-	return b >= 0;
+	if(b < 0) return false;
+
+	float distance = -(dot(ld, lp)) + sqrt(b);
+	if(distance < 0) return false;
+
+	return true;
 }
 
 float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
@@ -2364,6 +2373,8 @@ float lineSphereIntersection(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersec
 	float distance = -(dot(ld, lp));
 	if(secondIntersection) distance += sqrt(b);
 	else distance += -sqrt(b);
+
+	if(distance < 0) return -1;
 
 	if(intersection) {
 		*intersection = oldP + ld*distance;
@@ -2943,19 +2954,32 @@ bool operator==(Quat q0, Quat q1) {
 // 
 
 Rect3 rect3CenDim(Vec3 cen, Vec3 dim);
-bool boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* intersection = 0, int* face = 0, bool secondIntersection = false) {
+float boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
 
-	Vec3 rotatedPos = rotateVec3Around(lp, quatInverse(rot), pos);
-	Vec3 rotatedDir = rotateVec3Around(lp + ld, quatInverse(rot), pos);
-	rotatedDir = normVec3(rotatedDir - rotatedPos);
+	bool rotated = rot == quat() ? false : true;
 
-	float distance;
-	bool result = boxRaycast(rotatedPos, rotatedDir, rect3CenDim(pos, dim), &distance, face, secondIntersection);
-	if(result) {
-		*intersection = lp + ld*distance;
+	Vec3 rotatedPos, rotatedDir;
+	if(rotated) {
+		rotatedPos = rotateVec3Around(lp, quatInverse(rot), pos);
+		rotatedDir = rotateVec3Around(lp + ld, quatInverse(rot), pos);
+		rotatedDir = normVec3(rotatedDir - rotatedPos);
+	} else {
+		rotatedPos = lp;
+		rotatedDir = ld;
 	}
 
-	return result;
+	float distance = -1;
+	int face;
+	bool result = boxRaycast(rotatedPos, rotatedDir, rect3CenDim(pos, dim), &distance, &face, secondIntersection);
+	if(result) {
+		if(intersection) *intersection = lp + ld*distance;
+		if(intersectionNormal) {
+			*intersectionNormal = boxRaycastNormals[face];
+			if(rotated) *intersectionNormal = rot * (*intersectionNormal);
+		}
+	}
+
+	return distance;
 }
 
 //
