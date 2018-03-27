@@ -24,6 +24,7 @@
 	- Check out setTimer for pitfalls.
 	
 	- Cylinder, Cone, Pyramid, Torus for rotation widget.
+	- Make smooth shading work for sphere.
 
 	Bugs:
 	- Windows key slow often.
@@ -376,6 +377,47 @@ extern "C" APPMAINFUNCTION(appMain) {
 			triangleSubDivVertex(buffer, &count, vec3(0,0,-1), vec3(0,1,0),  vec3(-1,0,0), div );
 			triangleSubDivVertex(buffer, &count, vec3(0,0,-1), vec3(-1,0,0), vec3(0,-1,0), div );
 			triangleSubDivVertex(buffer, &count, vec3(0,0,-1), vec3(0,-1,0), vec3(1,0,0),  div );
+
+			Mesh m = {};
+			m.vertices = getPArray(MeshVertex, count);
+			copyArray(m.vertices, buffer, MeshVertex, count);
+			m.vertexCount = count;
+
+			gs->meshes[gs->meshCount++] = m;
+		}
+
+		// Cylinder.
+		{
+			int count = 0;
+
+			Vec3 topDiskPos = vec3(0,0,0.5f);
+			Vec3 bottomDiskPos = vec3(0,0,-0.5f);
+
+			float r = 0.5f;
+			int segments = 20;
+			for(int i = 0; i < segments+1; i++) {
+				float angle1 = (i * M_2PI/(float)segments);
+				float angle2 = ((i+1) * M_2PI/(float)segments);
+
+				Vec3 pTop1 = topDiskPos + rotateVec3(vec3(0,1,0), angle1, vec3(0,0,1)) * r;
+				Vec3 pTop2 = topDiskPos + rotateVec3(vec3(0,1,0), angle2, vec3(0,0,1)) * r;
+				buffer[count++] = { topDiskPos, vec3(0,0,1) };
+				buffer[count++] = { pTop2, vec3(0,0,1) };
+				buffer[count++] = { pTop1, vec3(0,0,1) };
+
+				Vec3 pBottom1 = bottomDiskPos + rotateVec3(vec3(0,1,0), angle1, vec3(0,0,1)) * r;
+				Vec3 pBottom2 = bottomDiskPos + rotateVec3(vec3(0,1,0), angle2, vec3(0,0,1)) * r;
+				buffer[count++] = { bottomDiskPos	, vec3(0,0,-1) };
+				buffer[count++] = { pBottom1, vec3(0,0,-1) };
+				buffer[count++] = { pBottom2, vec3(0,0,-1) };
+
+				buffer[count++] = { pTop1,    normVec3(vec3(pTop1.xy,0)) };
+				buffer[count++] = { pTop2,    normVec3(vec3(pTop2.xy,0)) };
+				buffer[count++] = { pBottom1, normVec3(vec3(pTop1.xy,0)) };
+				buffer[count++] = { pTop2,    normVec3(vec3(pTop2.xy,0)) };
+				buffer[count++] = { pBottom2, normVec3(vec3(pTop2.xy,0)) };
+				buffer[count++] = { pBottom1, normVec3(vec3(pTop1.xy,0)) };
+			}
 
 			Mesh m = {};
 			m.vertices = getPArray(MeshVertex, count);
@@ -1696,16 +1738,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 								currentAxisLength = roundMod(currentAxisLength, roundFloat(eui->snapGridSize));
 							}
 
-							// if(obj->geometry.type == GEOM_TYPE_SPHERE || eui->enableScaleEqually) {
-							// 	obj->dim = vec3(currentAxisLength);
-							// } else if(obj->geometry.type == GEOM_TYPE_BOX) {
-							// 	obj->dim = eui->startDim;
-							// 	obj->dim.e[eui->axisIndex-1] = currentAxisLength;
-							// }
-
 							if(eui->enableScaleEqually) {
 								obj->dim = vec3(currentAxisLength);
-							} else if(obj->geometry.type == GEOM_TYPE_BOX || obj->geometry.type == GEOM_TYPE_SPHERE) {
+							} else {
 								obj->dim = eui->startDim;
 								clampMin(&currentAxisLength, 0.0001f);
 								obj->dim.e[eui->axisIndex-1] = currentAxisLength;
@@ -1849,15 +1884,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				glLoadMatrixf(fm.e);
 
-				switch(g->type) {
-					case GEOM_TYPE_BOX: {
-						drawBoxRaw();
-					} break;
-
-					case GEOM_TYPE_SPHERE: {
-						drawSphereRaw();
-					} break;
-				}
+				drawGeometry(g->type);
 
 				// Draw ui grid.
 
@@ -1905,15 +1932,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					glLineWidth(0.5f);
 
-					switch(g->type) {
-						case GEOM_TYPE_BOX: {
-							drawBoxRaw();
-						} break;
-
-						case GEOM_TYPE_SPHERE: {
-							drawSphereRaw();
-						} break;
-					}
+					drawGeometry(g->type);
 
 					glEnable(GL_LIGHTING);
 					glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -1927,7 +1946,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glPopMatrix();
 
 			// @Testing.
-			#if 0
+			#if 1
 			{
 				glDisable(GL_LIGHTING);
 
@@ -1935,56 +1954,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Object* obj2 = &world->objects.at(0);
 
 				Object* obj3 = &world->objects.at(2);
-				Object* obj4 = &world->objects.at(3);
-
-				Object* obj5 = &world->objects.at(4);
-
-				Vec3 ld = normVec3(obj5->pos - obj1->pos);
 
 
-				// -Translate, -rotate, -scale -> scale, rotate, translate.
-
-				// Vec3 ldp = obj1->pos + ld;
-
-				obj3->pos = obj1->pos;
-				obj3->pos = obj3->pos - obj2->pos;
-				obj3->pos = quatInverse(obj2->rot) * obj3->pos;
-				obj3->pos = obj3->pos * (1/obj2->dim);
-
-				// ldp = ldp - obj2->pos;
-				// ldp = quatInverse(obj2->rot) * ldp;
-				// ldp = ldp * (1/obj2->dim);
-
-				// ld = normVec3(ldp - obj3->pos);
-
-				ld = quatInverse(obj2->rot) * ld;
-				ld = ld * (1/obj2->dim);
-				ld = normVec3(ld);
-
-				obj4->pos = vec3(0,0,0);
-				obj4->dim = vec3(1,1,1);
+				Vec3 rayPos = obj1->pos;
+				Vec3 rayDir = normVec3(obj3->pos - obj1->pos);
 
 				Vec3 intersection, intersectionNormal;
-				float distance = lineSphereIntersection(obj3->pos, ld, obj4->pos, 0.5f, &intersection, &intersectionNormal);
+				int objectIndex = castRay(rayPos, rayDir, &world->objects, 0, &intersection, &intersectionNormal);
 
-				if(distance != -1) {
+				if(objectIndex) {
 					glLineWidth(2);
-					drawSphere(intersection, 0.1f, vec4(0,0,0,1));
-					drawLine(obj3->pos, intersection, vec4(1,0,0,1));
-					drawLine(intersection, intersection+intersectionNormal, vec4(0,1,0,1));
-
-					intersection = intersection * obj2->dim;
-					intersection = obj2->rot * intersection;
-					intersection = intersection + obj2->pos;
-
-					intersectionNormal = intersectionNormal * (1/obj2->dim);
-					intersectionNormal = obj2->rot * intersectionNormal;
-					intersectionNormal = normVec3(intersectionNormal);
-
-					// intersectionNormal = intersectionNormal * (1/obj2->dim);
-					// intersectionNormal = quatInverse(obj3->rot) * intersectionNormal;
-					// intersectionNormal = normVec3(intersectionNormal);
-
 
 					drawSphere(intersection, 0.1f, vec4(0,0,0,1));
 					drawLine(obj1->pos, intersection, vec4(1,0,0,1));
@@ -1992,6 +1971,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 					glLineWidth(1);
 				} else {
+					printf("No intersection!\n");
+
 					// drawLine(lp, lp + ld*5, vec4(0,0,0,1));
 				}
 			

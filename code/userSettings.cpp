@@ -52,6 +52,7 @@ enum SamplerType {
 enum MeshType {
 	MESH_CUBE = 0,
 	MESH_SPHERE,
+	MESH_CYLINDER,
 
 	MESH_SIZE,
 };

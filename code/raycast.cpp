@@ -5,6 +5,7 @@
 enum {
 	GEOM_TYPE_SPHERE = 0,
 	GEOM_TYPE_BOX,
+	GEOM_TYPE_CYLINDER,
 
 	GEOM_TYPE_COUNT,
 };
@@ -12,6 +13,7 @@ enum {
 char* geometryTypeStrings[] = {
 	"GEOM_TYPE_SPHERE",
 	"GEOM_TYPE_BOX",
+	"GEOM_TYPE_CYLINDER",
 };
 
 struct Material {
@@ -103,6 +105,9 @@ void geometryBoundingSphere(Object* obj) {
 		case GEOM_TYPE_BOX:    r = lenVec3(obj->dim)*0.5f; break;
 		case GEOM_TYPE_SPHERE: {
 			r = max(obj->dim.x, obj->dim.y, obj->dim.z)*0.5f;
+		} break;
+		case GEOM_TYPE_CYLINDER: {
+			r = max(obj->dim.x, obj->dim.y)*0.5f + obj->dim.z*0.5f;
 		} break;
 	}
 
@@ -302,9 +307,6 @@ struct ProcessPixelsData {
 	RaytraceSettings* settings;
 
 	Vec3* buffer;
-	// int pixelIndex;
-	// int pixelCount;
-
 	Vec2i pixelPos;
 	Vec2i pixelDim;
 
@@ -312,11 +314,71 @@ struct ProcessPixelsData {
 };
 
 
-// void cameraToWorldSpace(Vec3 camTopLeft, Camera* cam, Vec2i texDim, Vec2i pixelPos) {
-// 	Vec3 rayPos = settings.camTopLeft;
-// 	rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
-// 	rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
-// }
+
+// http://www.cl.cam.ac.uk/teaching/1999/AGraphHCI/SMAG/node2.html#eqn:rectcylrayquad
+float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
+
+	// Cylinder is at origin and has r = 1 and h = 2;
+
+	// Solve for circle:
+	// Substitute ray equation in circle equation and then solve quadratic equation.
+
+	float a = dot(d.xy, d.xy);
+	float b = 2*dot(p.xy, d.xy);
+	float c = dot(p.xy, p.xy) - 1;
+
+	float discriminant = b*b - 4*a*c;
+
+	if(discriminant < 0) return -1;
+
+	float t1 = (-b + sqrt(discriminant)) / (2*a);
+	float t2 = (-b - sqrt(discriminant)) / (2*a);
+
+	float z1 = p.z + d.z*t1;
+	float z2 = p.z + d.z*t2;
+
+	// No solution.
+	if(t1 < 0 && t2 < 0) return -1;
+
+	// Above or below cylinder.
+	if((z1 > 1 && z2 > 1) || (z1 < -1 && z2 < -1)) return -1;
+
+	// Type 0 = middle, 1 = top, 2 = bottom.
+	int type1 = 0;
+	int type2 = 0;
+
+	// Adjust ts if we hit top or bottom cap.
+	// Lerp z to get new t.
+	if(z1 >  1 && z2 <=  1) { t1 = ( 1-p.z)/d.z; type1 = 1; }
+	if(z1 < -1 && z2 >= -1) { t1 = (-1-p.z)/d.z; type1 = 2; }
+	if(z2 >  1 && z1 <=  1) { t2 = ( 1-p.z)/d.z; type2 = 1; }
+	if(z2 < -1 && z1 >= -1) { t2 = (-1-p.z)/d.z; type2 = 2; }
+
+	float distance;
+	if(!secondIntersection) {
+		distance = min(t1,t2);
+		if(distance < 0) distance = max(t1,t2);
+	} else {
+		distance = max(t1,t2);
+	}
+
+	if(intersection) {
+		*intersection = p + d*distance;
+
+		if(intersectionNormal) {
+			int type = distance == t1 ? type1 : type2;
+
+			if(type == 0) *intersectionNormal = normVec3(vec3((*intersection).xy, 0));
+			else if(type == 1) *intersectionNormal = vec3(0,0,1);
+			else *intersectionNormal = vec3(0,0,-1);
+		}	
+	}
+
+	return distance;
+}
+
+
+
 
 struct TimeStamp {
 	i64 cycleStart;
@@ -416,6 +478,36 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectInd
 					}
 				} break;
 
+				case GEOM_TYPE_CYLINDER: {
+					bool rotated = !(obj->rot == quat());
+
+					float cylinderDim = 2; // Radius = 1, h = 2.
+
+					Vec3 lp = rayPos;
+					Vec3 ld = rayDir;
+
+					lp = lp - obj->pos;
+					if(rotated) lp = quatInverse(obj->rot) * lp;
+					lp = lp * (cylinderDim/obj->dim);
+
+					ld = quatInverse(obj->rot) * ld;
+					if(rotated) ld = ld * (cylinderDim/obj->dim);
+					ld = normVec3(ld);
+
+					distance = lineCylinderIntersection(lp, ld, &position, &normal, insideObject);
+
+					if(distance != -1) {
+						position = position * (obj->dim/cylinderDim);
+						if(rotated) position = obj->rot * position;
+						position = position + obj->pos;
+
+						distance = lenVec3(rayPos - position);
+
+						normal = normal * (cylinderDim/obj->dim);
+						if(rotated) normal = obj->rot * normal;
+						normal = normVec3(normal);
+					}
+				} break;
 			}
 
 			if(insideObject) {
@@ -1439,4 +1531,21 @@ void openSceneCommand(DialogData* dialogData) {
 void saveSceneCommand(World* world, char* sceneFile, bool sceneHasFile, DialogData* dialogData) {
 	if(sceneHasFile) saveScene(world, sceneFile);
 	else openSceneDialog(dialogData, true);
+}
+
+
+void drawGeometry(int type) {
+	switch(type) {
+		case GEOM_TYPE_BOX: {
+			drawBoxRaw();
+		} break;
+
+		case GEOM_TYPE_SPHERE: {
+			drawSphereRaw();
+		} break;
+
+		case GEOM_TYPE_CYLINDER: {
+			drawCylinderRaw();
+		} break;
+	}
 }
