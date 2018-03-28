@@ -3,7 +3,6 @@
 
 	ToDo:
 	- Clean global light and multiple lights.
-	- Ellipsoids.
 
 	- More advanced lighting function.
 	- Have cam independent, mini window.
@@ -22,9 +21,10 @@
 	- App hangs when calculating blueNoise samples.
 
 	- Check out setTimer for pitfalls.
-	
-	- Cylinder, Cone, Pyramid, Torus for rotation widget.
-	- Make smooth shading work for sphere.
+	- Torus for rotation widget.
+	- Make global light use 2 parameters: rotation and height.
+
+	- Switch to hide panels with fade out animation.
 
 	Bugs:
 	- Windows key slow often.
@@ -162,6 +162,10 @@ struct AppData {
 	Rect panelLeftRect;
 	Rect panelRightRect;
 	Rect panelColorPickerRect;
+
+	bool showPanels;
+	float hidePanelAnim;
+	bool panelsVisible;
 
 	// 
 
@@ -427,6 +431,43 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gs->meshes[gs->meshCount++] = m;
 		}
 
+		// Cone.
+		{
+			int count = 0;
+
+			Vec3 topPos = vec3(0,0,0.5f);
+			Vec3 bottomDiskPos = vec3(0,0,-0.5f);
+			float r = 0.5f;
+
+			int segments = 20;
+			for(int i = 0; i < segments+1; i++) {
+				float angle1 = (i * M_2PI/(float)segments);
+				float angle2 = ((i+1) * M_2PI/(float)segments);
+
+				Vec3 pTop = topPos;
+				Vec3 pBottom1 = bottomDiskPos + rotateVec3(vec3(0,1,0), angle1, vec3(0,0,1)) * r;
+				Vec3 pBottom2 = bottomDiskPos + rotateVec3(vec3(0,1,0), angle2, vec3(0,0,1)) * r;
+				buffer[count++] = { bottomDiskPos, vec3(0,0,-1) };
+				buffer[count++] = { pBottom1, vec3(0,0,-1) };
+				buffer[count++] = { pBottom2, vec3(0,0,-1) };
+
+				Vec3 a = rotateVec3(vec3(0,1,0), angle1, vec3(0,0,1));
+				Vec3 b = rotateVec3(vec3(0,1,0), angle2, vec3(0,0,1));
+				Vec3 c = rotateVec3(vec3(0,1,0), angle1 + (angle2-angle1)/2.0f, vec3(0,0,1));
+
+				buffer[count++] = { topPos,   normVec3(vec3(c.xy,1)) };
+				buffer[count++] = { pBottom2, normVec3(vec3(b.xy,1)) };
+				buffer[count++] = { pBottom1, normVec3(vec3(a.xy,1)) };
+			}
+
+			Mesh m = {};
+			m.vertices = getPArray(MeshVertex, count);
+			copyArray(m.vertices, buffer, MeshVertex, count);
+			m.vertexCount = count;
+
+			gs->meshes[gs->meshCount++] = m;
+		}
+
 		// 
 		// Samplers.
 		//
@@ -556,8 +597,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->fontFileBold   = getPStringCpy("LiberationSans-Bold.ttf");
 		ad->fontFileItalic = getPStringCpy("LiberationSans-Italic.ttf");
 
-
-
+		ad->showPanels = true;
+		ad->panelsVisible = true;
 
 		// ad->settings.texDim = vec2i(1280, 720);
 		ad->settings.texDim = vec2i(768, 432);
@@ -659,6 +700,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 	}
 
 	clearTMemory();
+
+	// {
+		// if(init)
+    		// SetWindowPos(systemData->windowHandle, 0, 0,0,1280,800, SWP_NOMOVE);
+	// }
 
 	//
 	// Update input.
@@ -1118,6 +1164,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Object* obj = world->objects + i;
 					geometryBoundingSphere(obj);
 				}
+
+				worldCalcLightDir(world);
 			}
 
 			// Push thread jobs in circles.
@@ -1370,6 +1418,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 				geometryBoundingSphere(obj);
 			}
 
+			if(keyPressed(gui, input, KEYCODE_TAB)) {
+				ad->showPanels = !ad->showPanels;
+			}
+
 			bool multipleSelectionMode = input->keysDown[KEYCODE_CTRL];
 			eui->multipleSelectionMode = multipleSelectionMode;
 
@@ -1466,7 +1518,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				eui->objectsEdited = true;
 			}
 
-			if(keyPressed(gui, input, KEYCODE_TAB)) eui->localMode = !eui->localMode;
+			if(keyPressed(gui, input, KEYCODE_R)) eui->localMode = !eui->localMode;
 
 			if(keyPressed(gui, input, KEYCODE_1)) eui->selectionMode = ENTITYUI_MODE_TRANSLATION;
 			if(keyPressed(gui, input, KEYCODE_2)) eui->selectionMode = ENTITYUI_MODE_ROTATION;
@@ -1801,7 +1853,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 		rowToColumn(&temp);
 		glLoadMatrixf(temp.e);
 
-		Vec4 lp = vec4(world->globalLightDir, 0);
+		worldCalcLightDir(world);
+		Vec4 lp = vec4(normVec3(world->globalLightDir), 0);
 		glLightfv(GL_LIGHT0, GL_POSITION, lp.e);
 
 		Vec4 light;
@@ -1946,15 +1999,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			glPopMatrix();
 
 			// @Testing.
-			#if 1
+			#if 0
 			{
 				glDisable(GL_LIGHTING);
 
 				Object* obj1 = &world->objects.at(1);
 				Object* obj2 = &world->objects.at(0);
-
 				Object* obj3 = &world->objects.at(2);
-
 
 				Vec3 rayPos = obj1->pos;
 				Vec3 rayDir = normVec3(obj3->pos - obj1->pos);
@@ -1969,10 +2020,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 					drawLine(obj1->pos, intersection, vec4(1,0,0,1));
 					drawLine(intersection, intersection+intersectionNormal, vec4(0,0,1,1));
 
+					int objectIndex = castRay(rayPos, rayDir, &world->objects, -1, &intersection, &intersectionNormal);
+					if(objectIndex) {
+						drawSphere(intersection, 0.1f, vec4(0,0,0,1));
+						drawLine(obj1->pos, intersection, vec4(1,0,0,1));
+						drawLine(intersection, intersection+intersectionNormal, vec4(0,0,1,1));
+					}
+
 					glLineWidth(1);
 				} else {
-					printf("No intersection!\n");
-
 					// drawLine(lp, lp + ld*5, vec4(0,0,0,1));
 				}
 			
@@ -2614,6 +2670,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 				rectExpand(&r, vec2(-buttonMargin));
 				drawRect(rectRound(r), ad->fitToScreen?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture("fitToScreenIcon.png")->id);
 
+				// Hide panels.
+
+				r = rectTLDim(p, vec2(buttonWidth)); p.x += buttonWidth;
+				if(newGuiQuickPButton(gui, r, "", &tbs)) {
+					ad->showPanels = !ad->showPanels;
+				}
+				rectExpand(&r, vec2(-buttonMargin));
+				drawRect(rectRound(r), ad->showPanels?cButtonActive:cButtonInactive, rect(0,0,1,1), getTexture("hidePanelsIcon.png")->id);
+
 				{
 					p.x += separatorWidth * 0.5f;
 					float x = roundFloat(p.x) + 0.5f;
@@ -2725,6 +2790,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec2i res = ws->clientRes;
 
+		// Hide panel animation.
+		{
+			float speed = 4.0f;
+			if(!ad->showPanels) ad->hidePanelAnim += ad->dt * speed;
+			else ad->hidePanelAnim -= ad->dt * speed*0.75f;
+
+			clamp(&ad->hidePanelAnim, 0, 1);
+			panelOffset.x = -ad->hidePanelAnim * (max(ad->panelWidthLeft, ad->panelWidthRight));
+
+			if(ad->hidePanelAnim == 1) ad->panelsVisible = false;
+			else ad->panelsVisible = true;
+		}
+
 		panelDim = vec2(ad->panelWidthLeft,ad->panelHeightLeft);
 		Rect rectPanelLeft = rectTLDim(vec2(panelOffset.x,-panelOffset.y), panelDim);
 		ad->panelLeftRect = rectPanelLeft;
@@ -2759,7 +2837,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		glDisable(GL_DEPTH_TEST);
 
 		// Left panel.
-		if(ad->drawSceneWired)
+		if(ad->drawSceneWired && ad->panelsVisible)
 		{
 			glDisable(GL_DEPTH_TEST);
 
@@ -2882,7 +2960,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Cam position", "Cam rotation", "Cam fov", "Default light", "Global light", "Global light dir", "Aperture size", "Focal distance"};
+						char* labels[] = {"Cam position", "Cam rotation", "Cam fov", "Ambient light", "Global light", "Global light dir", "Aperture size", "Focal distance"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -2929,12 +3007,74 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.g, 0, 10);
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.b, 0, 10);
 
+
+
+
+						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						// qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						// newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						// newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.x, -1, 1);
+						// newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.y, -1, 1);
+						// newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.z, -1, 1);
+
+
+						// {
+						// 	Vec3 dir = normVec3(world->globalLightDir);
+						// 	Vec2 dirXY = dir.xy == vec2(0,0) ? vec2(1,0) : normVec2(dir.xy);
+
+						// 	float angleXY2 = atan2(-1,0) - atan2(dirXY.x, dirXY.y);
+						// 	if(angleXY2 < 0) angleXY2 += 2*M_PI;
+						// 	angleXY2 -= M_PI;
+
+						// 	float angleZ2 = asin(dir.z);
+
+						// 	eui->globalLightDirTemp = vec2(angleXY2, angleZ2);
+						// }
+
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.x, -1, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.y, -1, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.z, -1, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightRot.x, 0, 360);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightRot.y, -90, 90);
+						
+						{
+							worldCalcLightDir(world);
+
+							#if 0
+							{
+								Vec3 dir = normVec3(world->globalLightDir);
+								Vec2 dirXY = dir.xy == vec2(0,0) ? vec2(1,0) : normVec2(dir.xy);
+								// float angleXY2 = -(atan2(dirXY.x, dirXY.y) - M_PI_2);
+								// angleXY2 += M_PI;
+								// float angleXY2 = (atan2(dirXY.x, dirXY.y));
+								// if (angleXY2 < 0) angleXY2 = M_2PI - abs(angleXY2);
+
+								float angleXY2 = atan2(-1,0) - atan2(dirXY.x, dirXY.y);
+								if(angleXY2 < 0) angleXY2 += 2*M_PI;
+								angleXY2 -= M_PI;
+
+
+								// angle = atan2(vector2.y, vector2.x) - atan2(vector1.y, vector1.x);
+								// and you may want to normalize it to the range 0 .. 2 * Pi:
+
+								// if (angle < 0) angle += 2 * M_PI;
+
+
+								// if(angleXY2 > M_PI) {
+								// 	angleXY2 = -((M_PI_2 - (angleXY2 - M_PI)) + M_PI_2);
+								// 	if(angleXY2 > 0) angleXY2 = -angleXY2;
+								// }
+
+
+								float angleZ2 = asin(dir.z);
+
+								// printf("%f %f %f,  %f %f, %f %f\n", PVEC3(dir), angleXY, angleZ, angleXY2, angleZ2);
+
+							}
+							#endif
+						}
+
+
 
 						{
 							p.y -= separatorHeight/2;
@@ -2952,6 +3092,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 							qr = quickRow(r, pad.x, labelsMaxWidth, 0, rectH(r), rectH(r));
 							newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+
 							newGuiQuickTextEdit(gui, quickRowNext(&qr), &world->focalPointDistance);
 
 							Vec4 bc = ad->colors.background;
@@ -2960,9 +3101,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 							float margin = rectH(r)*0.2f;
 							{
 								Rect pr = quickRowNext(&qr);
-								if(newGuiGoButtonAction(gui, pr, gui->zLevel)) {
+								Rect scissor = getRectScissor(gui->scissor, pr);
+								if(newGuiGoButtonAction(gui, scissor)) {
 									world->lockFocalPoint = !world->lockFocalPoint;
 								}
+
 								Texture* tex = getTexture("lock.png");
 								drawRect(pr, bc + newGuiHotActiveColorMod(newGuiIsHot(gui), false));
 
@@ -2972,7 +3115,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							bool updateFocalDistance = false;
 							Rect r = quickRowNext(&qr);
-							int event = newGuiGoDragAction(gui, r, gui->zLevel, Gui_Focus_MLeft);
+							Rect scissor = getRectScissor(gui->scissor, r);
+							int event = newGuiGoDragAction(gui, scissor, gui->zLevel, Gui_Focus_MLeft);
 
 							{
 								drawRect(r, bc + newGuiHotActiveColorMod(newGuiIsHot(gui) && event < 1, false));
@@ -3060,7 +3204,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		// @RightPanel.
-		if(entityPanelActive && ad->drawSceneWired)
+		if(entityPanelActive && ad->drawSceneWired && ad->panelsVisible)
 		{
 			newGuiSetHotAllMouseOver(gui, rectPanelRight, gui->zLevel);
 
@@ -3411,7 +3555,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		// @ColorPicker.
-		if(entityPanelActive && ad->oldPanelHeightRight != 0 && ad->drawSceneWired)
+		if(entityPanelActive && ad->oldPanelHeightRight != 0 && ad->drawSceneWired && ad->panelsVisible)
 		{
 			Rect rEntities = ad->panelRightRect;
 

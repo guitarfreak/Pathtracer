@@ -1409,9 +1409,9 @@ Vec3 boxVertices[] = {
 void triangleSubDivVertex(MeshVertex* vertices, int* count, Vec3 a, Vec3 b, Vec3 c, int divIndex) {
 	if(divIndex == 0) {
 		Vec3 n = normVec3(a+b+c);
-		vertices[(*count)] = { a, n }; (*count) += 1;
-		vertices[(*count)] = { b, n }; (*count) += 1;
-		vertices[(*count)] = { c, n }; (*count) += 1;
+		vertices[(*count)] = { a, normVec3(a) }; (*count) += 1;
+		vertices[(*count)] = { b, normVec3(b) }; (*count) += 1;
+		vertices[(*count)] = { c, normVec3(c) }; (*count) += 1;
 	} else {
 		Vec3 ab = normVec3((a+b)/2.0f);
 		Vec3 bc = normVec3((b+c)/2.0f);
@@ -1621,6 +1621,20 @@ void drawCylinderRaw() {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	Mesh* mesh = &globalGraphicsState->meshes[MESH_CYLINDER];
+
+	glBegin(GL_TRIANGLES);
+	for(int i = 0; i < mesh->vertexCount; i++) {
+		MeshVertex* v = mesh->vertices + i;
+		glNormal3f(v->n.x, v->n.y, v->n.z);
+		glVertex3f(v->p.x, v->p.y, v->p.z);
+	}
+	glEnd();
+}
+
+void drawConeRaw() {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_CONE];
 
 	glBegin(GL_TRIANGLES);
 	for(int i = 0; i < mesh->vertexCount; i++) {

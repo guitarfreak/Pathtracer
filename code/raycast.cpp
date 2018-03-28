@@ -6,6 +6,7 @@ enum {
 	GEOM_TYPE_SPHERE = 0,
 	GEOM_TYPE_BOX,
 	GEOM_TYPE_CYLINDER,
+	GEOM_TYPE_CONE,
 
 	GEOM_TYPE_COUNT,
 };
@@ -14,6 +15,7 @@ char* geometryTypeStrings[] = {
 	"GEOM_TYPE_SPHERE",
 	"GEOM_TYPE_BOX",
 	"GEOM_TYPE_CYLINDER",
+	"GEOM_TYPE_CONE",
 };
 
 struct Material {
@@ -107,6 +109,9 @@ void geometryBoundingSphere(Object* obj) {
 			r = max(obj->dim.x, obj->dim.y, obj->dim.z)*0.5f;
 		} break;
 		case GEOM_TYPE_CYLINDER: {
+			r = max(obj->dim.x, obj->dim.y)*0.5f + obj->dim.z*0.5f;
+		} break;
+		case GEOM_TYPE_CONE: {
 			r = max(obj->dim.x, obj->dim.y)*0.5f + obj->dim.z*0.5f;
 		} break;
 	}
@@ -237,9 +242,6 @@ struct World {
 
 	DArray<Object> objects;
 
-	// float ambientRatio;
-	// Vec3 ambientColor;
-
 	Vec3 defaultEmitColor;
 
 	Vec3 globalLightDir;
@@ -250,8 +252,17 @@ struct World {
 
 	bool lockFocalPoint;
 	Vec3 focalPoint;
+
+	Vec2i globalLightRot;
 };
 
+void worldCalcLightDir(World* world) {
+	Vec2i lightRot = world->globalLightRot;
+	float angleXY = degreeToRadian(lightRot.x);
+	float angleZ = degreeToRadian(lightRot.y);
+
+	world->globalLightDir = quat(angleXY, vec3(0,0,-1)) * quat(-angleZ, vec3(0,1,0)) * vec3(1,0,0);
+}
 
 enum {
 	RENDERING_MODE_RAY_TRACER = 0, 
@@ -315,6 +326,7 @@ struct ProcessPixelsData {
 
 
 
+
 // http://www.cl.cam.ac.uk/teaching/1999/AGraphHCI/SMAG/node2.html#eqn:rectcylrayquad
 float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
 
@@ -337,22 +349,20 @@ float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* int
 	float z1 = p.z + d.z*t1;
 	float z2 = p.z + d.z*t2;
 
-	// No solution.
+	// Type 0 = middle, 1 = top, 2 = bottom, 3 = invalid.
+	int type1 = 0, type2 = 0;
+
+	// If above or below check if cap hit, else set invalid.
+	     if(z1 >  1) if(z2 <=  1) { type1 = 1; t1 = ( 1-p.z)/d.z; } else type1 = 3;
+	else if(z1 < -1) if(z2 >= -1) { type1 = 2; t1 = (-1-p.z)/d.z; } else type1 = 3;
+	     if(z2 >  1) if(z1 <=  1) { type2 = 1; t2 = ( 1-p.z)/d.z; } else type2 = 3;
+	else if(z2 < -1) if(z1 >= -1) { type2 = 2; t2 = (-1-p.z)/d.z; } else type2 = 3;
+
+	// Both above or below.
+	if(type1 == 3 && type2 == 3) return -1;
+
+	// Both behind.
 	if(t1 < 0 && t2 < 0) return -1;
-
-	// Above or below cylinder.
-	if((z1 > 1 && z2 > 1) || (z1 < -1 && z2 < -1)) return -1;
-
-	// Type 0 = middle, 1 = top, 2 = bottom.
-	int type1 = 0;
-	int type2 = 0;
-
-	// Adjust ts if we hit top or bottom cap.
-	// Lerp z to get new t.
-	if(z1 >  1 && z2 <=  1) { t1 = ( 1-p.z)/d.z; type1 = 1; }
-	if(z1 < -1 && z2 >= -1) { t1 = (-1-p.z)/d.z; type1 = 2; }
-	if(z2 >  1 && z1 <=  1) { t2 = ( 1-p.z)/d.z; type2 = 1; }
-	if(z2 < -1 && z1 >= -1) { t2 = (-1-p.z)/d.z; type2 = 2; }
 
 	float distance;
 	if(!secondIntersection) {
@@ -368,7 +378,10 @@ float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* int
 		if(intersectionNormal) {
 			int type = distance == t1 ? type1 : type2;
 
-			if(type == 0) *intersectionNormal = normVec3(vec3((*intersection).xy, 0));
+			if(type == 0) {
+				if(intersection->xy == vec2(0,0)) *intersectionNormal = vec3(1,0,0);
+				else *intersectionNormal = normVec3(vec3((*intersection).xy, 0));
+			}
 			else if(type == 1) *intersectionNormal = vec3(0,0,1);
 			else *intersectionNormal = vec3(0,0,-1);
 		}	
@@ -377,7 +390,122 @@ float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* int
 	return distance;
 }
 
+float lineConeIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
 
+	// Offset because equation is from -1 to 0.
+	p.z -= 0.5;
+
+	// Cone top is at origin, radius = 1 and h = 1;
+
+	// Solve x^2 + y^2 = z^2, -1 < z < 0:
+	// Substitute ray equation and then solve quadratic equation.
+
+	float a = d.x*d.x + d.y*d.y - d.z*d.z;
+	float b = 2*p.x*d.x + 2*p.y*d.y - 2*p.z*d.z;
+	float c = p.x*p.x + p.y*p.y - p.z*p.z;
+
+	float discriminant = b*b - 4*a*c;
+
+	if(discriminant < 0) return -1;
+
+	float t1 = (-b + sqrt(discriminant)) / (2*a);
+	float t2 = (-b - sqrt(discriminant)) / (2*a);
+
+	float z1 = p.z + d.z*t1;
+	float z2 = p.z + d.z*t2;
+
+	// Type 0 = side, 1 = bottom cap, 2 = invalid.
+	int type1 = 0, type2 = 0;
+
+	if(z1 > 0 || z1 < -1) type1 = 2;
+	if(z2 > 0 || z2 < -1) type2 = 2;
+
+	// Both invalid.
+	if(type1 == 2 && type2 == 2) return -1;
+
+	// If one invalid we must hit the bottom cap.
+	if(type1 == 2 || type2 == 2) {
+		if(type1 == 2) t1 = (-1-p.z)/d.z;
+		else t2 = (-1-p.z)/d.z;
+	}
+
+	// Both behind.
+	if(t1 < 0 && t2 < 0) return -1;
+
+	float distance;
+	if(!secondIntersection) {
+		distance = min(t1,t2);
+		if(distance < 0) max(t1,t2);
+	} else {
+		distance = max(t1,t2);
+	}
+
+	if(intersection) {
+		p.z += 0.5f;
+		*intersection = p + d*distance;
+
+		if(intersectionNormal) {
+			int type = distance == t1 ? type1 : type2;
+
+			if(type == 0) {
+				if((*intersection).xy == vec2(0,0)) {
+					*intersectionNormal = vec3(0,0,1);
+				} else {
+					Vec3 n = normVec3(vec3((*intersection).xy, 0));
+					n = normVec3(vec3(n.xy, 1));
+					*intersectionNormal = n;
+				}
+			}
+			else *intersectionNormal = vec3(0,0,-1);
+		}	
+	}
+
+	return distance;
+}
+
+// 2*R*sqrt((x^2) + 2*t*x*a + (t^2)*(a^2) + (y^2) + 2*t*y*b + (t^2)*(b^2)) = (R^2) + (x^2) + 2*t*x*a+(t^2)*(a^2) + (y^2)+2*t*y*b+(t^2)*(b^2) + (z^2)+2*t*z*c+(t^2)*(c^2) - (r^2)
+
+// float lineTorusIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
+// }
+
+
+// Transform a vector to unit system and back:
+//   -translate, -rotate, -scale -> scale, rotate, translate.
+// Transform a direction to unit system and back:
+//   -rotate, -scale -> -scale, rotate.
+void transformToUnitSpace(Object* obj, Vec3 dimScale, Vec3 pos, Vec3 dir, Vec3* posTransformed, Vec3* dirTransformed) {
+	bool rotated = !(obj->rot == quat());
+	bool unequalDim = equal(obj->dim.x, obj->dim.y, obj->dim.z);
+
+	pos = pos - obj->pos;
+	// if(rotated) pos = quatInverse(obj->rot) * pos;
+	pos = quatInverse(obj->rot) * pos;
+	pos = pos * (dimScale/obj->dim);
+	*posTransformed = pos;
+
+	// if(rotated) dir = quatInverse(obj->rot) * dir;
+	dir = quatInverse(obj->rot) * dir;
+	dir = dir * (dimScale/obj->dim);
+	dir = normVec3(dir);
+	*dirTransformed = dir;
+}
+
+void transformToGlobalSpace(Object* obj, Vec3 dimScale, Vec3 pos, Vec3 dir, Vec3* posTransformed, Vec3* dirTransformed) {
+	bool rotated = !(obj->rot == quat());
+	bool unequalDim = equal(obj->dim.x, obj->dim.y, obj->dim.z);
+
+	pos = pos * (obj->dim/dimScale);
+	// if(rotated) pos = obj->rot * pos;
+	pos = obj->rot * pos;
+	pos = pos + obj->pos;
+	*posTransformed = pos;
+
+	dir = dir * (dimScale/obj->dim);
+	// if(rotated) dir = obj->rot * dir;
+	dir = obj->rot * dir;
+	dir = normVec3(dir);
+	*dirTransformed = dir;
+}
 
 
 struct TimeStamp {
@@ -446,66 +574,45 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectInd
 					if(equal(obj->dim.x, obj->dim.y, obj->dim.z)) {
 						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &position, &normal, insideObject);
 					} else {
-						// Transform a vector to unit system and back:
-						//   -translate, -rotate, -scale -> scale, rotate, translate.
-						// Transform a direction to unit system and back:
-						//   -rotate, -scale -> -scale, rotate.
 
-						Vec3 lp = rayPos;
-						Vec3 ld = rayDir;
-
-						lp = lp - obj->pos;
-						lp = quatInverse(obj->rot) * lp;
-						lp = lp * (1/obj->dim);
-
-						ld = quatInverse(obj->rot) * ld;
-						ld = ld * (1/obj->dim);
-						ld = normVec3(ld);
+						Vec3 dimScale = vec3(1.0f);
+						Vec3 lp, ld;
+						transformToUnitSpace(obj, dimScale, rayPos, rayDir, &lp, &ld);
 
 						distance = lineSphereIntersection(lp, ld, vec3(0,0,0), 0.5f, &position, &normal, insideObject);
 
 						if(distance != -1) {
-							position = position * obj->dim;
-							position = obj->rot * position;
-							position = position + obj->pos;
-
+							transformToGlobalSpace(obj, dimScale, position, normal, &position, &normal);
 							distance = lenVec3(rayPos - position);
-
-							normal = normal * (1/obj->dim);
-							normal = obj->rot * normal;
-							normal = normVec3(normal);
 						}
 					}
 				} break;
 
 				case GEOM_TYPE_CYLINDER: {
-					bool rotated = !(obj->rot == quat());
 
-					float cylinderDim = 2; // Radius = 1, h = 2.
-
-					Vec3 lp = rayPos;
-					Vec3 ld = rayDir;
-
-					lp = lp - obj->pos;
-					if(rotated) lp = quatInverse(obj->rot) * lp;
-					lp = lp * (cylinderDim/obj->dim);
-
-					ld = quatInverse(obj->rot) * ld;
-					if(rotated) ld = ld * (cylinderDim/obj->dim);
-					ld = normVec3(ld);
+					Vec3 dimScale = vec3(2.0f); // Radius = 1, h = 2.
+					Vec3 lp, ld;
+					transformToUnitSpace(obj, dimScale, rayPos, rayDir, &lp, &ld);
 
 					distance = lineCylinderIntersection(lp, ld, &position, &normal, insideObject);
 
 					if(distance != -1) {
-						position = position * (obj->dim/cylinderDim);
-						if(rotated) position = obj->rot * position;
-						position = position + obj->pos;
-
+						transformToGlobalSpace(obj, dimScale, position, normal, &position, &normal);
 						distance = lenVec3(rayPos - position);
+					}
+				} break;
 
-						normal = normal * (cylinderDim/obj->dim);
-						if(rotated) normal = obj->rot * normal;
-						normal = normVec3(normal);
+				case GEOM_TYPE_CONE: {
+
+					Vec3 dimScale = vec3(2,2,1); // Radius = 1, h = 1.
+					Vec3 lp, ld;
+					transformToUnitSpace(obj, dimScale, rayPos, rayDir, &lp, &ld);
+
+					distance = lineConeIntersection(lp, ld, &position, &normal, insideObject);
+
+					if(distance != -1) {
+						transformToGlobalSpace(obj, dimScale, position, normal, &position, &normal);
+						distance = lenVec3(rayPos - position);
 					}
 				} break;
 			}
@@ -728,59 +835,6 @@ void processPixelsThreaded(void* data) {
 	}
 }
 
-// // @Duplication with processPixels.
-// int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, Vec3* intersection = 0) {
-
-// 	int objectIndex = -1;
-
-// 	float minDistance = FLT_MAX;
-// 	for(int i = 0; i < objects->count; i++) {
-// 		Object* obj = &objects->at(i);
-// 		Geometry* g = &obj->geometry;
-
-// 		geometryBoundingSphere(obj);
-
-// 		// Check collision with bounding sphere.
-// 		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
-// 		if(possibleIntersection) {
-
-// 			Vec3 reflectionPos, reflectionNormal;
-// 			float distance = -1;
-// 			Vec3 inters;
-// 			{
-// 				switch(g->type) {
-// 					case GEOM_TYPE_BOX: {
-// 						int face;
-// 						bool hit = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &inters, &face);
-// 						if(hit) {
-// 							reflectionPos = inters;
-// 							reflectionNormal = obj->rot * boxRaycastNormals[face];
-// 							distance = lenVec3(inters - rayPos);
-// 						}
-// 					} break;
-
-// 					case GEOM_TYPE_SPHERE: {
-// 						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &reflectionPos);
-// 						if(distance > 0) {
-// 							reflectionNormal = normVec3(reflectionPos - obj->pos);
-// 							inters = rayPos + rayDir * distance;
-// 						}
-// 					} break;
-// 				}
-// 			}
-
-// 			if(distance > 0 && distance < minDistance) {
-// 				minDistance = distance;
-// 				objectIndex = i;
-
-// 				if(intersection) *intersection = inters;
-// 			}
-// 		}
-// 	}
-
-// 	return objectIndex;
-// }
-
 
 
 
@@ -800,7 +854,8 @@ void getDefaultScene(World* world) {
 	world->lockFocalPoint = false;
 
 	world->defaultEmitColor = vec3(1,1,1);
-	world->globalLightDir = normVec3(vec3(0,0,1));
+	world->globalLightRot = vec2i(0,90);
+
 	world->globalLightColor = vec3(1,1,1);
 
 	world->objects.init();
@@ -1533,19 +1588,11 @@ void saveSceneCommand(World* world, char* sceneFile, bool sceneHasFile, DialogDa
 	else openSceneDialog(dialogData, true);
 }
 
-
 void drawGeometry(int type) {
 	switch(type) {
-		case GEOM_TYPE_BOX: {
-			drawBoxRaw();
-		} break;
-
-		case GEOM_TYPE_SPHERE: {
-			drawSphereRaw();
-		} break;
-
-		case GEOM_TYPE_CYLINDER: {
-			drawCylinderRaw();
-		} break;
+		case GEOM_TYPE_BOX: drawBoxRaw(); break;
+		case GEOM_TYPE_SPHERE: drawSphereRaw(); break;
+		case GEOM_TYPE_CYLINDER: drawCylinderRaw(); break;
+		case GEOM_TYPE_CONE: drawConeRaw(); break;
 	}
 }

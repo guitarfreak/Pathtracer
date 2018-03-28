@@ -53,6 +53,7 @@ enum MeshType {
 	MESH_CUBE = 0,
 	MESH_SPHERE,
 	MESH_CYLINDER,
+	MESH_CONE,
 
 	MESH_SIZE,
 };
