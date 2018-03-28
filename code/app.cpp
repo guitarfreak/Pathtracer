@@ -3,28 +3,22 @@
 
 	ToDo:
 	- Clean global light and multiple lights.
-
-	- More advanced lighting function.
-	- Have cam independent, mini window.
 	- Spacial data structure to speed up processing.
 	- Converge method on sampling for speed up.
 	- Float not good enough.
+	- More advanced lighting function.
+	- Have cam independent, mini window.
+
+	- Check out setTimer for pitfalls.
+	- Torus for rotation widget.
 
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Turning while dragging is glitchy.
 	- Title buttons don't scale nicely.
 	- Redraw menu buttons to look better at smaller sizes.
 	- Clean up repetitive gui code. (Layout.)
-
-	- Simd.
-	- Do stencil outline selection instead of polygon grid selection.
 	- App hangs when calculating blueNoise samples.
-
-	- Check out setTimer for pitfalls.
-	- Torus for rotation widget.
-	- Make global light use 2 parameters: rotation and height.
-
-	- Switch to hide panels with fade out animation.
+	- Simd.
 
 	Bugs:
 	- Windows key slow often.
@@ -1163,6 +1157,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				for(int i = 0; i < world->objects.count; i++) {
 					Object* obj = world->objects + i;
 					geometryBoundingSphere(obj);
+					geometryBoundingBox(obj);
 				}
 
 				worldCalcLightDir(world);
@@ -1416,6 +1411,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			for(int i = 0; i < world->objects.count; i++) {
 				Object* obj = world->objects + i;
 				geometryBoundingSphere(obj);
+				geometryBoundingBox(obj);
 			}
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) {
@@ -1997,6 +1993,38 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			glPopMatrix();
+
+			if(false)
+			{
+				// Scene bounding box.
+
+				glDisable(GL_LIGHTING);
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+				Vec3 boxMin = vec3(FLT_MAX), boxMax = vec3(-FLT_MAX);
+
+				for(int objectIndex = 0; objectIndex < world->objects.count; objectIndex++) {
+					Object* obj = &world->objects.at(objectIndex);
+
+					Vec3 pos = obj->pos;
+					Vec3 bbox = obj->geometry.boundingBox;
+
+					Vec3 bMin = pos - bbox/2;
+					Vec3 bMax = pos + bbox/2;
+
+					boxMin.x = min(boxMin.x, bMin.x);
+					boxMin.y = min(boxMin.y, bMin.y);
+					boxMin.z = min(boxMin.z, bMin.z);
+					boxMax.x = max(boxMax.x, bMax.x);
+					boxMax.y = max(boxMax.y, bMax.y);
+					boxMax.z = max(boxMax.z, bMax.z);
+				}
+
+				drawBox(boxMin + (boxMax - boxMin)/2, (boxMax - boxMin), vec4(1,0,0,1));
+
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+				glEnable(GL_LIGHTING);
+			}
 
 			// @Testing.
 			#if 0

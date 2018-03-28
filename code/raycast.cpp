@@ -28,6 +28,7 @@ struct Material {
 struct Geometry {
 	int type;
 	float boundingSphereRadius;
+	Vec3 boundingBox;
 };
 
 enum {
@@ -119,7 +120,45 @@ void geometryBoundingSphere(Object* obj) {
 	obj->geometry.boundingSphereRadius = r;
 }
 
+// Not exact.
+void geometryBoundingBox(Object* obj) {
+	Quat rot = obj->rot;
+	Vec3 dim = obj->dim;
 
+	Vec3 points[] = {
+		{ 0.5f, 0.5f, 0.5f },
+		{ 0.5f, 0.5f,-0.5f },
+		{ 0.5f,-0.5f, 0.5f },
+		{ 0.5f,-0.5f,-0.5f },
+		{-0.5f, 0.5f, 0.5f },
+		{-0.5f, 0.5f,-0.5f },
+		{-0.5f,-0.5f, 0.5f },
+		{-0.5f,-0.5f,-0.5f },
+	};
+
+	for(int i = 0; i < arrayCount(points); i++) {
+		points[i] = dim * points[i];
+		points[i] = rot * points[i];
+	}
+
+	Vec3 minPos = vec3(FLT_MAX); 
+	Vec3 maxPos = vec3(-FLT_MAX);
+	for(int i = 0; i < arrayCount(points); i++) {
+		minPos.x = min(minPos.x, points[i].x);
+		minPos.y = min(minPos.y, points[i].y);
+		minPos.z = min(minPos.z, points[i].z);
+		maxPos.x = max(maxPos.x, points[i].x);
+		maxPos.y = max(maxPos.y, points[i].y);
+		maxPos.z = max(maxPos.z, points[i].z);
+	}
+
+	Vec3 bbox;
+	bbox.x = maxPos.x*2;
+	bbox.y = maxPos.y*2;
+	bbox.z = maxPos.z*2;
+
+	obj->geometry.boundingBox = bbox;
+}
 
 
 struct OrientationVectors {
