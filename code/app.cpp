@@ -20,12 +20,8 @@
 	- App hangs when calculating blueNoise samples.
 	- Simd.
 
-	- Speed up everything. (Lot's of low hanging fruit.)
-	- Put quatInverse in precalc of object.
-
-	- Use bias on insterction instead of insideObject bool.
-	- Do quick 10 samples per pixel pre pass before doing the actuall rendering,
-	  so you get a sense of what the image will be.
+	- Use bias on intersection instead of insideObject bool.
+	- Strong color banding on low light scenes.
 
 	Bugs:
 	- Windows key slow often.
