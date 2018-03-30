@@ -21,8 +21,11 @@ char* geometryTypeStrings[] = {
 struct Material {
 	Vec3 emitColor;
 	float reflectionMod;
-
 	float refractiveIndex;
+
+	// Precalc.
+
+	Vec3 emitColorLinear;
 };
 
 struct Geometry {
@@ -60,47 +63,16 @@ struct Object {
 	Material material;
 
 	bool markedForDeletion;
+
+	// Precalc.
+
+	Vec3 colorLinear; // Converted from gamma space.
+	bool isRotated;
+	bool evenDim;
+	Quat rotInverse;
+	Vec3 dimScale;
+	Vec3 dimScaleInverse;
 };
-
-float lineShapeIntersection(Vec3 lp, Vec3 ld, Object* obj, Vec3* reflectionPos, Vec3* reflectionNormal) {
-
-	float distance;
-	Geometry* geometry = &obj->geometry;
-	switch(geometry->type) {
-		case GEOM_TYPE_BOX: {
-			int face;
-			bool hit = boxRaycast(lp, ld, rect3CenDim(obj->pos, obj->dim), &distance, &face);
-			if(hit) {
-				*reflectionPos = lp + ld*distance;
-				Vec3 normal;
-				if(face == 0) normal = vec3(-1,0,0);
-				else if(face == 1) normal = vec3( 1, 0, 0);
-				else if(face == 2) normal = vec3( 0,-1, 0);
-				else if(face == 3) normal = vec3( 0, 1, 0);
-				else if(face == 4) normal = vec3( 0, 0,-1);
-				else if(face == 5) normal = vec3( 0, 0, 1);
-
-				*reflectionNormal = normal;
-
-				return distance;
-			}
-		} break;
-
-		case GEOM_TYPE_SPHERE: {
-			distance = lineSphereIntersection(lp, ld, obj->pos, obj->dim.x*0.5f, reflectionPos);
-
-			if(distance != -1) {
-				*reflectionNormal = normVec3(*reflectionPos - obj->pos);
-
-				return distance;
-			}
-		}
-
-		default: break;
-	}
-
-	return -1;
-}
 
 void geometryBoundingSphere(Object* obj) {
 	float r;
@@ -281,7 +253,7 @@ struct World {
 
 	DArray<Object> objects;
 
-	Vec3 defaultEmitColor;
+	Vec3 ambientLightColor;
 
 	Vec3 globalLightDir;
 	Vec3 globalLightColor;
@@ -293,6 +265,11 @@ struct World {
 	Vec3 focalPoint;
 
 	Vec2i globalLightRot;
+
+	// Precalc.
+
+	Vec3 ambientLightColorLinear;
+	Vec3 globalLightColorLinear;
 };
 
 void worldCalcLightDir(World* world) {
@@ -309,19 +286,26 @@ enum {
 };
 
 struct RaytraceSettings {
-	int mode;
 	Vec2i texDim;
 	int sampleMode;
 	int sampleCountGrid;
 	int sampleGridWidth;
-	int rayBouncesMax;
+	int rayBouncesMaxWanted;
 
 	int sampleCountWanted;
+
+	int rayBouncesMax;
+	bool darken;
 
 	// Precalc.
 
 	int randomDirectionCount;
 	Vec3* randomDirections;
+	int randomDirectionIndex;
+
+	int randomUnitCirclePointCount;
+	Vec2* randomUnitCirclePoints;
+	int randomUnitIndex;
 
 	int sampleCount;
 	Vec2* samples;
@@ -362,7 +346,6 @@ struct ProcessPixelsData {
 
 	bool stopProcessing;
 };
-
 
 
 
@@ -502,9 +485,11 @@ float lineConeIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* interse
 	return distance;
 }
 
-// 2*R*sqrt((x^2) + 2*t*x*a + (t^2)*(a^2) + (y^2) + 2*t*y*b + (t^2)*(b^2)) = (R^2) + (x^2) + 2*t*x*a+(t^2)*(a^2) + (y^2)+2*t*y*b+(t^2)*(b^2) + (z^2)+2*t*z*c+(t^2)*(c^2) - (r^2)
 
 // float lineTorusIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
+
+// 2*R*sqrt((x^2) + 2*t*x*a + (t^2)*(a^2) + (y^2) + 2*t*y*b + (t^2)*(b^2)) = (R^2) + (x^2) + 2*t*x*a+(t^2)*(a^2) + (y^2)+2*t*y*b+(t^2)*(b^2) + (z^2)+2*t*z*c+(t^2)*(c^2) - (r^2)
+
 // }
 
 
@@ -512,38 +497,28 @@ float lineConeIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* interse
 //   -translate, -rotate, -scale -> scale, rotate, translate.
 // Transform a direction to unit system and back:
 //   -rotate, -scale -> -scale, rotate.
-void transformToUnitSpace(Object* obj, Vec3 dimScale, Vec3 pos, Vec3 dir, Vec3* posTransformed, Vec3* dirTransformed) {
-	bool rotated = !(obj->rot == quat());
-	bool unequalDim = equal(obj->dim.x, obj->dim.y, obj->dim.z);
 
+// Maybe we should just make a combined matrix?
+inline void transformToUnitSpace(Object* obj, Vec3 pos, Vec3 dir, Vec3* posTransformed, Vec3* dirTransformed) {
 	pos = pos - obj->pos;
-	// if(rotated) pos = quatInverse(obj->rot) * pos;
-	pos = quatInverse(obj->rot) * pos;
-	pos = pos * (dimScale/obj->dim);
+	if(obj->isRotated) pos = obj->rotInverse * pos;
+	pos = pos * obj->dimScaleInverse;
 	*posTransformed = pos;
 
-	// if(rotated) dir = quatInverse(obj->rot) * dir;
-	dir = quatInverse(obj->rot) * dir;
-	dir = dir * (dimScale/obj->dim);
+	if(obj->isRotated) dir = obj->rotInverse * dir;
+	dir = dir * obj->dimScaleInverse;
 	dir = normVec3(dir);
 	*dirTransformed = dir;
 }
 
-void transformToGlobalSpace(Object* obj, Vec3 dimScale, Vec3 pos, Vec3 dir, Vec3* posTransformed, Vec3* dirTransformed) {
-	bool rotated = !(obj->rot == quat());
-	bool unequalDim = equal(obj->dim.x, obj->dim.y, obj->dim.z);
+inline void transformToGlobalSpace(Object* obj, Vec3* pos, Vec3* dir) {
+	(*pos) = (*pos) * obj->dimScale;
+	if(obj->isRotated) (*pos) = obj->rot * (*pos);
+	(*pos) = (*pos) + obj->pos;
 
-	pos = pos * (obj->dim/dimScale);
-	// if(rotated) pos = obj->rot * pos;
-	pos = obj->rot * pos;
-	pos = pos + obj->pos;
-	*posTransformed = pos;
-
-	dir = dir * (dimScale/obj->dim);
-	// if(rotated) dir = obj->rot * dir;
-	dir = obj->rot * dir;
-	dir = normVec3(dir);
-	*dirTransformed = dir;
+	(*dir) = (*dir) * obj->dimScaleInverse;
+	if(obj->isRotated) (*dir) = obj->rot * (*dir);
+	(*dir) = normVec3((*dir));
 }
 
 
@@ -567,7 +542,7 @@ void calcTimeStamp(TimeStamp* t) {
 
 TimeStamp processPixelsThreadedTimings[5] = {};
 
-#define printRaytraceTimings false
+// #define printRaytraceTimings 1
 
 #ifdef printRaytraceTimings
 #define startTimer(i) startTimeStamp(pixelTimings + i)
@@ -591,7 +566,7 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectInd
 
 		if(insideObject) i = (-lastObjectIndex) - 1;
 
-		Object* obj = &objects->at(i);
+		Object* obj = objects->data + i;
 		Geometry* g = &obj->geometry;
 
 		bool possibleIntersection;
@@ -605,23 +580,42 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectInd
 
 			switch(g->type) {
 
-				case GEOM_TYPE_BOX: {
-					distance = boxRaycastRotated(rayPos, rayDir, obj->pos, obj->dim, obj->rot, &position, &normal, insideObject);
-				} break;
-
 				case GEOM_TYPE_SPHERE: {
-					if(equal(obj->dim.x, obj->dim.y, obj->dim.z)) {
+					if(obj->evenDim) {
 						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &position, &normal, insideObject);
 					} else {
 
-						Vec3 dimScale = vec3(1.0f);
 						Vec3 lp, ld;
-						transformToUnitSpace(obj, dimScale, rayPos, rayDir, &lp, &ld);
+						transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
 
-						distance = lineSphereIntersection(lp, ld, vec3(0,0,0), 0.5f, &position, &normal, insideObject);
+						distance = lineSphereIntersection(lp, ld, VEC3_ZERO, 0.5f, &position, &normal, insideObject);
 
 						if(distance != -1) {
-							transformToGlobalSpace(obj, dimScale, position, normal, &position, &normal);
+							transformToGlobalSpace(obj, &position, &normal);
+							distance = lenVec3(rayPos - position);
+						}
+					}
+				} break;
+
+				case GEOM_TYPE_BOX: {
+					if(!obj->isRotated) {
+						distance = boxRaycast(rayPos, rayDir, obj->pos, obj->dim, &position, &normal, insideObject);
+					} else {
+
+						Vec3 lp, ld;
+						lp = rayPos - obj->pos;
+						ld = lp + rayDir;
+						lp = obj->rotInverse * lp;
+						ld = obj->rotInverse * ld;
+						ld = normVec3(ld - lp);
+
+						distance = boxRaycast(lp, ld, VEC3_ZERO, obj->dim, &position, &normal, insideObject);
+
+						if(distance != -1) {
+							position = obj->rot * position;
+							position = position + obj->pos;
+
+							normal = obj->rot * normal;
 							distance = lenVec3(rayPos - position);
 						}
 					}
@@ -629,28 +623,26 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectInd
 
 				case GEOM_TYPE_CYLINDER: {
 
-					Vec3 dimScale = vec3(2.0f); // Radius = 1, h = 2.
 					Vec3 lp, ld;
-					transformToUnitSpace(obj, dimScale, rayPos, rayDir, &lp, &ld);
+					transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
 
 					distance = lineCylinderIntersection(lp, ld, &position, &normal, insideObject);
 
 					if(distance != -1) {
-						transformToGlobalSpace(obj, dimScale, position, normal, &position, &normal);
+						transformToGlobalSpace(obj, &position, &normal);
 						distance = lenVec3(rayPos - position);
 					}
 				} break;
 
 				case GEOM_TYPE_CONE: {
 
-					Vec3 dimScale = vec3(2,2,1); // Radius = 1, h = 1.
 					Vec3 lp, ld;
-					transformToUnitSpace(obj, dimScale, rayPos, rayDir, &lp, &ld);
+					transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
 
 					distance = lineConeIntersection(lp, ld, &position, &normal, insideObject);
 
 					if(distance != -1) {
-						transformToGlobalSpace(obj, dimScale, position, normal, &position, &normal);
+						transformToGlobalSpace(obj, &position, &normal);
 						distance = lenVec3(rayPos - position);
 					}
 				} break;
@@ -676,9 +668,9 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectInd
 	return objectIndex;
 }
 
-Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* settings, int lastObjectIndex = 0, Vec3 attenuation = vec3(1,1,1), int rayIndex = 0) {
+void processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* settings, Vec3* sampleColor, int lastObjectIndex = 0, Vec3 attenuation = vec3(1,1,1), int rayIndex = 0) {
 
-	Vec3 sampleColor = vec3(0,0,0);
+	// Vec3 sampleColor = settings->vec3Zero;
 
 	// Find object with closest intersection.
 
@@ -687,18 +679,19 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 
 	if(objectIndex != 0) {
 
-		Object* obj = world->objects + ((objectIndex<0?(-objectIndex):objectIndex)-1);
+		Object* obj = world->objects.data + ((objectIndex<0?(-objectIndex):objectIndex)-1);
 		Material* m = &obj->material;
 
 		// Color calculation.
 
-		sampleColor += attenuation * m->emitColor;
-		attenuation = attenuation * colorSRGB(obj->color);
-		// attenuation = attenuation * obj->color;
-	
-		if(attenuation == vec3(0,0,0)) return sampleColor;
+		if(m->emitColorLinear != VEC3_ZERO)
+			*sampleColor += attenuation * m->emitColorLinear;
 
-		if(rayIndex == settings->rayBouncesMax) return sampleColor;
+		attenuation = attenuation * obj->colorLinear;
+	
+		if(attenuation == VEC3_ZERO) return;
+
+		if(rayIndex == settings->rayBouncesMax) return;
 
 
 		if(m->refractiveIndex != 1.0f) {
@@ -710,26 +703,33 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 			// Cast ray in mirror direction and refraction direction and
 			// then combine the results based on the fresnel ratio.
 
-			Vec3 reflectionColor = vec3(0,0,0);
-			Vec3 refractionColor = vec3(0,0,0);
+			Vec3 reflectionColor;
+			Vec3 refractionColor;
 
 			if(ratio != 0.0f) {
 				Vec3 objectReflectionDir = reflectVector(rayDir, objectReflectionNormal);
-				reflectionColor = processSample(objectReflectionPos, objectReflectionDir, world, settings, objectIndex, attenuation, rayIndex + 1);
+				reflectionColor = VEC3_ZERO;
+				processSample(objectReflectionPos, objectReflectionDir, world, settings, &reflectionColor, objectIndex, attenuation, rayIndex + 1);
 			}
 
 			if(ratio != 1.0f) {
 				Vec3 refractionDir = refract(rayDir, objectReflectionNormal, m->refractiveIndex);
 
 				// Refract is not quite in sync with the fresnal calculation.
-				if(refractionDir == vec3(0,0,0)) {
+				if(refractionDir == VEC3_ZERO) {
 					ratio = 1;
 				} else {
-					refractionColor = processSample(objectReflectionPos, refractionDir, world, settings, -objectIndex, attenuation, rayIndex + 1);
+					refractionColor = VEC3_ZERO;
+					processSample(objectReflectionPos, refractionDir, world, settings, &refractionColor, -objectIndex, attenuation, rayIndex + 1);
 				}
 			}
 
-			sampleColor += lerp(ratio, refractionColor, reflectionColor);
+			if(ratio == 0.0f) 
+				*sampleColor += refractionColor;
+			else if(ratio == 1.0f) 
+				*sampleColor += reflectionColor;
+			else 
+				*sampleColor += lerp(ratio, refractionColor, reflectionColor);
 
 		} else {
 
@@ -742,6 +742,7 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 				// If not mirror, scatter randomly.
 
 				int dirIndex = randomIntPCG(0, settings->randomDirectionCount-1);
+
 				Vec3 randomDir = settings->randomDirections[dirIndex];
 
 				float d = dot(randomDir, objectReflectionNormal);
@@ -750,29 +751,29 @@ Vec3 processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* set
 				rayDir = lerp(m->reflectionMod, randomDir, rayDir);
 			}
 
-			sampleColor += processSample(objectReflectionPos, rayDir, world, settings, objectIndex, attenuation, rayIndex + 1);
+			return processSample(objectReflectionPos, rayDir, world, settings, sampleColor, objectIndex, attenuation, rayIndex + 1);
 
 		}
 
 	} else if(rayIndex == 0) {
 
 		// Sky hit.
-		sampleColor += world->defaultEmitColor;
+		*sampleColor += world->ambientLightColorLinear;
 
 	} else {
 
 		float lightDot = dot(rayDir, world->globalLightDir);
 		lightDot = clampMin(lightDot, 0);
-		Vec3 light = world->globalLightColor * lightDot;
+		Vec3 light = world->globalLightColorLinear * lightDot;
 		
-		sampleColor += attenuation * (world->defaultEmitColor + light);
+		*sampleColor += attenuation * (world->ambientLightColorLinear + light);
 	}
-
-	return sampleColor;
 }
 
 void processPixelsThreaded(void* data) {
 	TimeStamp pixelTimings[5] = {};
+
+	pcg32_srandom(0, __rdtsc());
 
 	ProcessPixelsData* d = (ProcessPixelsData*)data;
 
@@ -784,12 +785,20 @@ void processPixelsThreaded(void* data) {
 	Vec2* samples = settings.samples;
 	Camera camera = world.camera;
 
-	Vec3 black = vec3(0.0f);
-	Vec3 white = vec3(1.0f);
+	Vec2i texDim = settings.texDim;
+	Vec2 texDimFloat = vec2(settings.texDim);
+
+	Vec3 camOvecsRight = camera.ovecs.right;
+	Vec3 camOvecsDown = -camera.ovecs.up;
+	Vec3 camOvecsBack = -camera.ovecs.dir;
+	Vec3 camRightWidth = camera.ovecs.right * camera.dim.w;
+	Vec3 camDownHeight = camOvecsDown * camera.dim.h;
+
+	Vec3 camRightOnePixel = camOvecsRight * camera.dim.w * (1.0f/texDim.w);
+	Vec3 camDownOnePixel = camOvecsDown * camera.dim.h * (1.0f/texDim.h);
 
 	world.globalLightDir = normVec3(world.globalLightDir);
 
-	Vec2i texDim = settings.texDim;
 	int pixelCount = d->pixelDim.x * d->pixelDim.y;
 	for(int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
 		startTimer(0);
@@ -807,7 +816,8 @@ void processPixelsThreaded(void* data) {
 		if(x < 0 || x >= texDim.w || 
 		   y < 0 || y >= texDim.h) continue;
 
-		Vec2 percent = vec2(x/(float)texDim.w, y/(float)texDim.h);
+		Vec2 percent = vec2(x/texDimFloat.w, y/texDimFloat.h);
+		Vec3 camPixelPos = settings.camTopLeft + camRightWidth*percent.w + camDownHeight*percent.h;
 
 		if(settings.sampleMode == SAMPLE_MODE_BLUE) {
 			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
@@ -816,62 +826,70 @@ void processPixelsThreaded(void* data) {
 			sampleCount = settings.sampleGridOffsets[index+1] - offset;
 		}
 
-		{
-			// IACA_VC64_START;
+		int randomUnitIndex = randomIntPCG(0, settings.randomUnitCirclePointCount-1);
 
-			Vec3 pixelColor = black;
+		// IACA_VC64_START
 
-			for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-				startTimer(1);
+		Vec3 pixelColor = VEC3_ZERO;
+		for(int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+			startTimer(1);
 
-				Vec3 rayPos = settings.camTopLeft;
-				rayPos += camera.ovecs.right * (camera.dim.w * (percent.w + settings.pixelPercent.w*samples[sampleIndex].x));
-				rayPos -= camera.ovecs.up  * (camera.dim.h * (percent.h + settings.pixelPercent.h*samples[sampleIndex].y));
+			Vec2 sample = samples[sampleIndex];
+			Vec3 rayPos = camPixelPos + camRightOnePixel * sample.x + 
+			                            camDownOnePixel * sample.y;
 
-				Vec3 rayDir = normVec3(rayPos - camera.pos);
-				
-				if(world.apertureSize > 0.0f) {
-					Vec3 focalPoint;
+			Vec3 rayDir;
 
-					Vec3 focalPlanePos = camera.pos + camera.ovecs.dir * world.focalPointDistance;
-					float distance = linePlaneIntersection(rayPos, rayDir, focalPlanePos, -camera.ovecs.dir, &focalPoint);
+			if(world.apertureSize == 0.0f) {
+				rayDir = normVec3(rayPos - camera.pos);
+			} else {
+				Vec3 focalPoint;
 
-					Vec2 randomOffset = vec2(randomFloatPCG(0.0f, world.apertureSize, 0.01f), 
-					                         randomFloatPCG(0.0f, world.apertureSize, 0.01f));
+				Vec3 rDir = rayPos - camera.pos;
+				Vec3 focalPlanePos = camera.pos + camera.ovecs.dir * world.focalPointDistance;
+				float distance = linePlaneIntersection(rayPos, rDir, focalPlanePos, camOvecsBack, &focalPoint);
 
-					rayPos += camera.ovecs.right * randomOffset.x;
-					rayPos += -camera.ovecs.up * randomOffset.y;
+				// int pointIndex = randomIntPCG(0, settings.randomUnitCirclePointCount-1);
+				int pointIndex = randomUnitIndex % settings.randomUnitCirclePointCount;
+				randomUnitIndex++;
+				float randomOffsetX = settings.randomUnitCirclePoints[pointIndex].x * world.apertureSize;
+				float randomOffsetY = settings.randomUnitCirclePoints[pointIndex].y * world.apertureSize;
 
-					rayDir = normVec3(focalPoint - rayPos);
-				}
+				rayPos += camera.ovecs.right * randomOffsetX + 
+				          camOvecsDown * randomOffsetY;
 
-				Vec3 sampleColor = processSample(rayPos, rayDir, &world, &settings);
-
-				sampleColor = clampMax(sampleColor, white);
-				pixelColor += sampleColor;
-
-				endTimer(1);
+				rayDir = normVec3(focalPoint - rayPos);
 			}
 
-			// Pixel end.
+			Vec3 sampleColor = VEC3_ZERO;
+			processSample(rayPos, rayDir, &world, &settings, &sampleColor);
 
-			pixelColor = pixelColor/(float)sampleCount;
-			pixelColor = clampMax(pixelColor, white);
+			pixelColor += clampMax(sampleColor, VEC3_ONE);
 
-			buffer[y*texDim.w + x] = pixelColor;
+			endTimer(1);
+		}
 
-			// IACA_VC64_END;
+		// IACA_VC64_END
+
+		buffer[y*texDim.w + x] = clampMax(pixelColor/(float)sampleCount, VEC3_ONE);
+
+		if(settings.darken) {
+			buffer[y*texDim.w + x] *= 0.2f;
 		}
 
 		endTimer(0);
 	}
 
-	if(printRaytraceTimings) {
-		for(int i = 0; i < arrayCount(pixelTimings); i++) {
-			processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
-			processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
-		}
+	#ifdef printRaytraceTimings
+	for(int i = 0; i < arrayCount(pixelTimings); i++) {
+		processPixelsThreadedTimings[i].cycles += pixelTimings[i].cycles;
+		processPixelsThreadedTimings[i].hits += pixelTimings[i].hits;
+		calcTimeStamp(pixelTimings + i);
+
+		TimeStamp* stamp = pixelTimings + i;
+		printf("%lld %lld %lld\n", stamp->cycles, stamp->hits, stamp->cyclesOverHits);
 	}
+	#endif
 }
 
 
@@ -892,7 +910,7 @@ void getDefaultScene(World* world) {
 	world->apertureSize = 0;
 	world->lockFocalPoint = false;
 
-	world->defaultEmitColor = vec3(1,1,1);
+	world->ambientLightColor = vec3(1,1,1);
 	world->globalLightRot = vec2i(0,90);
 
 	world->globalLightColor = vec3(1,1,1);
@@ -1480,6 +1498,8 @@ Object defaultObject() {
 	obj.material = m;
 	obj.geometry.type = GEOM_TYPE_SPHERE;
 	
+	geometryBoundingSphere(&obj);
+
 	return obj;
 }
 
@@ -1627,11 +1647,59 @@ void saveSceneCommand(World* world, char* sceneFile, bool sceneHasFile, DialogDa
 	else openSceneDialog(dialogData, true);
 }
 
+
+
 void drawGeometry(int type) {
 	switch(type) {
 		case GEOM_TYPE_BOX: drawBoxRaw(); break;
 		case GEOM_TYPE_SPHERE: drawSphereRaw(); break;
 		case GEOM_TYPE_CYLINDER: drawCylinderRaw(); break;
 		case GEOM_TYPE_CONE: drawConeRaw(); break;
+	}
+}
+
+void preCalcObjects(DArray<Object>* objects) {
+	for(int i = 0; i < objects->count; i++) {
+		Object* obj = objects->data + i;
+		geometryBoundingSphere(obj);
+		geometryBoundingBox(obj);
+
+		obj->colorLinear = colorSRGB(obj->color);
+		obj->isRotated = !(obj->rot == quat());
+		obj->evenDim = equal(obj->dim.x, obj->dim.y, obj->dim.z);
+		obj->material.emitColorLinear = colorSRGB(obj->material.emitColor);
+		obj->rotInverse = quatInverse(obj->rot);
+
+		// Scale transforms dimension from render dimension to
+		// intersection calculation dimension.
+		// e.g: We render a cone with radius 0.5f and height 1, but 
+		// the intersection equation want's a cone with radius 1 and height 1;
+
+		switch(obj->geometry.type) {
+			case GEOM_TYPE_SPHERE: {
+				Vec3 scale = vec3(1);
+				obj->dimScale = obj->dim/scale;
+				obj->dimScaleInverse = scale/obj->dim;
+			} break;
+
+			case GEOM_TYPE_BOX: {
+				Vec3 scale = vec3(1);
+				obj->dimScale = obj->dim/scale;
+				obj->dimScaleInverse = scale/obj->dim;
+			} break;
+
+			case GEOM_TYPE_CYLINDER: {
+				Vec3 scale = vec3(2);
+				obj->dimScale = obj->dim/scale;
+				obj->dimScaleInverse = scale/obj->dim;
+			} break;
+
+			case GEOM_TYPE_CONE: {
+				Vec3 scale = vec3(2,2,1);
+				obj->dimScale = obj->dim/scale;
+				obj->dimScaleInverse = scale/obj->dim;
+			} break;
+		}
+
 	}
 }

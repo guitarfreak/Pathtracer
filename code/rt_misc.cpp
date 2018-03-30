@@ -1162,7 +1162,8 @@ typedef struct pcg_state_setseq_64 pcg32_random_t;
 
 // state for global RNGs
 
-static pcg32_random_t pcg32_global = PCG32_INITIALIZER;
+__declspec(thread) static pcg32_random_t pcg32_global = PCG32_INITIALIZER;
+
 
 // pcg32_srandom(initstate, initseq)
 // pcg32_srandom_r(rng, initstate, initseq):

@@ -20,6 +20,13 @@
 	- App hangs when calculating blueNoise samples.
 	- Simd.
 
+	- Speed up everything. (Lot's of low hanging fruit.)
+	- Put quatInverse in precalc of object.
+
+	- Use bias on insterction instead of insideObject bool.
+	- Do quick 10 samples per pixel pre pass before doing the actuall rendering,
+	  so you get a sense of what the image will be.
+
 	Bugs:
 	- Windows key slow often.
 	- Memory leak? Flashing when drawing scene in opengl.
@@ -188,6 +195,10 @@ struct AppData {
 	bool abortProcessing;
 	bool tracerFinished;
   
+	bool processingCommand;
+	bool preprocessStage;
+	bool allocTextureBuffer;
+
 	f64 processStartTime;
 	f64 processTime;
 };
@@ -599,13 +610,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		ad->settings.sampleMode = SAMPLE_MODE_BLUE;
 		ad->settings.sampleCountWanted = 100;
-		ad->settings.sampleGridWidth = 10;
-		ad->settings.rayBouncesMax = 10;
+		ad->settings.sampleGridWidth = 3;
+		ad->settings.rayBouncesMaxWanted = 10;
 
 		ad->drawSceneWired = true;
 		ad->fitToScreen = false;
 
-		ad->settings.randomDirectionCount = 20000;
 
 		ad->sceneFileMax = 200;
 		ad->sceneFile = getPString(ad->sceneFileMax);
@@ -625,11 +635,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->dialogData.filePath = getPString(ad->dialogData.filePathSize);
 		ad->dialogData.windowHandle = windowHandle;
 
+
 		// Precalc random directions.
 		{
-			int count = ad->settings.randomDirectionCount;
+			ad->settings.randomDirectionCount = 20000;
+			int count;
+			float precision;
+
+			count = ad->settings.randomDirectionCount;
 			ad->settings.randomDirections = mallocArray(Vec3, count);
-			float precision = 0.001f;
+			precision = 0.001f;
 
 			for(int i = 0; i < count; i++) {
 				// Cube discard method.
@@ -642,6 +657,27 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(randomDir == vec3(0,0,0)) randomDir = vec3(1,0,0);
 
 				ad->settings.randomDirections[i] = randomDir;
+			}
+
+			// For depth of field.
+
+			ad->settings.randomUnitCirclePointCount = 20000;
+
+			count = ad->settings.randomUnitCirclePointCount;
+			ad->settings.randomUnitCirclePoints = mallocArray(Vec2, count);
+			precision = 0.001f;
+			float range = 0.5f;
+
+			for(int i = 0; i < count; i++) {
+				// Square discard method.
+
+				Vec2 randomPoint;
+				do {
+					randomPoint = vec2(randomFloatPCG(-range,range,precision), randomFloatPCG(-range,range,precision));
+				} while(lenVec2(randomPoint) > range);
+				if(randomPoint == vec2(0,0)) randomPoint = vec2(range,0);
+
+				ad->settings.randomUnitCirclePoints[i] = randomPoint;
 			}
 		}
 	}
@@ -1038,39 +1074,54 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				Texture* t = &ad->raycastTexture;
 
-				// glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
+				// glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.ambientLightColor);
 			}
 		}
 
-		if(keyPressed(gui, input, KEYCODE_SPACE) && ad->drawSceneWired) {
+		if(keyPressed(gui, input, KEYCODE_SPACE) && ad->drawSceneWired) ad->processingCommand = true;
+
+		if(ad->processingCommand) {
+			ad->processingCommand = false;
+
+			if(ad->settings.sampleCountWanted >= 100) ad->preprocessStage = true;
+			else ad->preprocessStage = false;
+
+			ad->allocTextureBuffer = true;
 			ad->startProcessing = true;
 		}
 
-		if(ad->startProcessing && (!ad->activeProcessing && ad->drawSceneWired) && !ad->fpsMode) {
+ 		if(ad->startProcessing && (!ad->activeProcessing) && !ad->fpsMode) {
 
 			ad->startProcessing = false;
 			ad->activeProcessing = true;
 			ad->drawSceneWired = false;
 			ad->tracerFinished = false;
 
+			if(ad->preprocessStage) {
+				ad->settings.darken = true;
+			} else {
+				ad->settings.darken = false;
+			}
+
 			RaytraceSettings* settings = &ad->settings;
-
-			settings->mode = RENDERING_MODE_RAY_TRACER; // MODE_PATH_TRACER
-
 			Texture* t = &ad->raycastTexture;
-			// Vec3 black = vec3(0.2f);
-			// glClearTexSubImage(t->id, 0, 0,0,0, t->dim.w,t->dim.h, 1, GL_RGB, GL_FLOAT, &ad->world.defaultEmitColor);
 
-			int pixelCount = settings->texDim.w*settings->texDim.h;
-			reallocArraySave(Vec3, ad->buffer, pixelCount);
+			if(ad->allocTextureBuffer) {
+				int pixelCount = settings->texDim.w*settings->texDim.h;
+				reallocArraySave(Vec3, ad->buffer, pixelCount);
+			}
 
 			// Setup samples.
 			{
 				int mode = settings->sampleMode;
 
-				Vec2* blueNoiseSamples;
+				if(ad->preprocessStage) {
+					settings->sampleCountGrid = 2;
+				} else {
+					settings->sampleCountGrid = sqrt(settings->sampleCountWanted);
+				}
 
-				settings->sampleCountGrid = sqrt(settings->sampleCountWanted);
+				Vec2* blueNoiseSamples;
 
 				int sampleCount;
 				if(mode == SAMPLE_MODE_GRID) {
@@ -1141,6 +1192,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 						free(counter);
 						free(blueNoiseSamples);
+
 					} break;
 				}
 			}
@@ -1154,13 +1206,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 				OrientationVectors ovecs = camera.ovecs;
 				settings->camTopLeft = camera.pos + ovecs.dir*camera.nearDist + (ovecs.right*-1)*(camera.dim.w/2.0f) + (ovecs.up)*(camera.dim.h/2.0f);
 
-				for(int i = 0; i < world->objects.count; i++) {
-					Object* obj = world->objects + i;
-					geometryBoundingSphere(obj);
-					geometryBoundingBox(obj);
-				}
+				preCalcObjects(&world->objects);
 
 				worldCalcLightDir(world);
+				world->ambientLightColorLinear = colorSRGB(world->ambientLightColor);
+				world->globalLightColorLinear = colorSRGB(world->globalLightColor);
+
+
+				if(ad->preprocessStage) settings->rayBouncesMax = 3;
+				else settings->rayBouncesMax = settings->rayBouncesMaxWanted;
 			}
 
 			// Push thread jobs in circles.
@@ -1247,7 +1301,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 			ad->processTime = ad->time - ad->processStartTime;
 
 			if(!ad->abortProcessing) {
-				ad->tracerFinished = true;
+				if(ad->preprocessStage) {
+					ad->preprocessStage = false;
+					ad->startProcessing = true;
+					ad->allocTextureBuffer = false;
+				} else {
+					ad->tracerFinished = true;
+				}
 			} else {
 				ad->drawSceneWired = true;
 				ad->abortProcessing = false;
@@ -1255,12 +1315,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		}
 
 		if(doneProcessing || ad->activeProcessing) {
-			// glTextureSubImage2D(ad->raycastTexture.id, 0, 0, 0, ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
-
 			glBindTexture(GL_TEXTURE_2D, ad->raycastTexture.id);
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0,ad->settings.texDim.w, ad->settings.texDim.h, GL_RGB, GL_FLOAT, ad->buffer);
 
-			// glGenerateTextureMipmap(ad->raycastTexture.id);
 			glGenerateMipmap(GL_TEXTURE_2D);
 		}
 
@@ -1302,8 +1359,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				glEnable(GL_DEPTH_TEST);
 			}
 		}
-
-		if(keyPressed(gui, input, KEYCODE_F)) ad->fitToScreen = !ad->fitToScreen;
 	}
 
 	{
@@ -1372,6 +1427,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 		}
 
+		if(keyPressed(gui, input, KEYCODE_F)) ad->fitToScreen = !ad->fitToScreen;
+
 		if(ad->drawSceneWired) {
 
 			if(pointInRectEx(input->mousePosNegative, ad->textureScreenRectFitted)) {
@@ -1408,11 +1465,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			// @Selection.
 
 			// Bad.
-			for(int i = 0; i < world->objects.count; i++) {
-				Object* obj = world->objects + i;
-				geometryBoundingSphere(obj);
-				geometryBoundingBox(obj);
-			}
+			preCalcObjects(&world->objects);
 
 			if(keyPressed(gui, input, KEYCODE_TAB)) {
 				ad->showPanels = !ad->showPanels;
@@ -1472,7 +1525,18 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 			}
 
-			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count && !ad->drawSceneWired) {
+			// Select all.
+			if(keyDown(gui, input, KEYCODE_CTRL) && keyPressed(gui, input, KEYCODE_A)) {
+				eui->selectedObjects.clear();
+				for(int i = 0; i < world->objects.count; i++) {
+					eui->selectedObjects.push(i);
+				}
+
+				eui->selectionState = ENTITYUI_INACTIVE;
+				eui->selectionChanged = true;
+			}
+
+			if(keyPressed(gui, input, KEYCODE_ESCAPE) && eui->selectedObjects.count && ad->drawSceneWired) {
 				eui->selectedObjects.clear();
 				eui->selectionState = ENTITYUI_INACTIVE;
 				eui->selectionChanged = true;
@@ -1825,7 +1889,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 		glDepthMask(false);
-		Vec3 cc = world->defaultEmitColor;
+		Vec3 cc = world->ambientLightColor;
 		drawRect(rectCenDim(0,0,10000,10000), vec4(cc,1));
 		glDepthMask(true);
 
@@ -1855,10 +1919,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec4 light;
 		
-		// light = vec4(world->defaultEmitColor,1);
+		// light = vec4(world->ambientLightColor,1);
 		// glLightfv(GL_LIGHT0, GL_AMBIENT, light.e);
 
-		light = vec4(world->globalLightColor,1);
+		light = colorSRGB(vec4(world->globalLightColor,1));
 		glLightfv(GL_LIGHT0, GL_DIFFUSE, light.e);
 
 		// light = vec4(world->globalLightColor,1);
@@ -1909,10 +1973,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 				// color = vec4(obj->color, 1);
 				// glMaterialfv(GL_FRONT, GL_DIFFUSE, color.e);
 
-				color = COLOR_SRGB(vec4(obj->color, 1));
+				color = colorSRGB(vec4(obj->color, 1));
 				glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, color.e);
 
-				color = vec4(m->emitColor, 1);
+				color = colorSRGB(vec4(m->emitColor, 1));
 				glMaterialfv(GL_FRONT, GL_EMISSION, color.e);
 
 				float shininess = lerp(m->reflectionMod, 0,128);
@@ -2966,9 +3030,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMax);
+						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->rayBouncesMaxWanted);
 
-						settings->rayBouncesMax = clampMinInt(settings->rayBouncesMax, 1);
+						settings->rayBouncesMaxWanted = clampMinInt(settings->rayBouncesMaxWanted, 1);
 					}
 
 					{
@@ -3024,9 +3088,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->defaultEmitColor.r, 0, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->defaultEmitColor.g, 0, 1);
-						newGuiQuickSlider(gui, quickRowNext(&qr), &world->defaultEmitColor.b, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->ambientLightColor.r, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->ambientLightColor.g, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->ambientLightColor.b, 0, 1);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -3035,75 +3099,12 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.g, 0, 10);
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightColor.b, 0, 10);
 
-
-
-
-						// r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						// qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
-						// newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						// newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.x, -1, 1);
-						// newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.y, -1, 1);
-						// newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightDir.z, -1, 1);
-
-
-						// {
-						// 	Vec3 dir = normVec3(world->globalLightDir);
-						// 	Vec2 dirXY = dir.xy == vec2(0,0) ? vec2(1,0) : normVec2(dir.xy);
-
-						// 	float angleXY2 = atan2(-1,0) - atan2(dirXY.x, dirXY.y);
-						// 	if(angleXY2 < 0) angleXY2 += 2*M_PI;
-						// 	angleXY2 -= M_PI;
-
-						// 	float angleZ2 = asin(dir.z);
-
-						// 	eui->globalLightDirTemp = vec2(angleXY2, angleZ2);
-						// }
-
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightRot.x, 0, 360);
 						newGuiQuickSlider(gui, quickRowNext(&qr), &world->globalLightRot.y, -90, 90);
 						
-						{
-							worldCalcLightDir(world);
-
-							#if 0
-							{
-								Vec3 dir = normVec3(world->globalLightDir);
-								Vec2 dirXY = dir.xy == vec2(0,0) ? vec2(1,0) : normVec2(dir.xy);
-								// float angleXY2 = -(atan2(dirXY.x, dirXY.y) - M_PI_2);
-								// angleXY2 += M_PI;
-								// float angleXY2 = (atan2(dirXY.x, dirXY.y));
-								// if (angleXY2 < 0) angleXY2 = M_2PI - abs(angleXY2);
-
-								float angleXY2 = atan2(-1,0) - atan2(dirXY.x, dirXY.y);
-								if(angleXY2 < 0) angleXY2 += 2*M_PI;
-								angleXY2 -= M_PI;
-
-
-								// angle = atan2(vector2.y, vector2.x) - atan2(vector1.y, vector1.x);
-								// and you may want to normalize it to the range 0 .. 2 * Pi:
-
-								// if (angle < 0) angle += 2 * M_PI;
-
-
-								// if(angleXY2 > M_PI) {
-								// 	angleXY2 = -((M_PI_2 - (angleXY2 - M_PI)) + M_PI_2);
-								// 	if(angleXY2 > 0) angleXY2 = -angleXY2;
-								// }
-
-
-								float angleZ2 = asin(dir.z);
-
-								// printf("%f %f %f,  %f %f, %f %f\n", PVEC3(dir), angleXY, angleZ, angleXY2, angleZ2);
-
-							}
-							#endif
-						}
-
-
-
 						{
 							p.y -= separatorHeight/2;
 							drawLineH(p+vec2(0,0.5f), p+vec2(ew,0)+vec2(0,0.5f), cSeparatorDark);
@@ -3218,7 +3219,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							r = rectTLDim(p, vec2(ew, height)); p.y -= height+pad.y;
 							rectSetW(&r, renderButtonWidth);
 							if(newGuiQuickButton(gui, r, text)) {
-								if(!ad->activeProcessing) ad->startProcessing = true;
+								ad->processingCommand = true;
 							}
 						}
 					}
@@ -3410,17 +3411,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
 						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
 
-						// if(objectDiffs.pos.x != -1) gui->editSettings.textBoxSettings.textSettings.color = diffColor;
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.x)) offSize = memberOffsetSize(Object, pos.x);
-						// gui->editSettings.textBoxSettings.textSettings.color = textColor;
-
-						// if(objectDiffs.pos.y != -1) gui->editSettings.textBoxSettings.textSettings.color = diffColor;
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.y)) offSize = memberOffsetSize(Object, pos.y);
-						// gui->editSettings.textBoxSettings.textSettings.color = textColor;
-
-						// if(objectDiffs.pos.z != -1) gui->editSettings.textBoxSettings.textSettings.color = diffColor;
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->pos.z)) offSize = memberOffsetSize(Object, pos.z);
-						// gui->editSettings.textBoxSettings.textSettings.color = textColor;
 
 						{
 							float roll, pitch, yaw;
@@ -3471,10 +3464,10 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 							offSize = memberOffsetSize(Object, geometry.type);
 
-							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
-								obj->dim = vec3(max(obj->dim.x, obj->dim.y, obj->dim.z));
-								offSize2 = memberOffsetSize(Object, dim);
-							}
+							// if(obj->geometry.type == GEOM_TYPE_SPHERE) {
+							// 	obj->dim = vec3(max(obj->dim.x, obj->dim.y, obj->dim.z));
+							// 	offSize2 = memberOffsetSize(Object, dim);
+							// }
 						}
 						if(newGuiGotActive(gui, newGuiCurrentId(gui)-2)) {
 							eui->temp.geometry.type = obj->geometry.type;
@@ -3490,15 +3483,15 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->dim.z)) dimChanged = 3;
 
 						if(dimChanged) {
-							if(obj->geometry.type == GEOM_TYPE_SPHERE) {
-								float d = obj->dim.e[dimChanged-1];
-								obj->dim = vec3(d);
-								offSize = memberOffsetSize(Object, dim);
-							} else {
+							// if(obj->geometry.type == GEOM_TYPE_SPHERE) {
+							// 	float d = obj->dim.e[dimChanged-1];
+							// 	obj->dim = vec3(d);
+							// 	offSize = memberOffsetSize(Object, dim);
+							// } else {
 								if(dimChanged == 1) offSize = memberOffsetSize(Object, dim.x);
 								if(dimChanged == 2) offSize = memberOffsetSize(Object, dim.y);
 								if(dimChanged == 3) offSize = memberOffsetSize(Object, dim.z);
-							}
+							// }
 						}
 
 						{
@@ -4097,6 +4090,19 @@ extern "C" APPMAINFUNCTION(appMain) {
 		newGuiEnd(gui);
 	}
 
+	// {
+	// 	Rect r = rectCenDim(100,-100,100,100);
+	// 	drawRect(r, vec4(0,0,0,1));
+
+
+	// 	RaytraceSettings* settings = &ad->settings;
+	// 	for(int i = 0; i < settings->randomUnitCirclePointCount; i++) {
+	// 		Vec2 sample = settings->randomUnitCirclePoints[i];
+	// 		Vec2 p = rectCen(r) + sample*rectW(r);
+
+	// 		drawPoint(p, vec4(1,0,0,1));
+	// 	}
+	// }
 
 	openglDrawFrameBufferAndSwap(ws, systemData, &ad->swapTimer, init, ad->panelAlpha, ad->dt);
 

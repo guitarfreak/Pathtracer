@@ -27,7 +27,6 @@
 
 
 
-
 int mod(int a, int b) {
 	int result;
 	result = a % b;
@@ -1342,6 +1341,11 @@ inline Vec2 & operator*=(Vec2 & a, float b) {
 	return a;
 }
 
+inline Vec2 & operator*=(Vec2 & a, Vec2 b) {
+	a = a * b;
+	return a;
+}
+
 inline Vec2 operator+(Vec2 a, float b) {
 	a.x += b;
 	a.y += b;
@@ -1967,6 +1971,10 @@ Vec2 roundVec2(Vec2 a) {
 //
 //
 
+inline Vec3 vec3(float a);
+Vec3 VEC3_ZERO = vec3(0.0f);
+Vec3 VEC3_ONE = vec3(1.0f);
+
 inline Vec3 vec3(float a, float b, float c) {
 	Vec3 vec;
 	vec.x = a;
@@ -2115,8 +2123,11 @@ inline bool operator!=(Vec3 a, Vec3 b) {
 }
 
 inline float dot(Vec3 a, Vec3 b) {
-	float result = a.x*b.x + a.y*b.y + a.z*b.z;
-	return result;
+	return a.x*b.x + a.y*b.y + a.z*b.z;
+}
+
+inline float dot(Vec3 a) {
+	return a.x*a.x + a.y*a.y + a.z*a.z;
 }
 
 // A and B assumed to be unit vectors.
@@ -2144,17 +2155,15 @@ inline Vec3 toVec3(Vec2 a) {
 }
 
 inline float lenVec3(Vec3 a) {
-	float sqrlen = sqrt(dot(a,a));
-	return sqrlen;
+	return sqrt(dot(a));
 }
 
 inline Vec3 normVec3(Vec3 a) {
-	float sqrlen = lenVec3(a);
-	return a/sqrlen;
+	return a/lenVec3(a);
 }
 
 inline Vec3 projectPointOnLine(Vec3 lPos, Vec3 lDir, Vec3 p) {
-	Vec3 result = lPos + ((dot(p-lPos, lDir) / dot(lDir,lDir))) * lDir;
+	Vec3 result = lPos + ((dot(p-lPos, lDir) / dot(lDir))) * lDir;
 	return result;
 }
 
@@ -2170,47 +2179,49 @@ inline float angleBetweenVectors(Vec3 a, Vec3 b) {
 
 Vec3 boxRaycastNormals[6] = {vec3(-1,0,0), vec3(1,0,0), vec3(0,-1,0), vec3(0,1,0), vec3(0,0,-1), vec3(0,0,1)};
 
-bool boxRaycast(Vec3 lp, Vec3 ld, Rect3 box, float* distance = 0, int* face = 0, bool secondIntersection = false) {
+float boxRaycast(Vec3 lp, Vec3 ld, Vec3 boxPos, Vec3 boxDim, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
+
+	Vec3 boxHalfDim = boxDim/2;
+	Vec3 boxMin = boxPos - boxHalfDim;
+	Vec3 boxMax = boxPos + boxHalfDim;
+
 	// ld is unit
-	Vec3 dirfrac;
-	dirfrac.x = 1.0f / ld.x;
-	dirfrac.y = 1.0f / ld.y;
-	dirfrac.z = 1.0f / ld.z;
+	Vec3 dirfrac = 1.0f / ld;
 	// lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
 	// r.org is origin of ray
-	float t1 = (box.min.x - lp.x)*dirfrac.x;
-	float t2 = (box.max.x - lp.x)*dirfrac.x;
-	float t3 = (box.min.y - lp.y)*dirfrac.y;
-	float t4 = (box.max.y - lp.y)*dirfrac.y;
-	float t5 = (box.min.z - lp.z)*dirfrac.z;
-	float t6 = (box.max.z - lp.z)*dirfrac.z;
+	float t1 = (boxMin.x - lp.x)*dirfrac.x;
+	float t2 = (boxMax.x - lp.x)*dirfrac.x;
+	float t3 = (boxMin.y - lp.y)*dirfrac.y;
+	float t4 = (boxMax.y - lp.y)*dirfrac.y;
+	float t5 = (boxMin.z - lp.z)*dirfrac.z;
+	float t6 = (boxMax.z - lp.z)*dirfrac.z;
 
 	float tmin = max(max(min(t1, t2), min(t3, t4)), min(t5, t6));
 	float tmax = min(min(max(t1, t2), max(t3, t4)), max(t5, t6));
 
-	float t;
+	float distance;
 	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behind us
-	if (tmax < 0) return false;
+	if (tmax < 0) return -1;
 
 	// if tmin > tmax, ray doesn't intersect AABB
-	if (tmin > tmax) return false;
+	if (tmin > tmax) return -1;
 
-	if(secondIntersection) {
-		tmin = tmax;
+	distance = secondIntersection ? tmax : tmin;
+
+	if(distance < 0) return -1;
+
+	if(intersection) *intersection = lp + ld*distance;
+
+	if(intersectionNormal) {
+		     if(distance == t1) *intersectionNormal = boxRaycastNormals[0];
+		else if(distance == t2) *intersectionNormal = boxRaycastNormals[1];
+		else if(distance == t3) *intersectionNormal = boxRaycastNormals[2];
+		else if(distance == t4) *intersectionNormal = boxRaycastNormals[3];
+		else if(distance == t5) *intersectionNormal = boxRaycastNormals[4];
+		else if(distance == t6) *intersectionNormal = boxRaycastNormals[5];
 	}
 
-	if(face) {
-		     if(tmin == t1) *face = 0;
-		else if(tmin == t2) *face = 1;
-		else if(tmin == t3) *face = 2;
-		else if(tmin == t4) *face = 3;
-		else if(tmin == t5) *face = 4;
-		else if(tmin == t6) *face = 5;
-	}
-
-	t = tmin;
-	if(distance != 0) *distance = t;
-	return true;
+	return distance;
 }
 
 int getBiggestAxis(Vec3 v, int smallerAxis[2] = 0) {
@@ -2324,7 +2335,7 @@ float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3 pu, Vec2 di
 	return -1;
 }
 
-float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3* intersection = 0) {
 
 	float a = dot(pn, ld);
 	if(a == 0) return -1;
@@ -2334,7 +2345,6 @@ float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3* intersecti
 		Vec3 ip = lp + ld*distance;
 
 		if(intersection) *intersection = ip;
-		if(intersectionNormal) *intersectionNormal = pn;
 
 		return distance;
 	}
@@ -2481,11 +2491,10 @@ inline bool operator==(Vec3i a, Vec3i b) {
 }
 
 inline Vec3 lerp(float percent, Vec3 a, Vec3 b) {
-	Vec3 result;
-	result.x = lerp(percent, a.x, b.x);
-	result.y = lerp(percent, a.y, b.y);
-	result.z = lerp(percent, a.z, b.z);
-	return result;
+	a.x = lerp(percent, a.x, b.x);
+	a.y = lerp(percent, a.y, b.y);
+	a.z = lerp(percent, a.z, b.z);
+	return a;
 }
 
 inline Vec3 clamp(Vec3 n, Vec3 min, Vec3 max) {
@@ -2953,7 +2962,6 @@ bool operator==(Quat q0, Quat q1) {
 
 // 
 
-Rect3 rect3CenDim(Vec3 cen, Vec3 dim);
 float boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
 
 	bool rotated = rot == quat() ? false : true;
@@ -2968,13 +2976,9 @@ float boxRaycastRotated(Vec3 lp, Vec3 ld, Vec3 pos, Vec3 dim, Quat rot, Vec3* in
 		rotatedDir = ld;
 	}
 
-	float distance = -1;
-	int face;
-	bool result = boxRaycast(rotatedPos, rotatedDir, rect3CenDim(pos, dim), &distance, &face, secondIntersection);
-	if(result) {
-		if(intersection) *intersection = lp + ld*distance;
+	float distance = boxRaycast(rotatedPos, rotatedDir, pos, dim, intersection, intersectionNormal, secondIntersection);
+	if(distance != -1) {
 		if(intersectionNormal) {
-			*intersectionNormal = boxRaycastNormals[face];
 			if(rotated) *intersectionNormal = rot * (*intersectionNormal);
 		}
 	}
