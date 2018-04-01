@@ -215,7 +215,6 @@ inline float mapRangeClamp(float value, float min, float max, float rangeMin, fl
 	return result;
 };
 
-// 0 to 1
 float lerp(float percent, float min, float max) {
 	return min + percent * (max-min);
 }
@@ -1082,7 +1081,7 @@ union Vec3i {
 		Vec2i yz;
 	};
 
-	float e[3];
+	int e[3];
 };
 
 union Vec4 {
@@ -2436,6 +2435,14 @@ inline Vec3i vec3i(int a, int b, int c) {
 	return vec;
 }
 
+inline Vec3i vec3i(int a) {
+	Vec3i vec;
+	vec.x = a;
+	vec.y = a;
+	vec.z = a;
+	return vec;
+}
+
 inline Vec3i vec3i(Vec3 a) {
 	return vec3i(a.x,a.y,a.z);
 }
@@ -2470,6 +2477,13 @@ inline Vec3i operator-(Vec3i a, Vec3i b) {
 	a.x -= b.x;
 	a.y -= b.y;
 	a.z -= b.z;
+	return a;
+}
+
+inline Vec3i operator*(Vec3i a, Vec3i b) {
+	a.x *= b.x;
+	a.y *= b.y;
+	a.z *= b.z;
 	return a;
 }
 
@@ -3307,6 +3321,17 @@ Vec3 rect3Dim(Rect3 r) {
 
 Vec3 rect3Cen(Rect3 r) {
 	return r.min + rect3Dim(r)/2;
+}
+
+bool pointInBox(Vec3 p, Vec3 bMin, Vec3 bMax) {
+	bool result = ( p.x >= bMin.x &&
+					p.x <= bMax.x &&
+					p.y >= bMin.y &&
+					p.y <= bMax.y &&
+					p.z >= bMin.z &&
+					p.z <= bMax.z );
+
+	return result;
 }
 
 //

@@ -29,7 +29,8 @@
 #define For_Array(array, count, type) \
 	for(type* it = array; (it-array) < count; it++)
 
-#define arrayIndex(w, h, x, y) (y*w + x)
+#define arrayIndex(w, x, y) (y*w + x)
+#define arrayIndex3D(w, h, x, y, z) (z*h*w + y*w + x)
 
 #define MetaParse() 
 

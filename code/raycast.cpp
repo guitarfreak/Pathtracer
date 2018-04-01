@@ -285,6 +285,38 @@ enum {
 	RENDERING_MODE_PATH_TRACER, 
 };
 
+struct ObjectList {
+	int* data;
+	int count;
+	int max;
+};
+
+// http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.42.3443&rep=rep1&type=pdf
+struct SpatialGrid {
+	Vec3 bMinStart;
+	Vec3 bMaxStart;
+
+	Vec3i coordMin;
+	Vec3i coordMax;
+
+	Vec3i bMin;
+	Vec3i bMax;
+
+	Vec3i cellCount;
+	Vec3i cellSize;
+
+	// Grid Traversal.
+
+	Vec3 startPos;
+
+	Vec3i coord;
+	Vec3i step;
+	Vec3 tMax;
+	Vec3 tDelta;
+
+	bool outside;
+};
+
 struct RaytraceSettings {
 	Vec2i texDim;
 	int sampleMode;
@@ -296,6 +328,14 @@ struct RaytraceSettings {
 
 	int rayBouncesMax;
 	bool darken;
+
+	int* gridBuffer;
+	int gridBufferCount;
+	int gridBufferMax;
+
+	SpatialGrid spatialGrid;
+	ObjectList* grid;
+	int gridCount;
 
 	// Precalc.
 
@@ -348,9 +388,81 @@ struct ProcessPixelsData {
 };
 
 
+float lineSphereIntersectionX(Vec3 lp, Vec3 ld, Vec3 sp, float sr, Vec3* intersection, Vec3* intersectionNormal) {
+	// ld must be unit.
+
+	Vec3 oldP = lp;
+	lp -= sp;
+
+	float dotLdLp = dot(ld,lp);
+	float lenLp = lenVec3(lp);
+	float b = dotLdLp*dotLdLp - lenLp*lenLp + sr*sr;
+
+	if(b < 0) return -1;
+
+	float distance = -(dot(ld, lp));
+	float sq = sqrt(b);
+
+	// Get closest intersection that's not behind line position.
+
+	if(distance - sq < 0) {
+		if(distance + sq < 0) return -1;
+		else distance += sq;
+	} else {
+		distance -= sq;
+	}
+
+	*intersection = oldP + ld*distance;
+	*intersectionNormal = normVec3((*intersection) - sp);
+
+    return distance;
+}
+
+Vec3 boxIntersectionNormals[6] = {vec3(-1,0,0), vec3(1,0,0), vec3(0,-1,0), vec3(0,1,0), vec3(0,0,-1), vec3(0,0,1)};
+float lineBoxIntersection(Vec3 lp, Vec3 ld, Vec3 boxPos, Vec3 boxDim, Vec3* intersection, Vec3* intersectionNormal) {
+
+	Vec3 boxHalfDim = boxDim/2;
+	Vec3 boxMin = boxPos - boxHalfDim;
+	Vec3 boxMax = boxPos + boxHalfDim;
+
+	// ld is unit
+	Vec3 dirfrac = 1.0f / ld;
+	// lb is the corner of AABB with minimal coordinates - left bottom, rt is maximal corner
+	// r.org is origin of ray
+	float t1 = (boxMin.x - lp.x)*dirfrac.x;
+	float t2 = (boxMax.x - lp.x)*dirfrac.x;
+	float t3 = (boxMin.y - lp.y)*dirfrac.y;
+	float t4 = (boxMax.y - lp.y)*dirfrac.y;
+	float t5 = (boxMin.z - lp.z)*dirfrac.z;
+	float t6 = (boxMax.z - lp.z)*dirfrac.z;
+
+	float tmin = max(max(min(t1, t2), min(t3, t4)), min(t5, t6));
+	float tmax = min(min(max(t1, t2), max(t3, t4)), max(t5, t6));
+
+	// if tmax < 0, ray (line) is intersecting AABB, but whole AABB is behind us
+	if (tmax < 0) return -1;
+
+	// if tmin > tmax, ray doesn't intersect AABB
+	if (tmin > tmax) return -1;
+
+	float distance;
+	if(tmin < 0) distance = tmax;
+	else distance = tmin;
+
+	*intersection = lp + ld*distance;
+
+	     if(distance == t1) *intersectionNormal = boxIntersectionNormals[0];
+	else if(distance == t2) *intersectionNormal = boxIntersectionNormals[1];
+	else if(distance == t3) *intersectionNormal = boxIntersectionNormals[2];
+	else if(distance == t4) *intersectionNormal = boxIntersectionNormals[3];
+	else if(distance == t5) *intersectionNormal = boxIntersectionNormals[4];
+	else if(distance == t6) *intersectionNormal = boxIntersectionNormals[5];
+
+	return distance;
+}
 
 // http://www.cl.cam.ac.uk/teaching/1999/AGraphHCI/SMAG/node2.html#eqn:rectcylrayquad
-float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
+float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection, Vec3* intersectionNormal) {
 
 	// Cylinder is at origin and has r = 1 and h = 2;
 
@@ -386,33 +498,27 @@ float lineCylinderIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* int
 	// Both behind.
 	if(t1 < 0 && t2 < 0) return -1;
 
-	float distance;
-	if(!secondIntersection) {
-		distance = min(t1,t2);
-		if(distance < 0) distance = max(t1,t2);
-	} else {
-		distance = max(t1,t2);
-	}
+	float distance = min(t1,t2);
+	if(distance < 0) distance = max(t1,t2);
 
-	if(intersection) {
-		*intersection = p + d*distance;
+	*intersection = p + d*distance;
 
-		if(intersectionNormal) {
-			int type = distance == t1 ? type1 : type2;
+	// Normal.
+	{
+		int type = distance == t1 ? type1 : type2;
 
-			if(type == 0) {
-				if(intersection->xy == vec2(0,0)) *intersectionNormal = vec3(1,0,0);
-				else *intersectionNormal = normVec3(vec3((*intersection).xy, 0));
-			}
-			else if(type == 1) *intersectionNormal = vec3(0,0,1);
-			else *intersectionNormal = vec3(0,0,-1);
-		}	
-	}
+		if(type == 0) {
+			if(intersection->xy == vec2(0,0)) *intersectionNormal = vec3(1,0,0);
+			else *intersectionNormal = normVec3(vec3((*intersection).xy, 0));
+		}
+		else if(type == 1) *intersectionNormal = vec3(0,0,1);
+		else *intersectionNormal = vec3(0,0,-1);
+	}	
 
 	return distance;
 }
 
-float lineConeIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* intersectionNormal = 0, bool secondIntersection = false) {
+float lineConeIntersection(Vec3 p, Vec3 d, Vec3* intersection, Vec3* intersectionNormal) {
 
 	// Offset because equation is from -1 to 0.
 	p.z -= 0.5;
@@ -454,33 +560,27 @@ float lineConeIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* interse
 	// Both behind.
 	if(t1 < 0 && t2 < 0) return -1;
 
-	float distance;
-	if(!secondIntersection) {
-		distance = min(t1,t2);
-		if(distance < 0) max(t1,t2);
-	} else {
-		distance = max(t1,t2);
-	}
+	float distance = min(t1,t2);
+	if(distance < 0) distance = max(t1,t2);
 
-	if(intersection) {
-		p.z += 0.5f;
-		*intersection = p + d*distance;
+	p.z += 0.5f;
+	*intersection = p + d*distance;
 
-		if(intersectionNormal) {
-			int type = distance == t1 ? type1 : type2;
+	// Normal.
+	{
+		int type = distance == t1 ? type1 : type2;
 
-			if(type == 0) {
-				if((*intersection).xy == vec2(0,0)) {
-					*intersectionNormal = vec3(0,0,1);
-				} else {
-					Vec3 n = normVec3(vec3((*intersection).xy, 0));
-					n = normVec3(vec3(n.xy, 1));
-					*intersectionNormal = n;
-				}
+		if(type == 0) {
+			if((*intersection).xy == vec2(0,0)) {
+				*intersectionNormal = vec3(0,0,1);
+			} else {
+				Vec3 n = normVec3(vec3((*intersection).xy, 0));
+				n = normVec3(vec3(n.xy, 1));
+				*intersectionNormal = n;
 			}
-			else *intersectionNormal = vec3(0,0,-1);
-		}	
-	}
+		}
+		else *intersectionNormal = vec3(0,0,-1);
+	}	
 
 	return distance;
 }
@@ -491,6 +591,118 @@ float lineConeIntersection(Vec3 p, Vec3 d, Vec3* intersection = 0, Vec3* interse
 // 2*R*sqrt((x^2) + 2*t*x*a + (t^2)*(a^2) + (y^2) + 2*t*y*b + (t^2)*(b^2)) = (R^2) + (x^2) + 2*t*x*a+(t^2)*(a^2) + (y^2)+2*t*y*b+(t^2)*(b^2) + (z^2)+2*t*z*c+(t^2)*(c^2) - (r^2)
 
 // }
+
+
+void spatialGridInit(SpatialGrid* grid, Vec3 boxMin, Vec3 boxMax, Vec3i cellCount) {
+	grid->bMinStart = boxMin;
+	grid->bMaxStart = boxMax;
+	grid->cellCount = cellCount;
+
+	Vec3 dim = boxMax - boxMin;
+
+	for(int i = 0; i < 3; i++) 
+		grid->cellSize.e[i] = (int)((float)dim.e[i]/cellCount.e[i]);
+
+	for(int i = 0; i < 3; i++) 
+		grid->coordMin.e[i] = (roundInt(boxMin.e[i]/grid->cellSize.e[i] - 0.5f));
+
+	for(int i = 0; i < 3; i++) 
+		grid->coordMax.e[i] = (roundInt(boxMax.e[i]/grid->cellSize.e[i] + 0.5f));
+
+	grid->cellCount = grid->coordMax - grid->coordMin;
+
+	grid->bMin = grid->coordMin*grid->cellSize;
+	grid->bMax = grid->coordMax*grid->cellSize;
+}
+
+void spatialGridTraverseInit(SpatialGrid* grid, Vec3 rayPos, Vec3 rayDir) {
+	
+	Vec3 bMin = vec3(grid->bMin);
+	Vec3 bMax = vec3(grid->bMax);
+	bool inGrid = pointInBox(rayPos, bMin, bMax);
+	if(!inGrid) {
+		Vec3 bDim = (bMax - bMin);
+		Vec3 bPos = bMin + bDim/2;
+
+		Vec3 intersection, intersectionNormal;
+		float distance = lineBoxIntersection(rayPos, rayDir, bPos, bDim, &intersection, &intersectionNormal);
+		if(distance != -1) {
+			rayPos = intersection + rayDir*0.0001f;
+			grid->startPos = rayPos;
+
+			grid->outside = false;
+		} else {
+			grid->outside = true;
+			return;
+		}
+	}
+
+	for(int i = 0; i < 3; i++) {
+		grid->coord.e[i] = (int)(rayPos.e[i]/grid->cellSize.e[i]) - grid->coordMin.e[i];
+		if(rayPos.e[i] < 0) grid->coord.e[i]--;
+
+		// Precision bug.
+		if(grid->coord.e[i] == -1) grid->coord.e[i] = 0;
+		if(grid->coord.e[i] >= grid->cellCount.e[i]) grid->coord.e[i]--;
+	}
+
+	for(int i = 0; i < 3; i++) {
+		if(rayDir.e[i] == 0) grid->step.e[i] = 0;
+		else grid->step.e[i] = rayDir.e[i] > 0 ? 1 : -1;
+	}
+
+	for(int i = 0; i < 3; i++) {
+		int coord = grid->step.e[i] == -1 ? grid->coord.e[i] : grid->coord.e[i]+1;
+		coord += grid->coordMin.e[i];
+		if(grid->step.e[i] != 0) 
+			grid->tMax.e[i] = ((coord * grid->cellSize.e[i]) - rayPos.e[i]) / rayDir.e[i];
+		else grid->tMax.e[i] = FLT_MAX;
+	}
+
+	for(int i = 0; i < 3; i++) {
+		grid->tDelta.e[i] = grid->cellSize.e[i] / rayDir.e[i];
+		if(grid->tDelta.e[i] < 0) 
+			grid->tDelta.e[i] = -grid->tDelta.e[i];
+	}
+
+}
+
+bool spatialGridTraverseNext(SpatialGrid* grid) {
+
+	if(grid->tMax.x < grid->tMax.y) {
+		if(grid->tMax.x < grid->tMax.z) {
+			grid->coord.x = grid->coord.x + grid->step.x;
+			if(grid->coord.x < 0 || 
+			   grid->coord.x >= grid->cellCount.x) return false;
+
+			grid->tMax.x += grid->tDelta.x;
+		} else {
+			grid->coord.z = grid->coord.z + grid->step.z;
+			if(grid->coord.z < 0 || 
+			   grid->coord.z >= grid->cellCount.z) return false;
+
+			grid->tMax.z += grid->tDelta.z;
+		}
+	} else {
+		if(grid->tMax.y < grid->tMax.z) {
+			grid->coord.y = grid->coord.y + grid->step.y;
+			if(grid->coord.y < 0 || 
+			   grid->coord.y >= grid->cellCount.y) return false;
+
+			grid->tMax.y += grid->tDelta.y;
+		} else {
+			grid->coord.z = grid->coord.z + grid->step.z;
+			if(grid->coord.z < 0 || 
+			   grid->coord.z >= grid->cellCount.z) return false;
+
+			grid->tMax.z += grid->tDelta.z;
+		}
+	}
+
+	return true;
+}
+
+
 
 
 // Transform a vector to unit system and back:
@@ -552,108 +764,97 @@ TimeStamp processPixelsThreadedTimings[5] = {};
 #define endTimer(i)
 #endif
 
-int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectIndex = 0, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+float getIntersection(Object* obj, Vec3 rayPos, Vec3 rayDir, Vec3* position, Vec3* normal) {
+	float distance = -1;
+
+	switch(obj->geometry.type) {
+
+		case GEOM_TYPE_SPHERE: {
+			if(obj->evenDim) {
+				distance = lineSphereIntersectionX(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, position, normal);
+			} else {
+
+				Vec3 lp, ld;
+				transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
+
+				distance = lineSphereIntersectionX(lp, ld, VEC3_ZERO, 0.5f, position, normal);
+
+				if(distance != -1) {
+					transformToGlobalSpace(obj, position, normal);
+					distance = lenVec3(rayPos - (*position));
+				}
+			}
+		} break;
+
+		case GEOM_TYPE_BOX: {
+			if(!obj->isRotated) {
+				distance = lineBoxIntersection(rayPos, rayDir, obj->pos, obj->dim, position, normal);
+			} else {
+
+				Vec3 lp, ld;
+				lp = rayPos - obj->pos;
+				ld = lp + rayDir;
+				lp = obj->rotInverse * lp;
+				ld = obj->rotInverse * ld;
+				ld = normVec3(ld - lp);
+
+				distance = lineBoxIntersection(lp, ld, VEC3_ZERO, obj->dim, position, normal);
+
+				if(distance != -1) {
+					(*position) = obj->rot * (*position);
+					(*position) = (*position) + obj->pos;
+
+					(*normal) = obj->rot * (*normal);
+					distance = lenVec3(rayPos - (*position));
+				}
+			}
+		} break;
+
+		case GEOM_TYPE_CYLINDER: {
+
+			Vec3 lp, ld;
+			transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
+
+			distance = lineCylinderIntersection(lp, ld, position, normal);
+
+			if(distance != -1) {
+				transformToGlobalSpace(obj, position, normal);
+				distance = lenVec3(rayPos - (*position));
+			}
+		} break;
+
+		case GEOM_TYPE_CONE: {
+
+			Vec3 lp, ld;
+			transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
+
+			distance = lineConeIntersection(lp, ld, position, normal);
+
+			if(distance != -1) {
+				transformToGlobalSpace(obj, position, normal);
+				distance = lenVec3(rayPos - (*position));
+			}
+		} break;
+	}
+
+	return distance;
+}
+
+int castRayAll(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
 
 	int objectIndex = 0;
-
-	// Were inside a transparent object.
-
-	bool insideObject = lastObjectIndex < 0;
-
 	float minDistance = FLT_MAX;
 	for(int i = 0; i < objects->count; i++) {
-		if(lastObjectIndex-1 == i) continue;
-
-		if(insideObject) i = (-lastObjectIndex) - 1;
-
 		Object* obj = objects->data + i;
 		Geometry* g = &obj->geometry;
 
-		bool possibleIntersection;
-		if(!insideObject) possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
-		else possibleIntersection = true;
+		Vec3 position, normal;
+		float distance = -1;
 
+		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
 		if(possibleIntersection) {
 
-			Vec3 position, normal;
-			float distance = -1;
-
-			switch(g->type) {
-
-				case GEOM_TYPE_SPHERE: {
-					if(obj->evenDim) {
-						distance = lineSphereIntersection(rayPos, rayDir, obj->pos, obj->dim.x*0.5f, &position, &normal, insideObject);
-					} else {
-
-						Vec3 lp, ld;
-						transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
-
-						distance = lineSphereIntersection(lp, ld, VEC3_ZERO, 0.5f, &position, &normal, insideObject);
-
-						if(distance != -1) {
-							transformToGlobalSpace(obj, &position, &normal);
-							distance = lenVec3(rayPos - position);
-						}
-					}
-				} break;
-
-				case GEOM_TYPE_BOX: {
-					if(!obj->isRotated) {
-						distance = boxRaycast(rayPos, rayDir, obj->pos, obj->dim, &position, &normal, insideObject);
-					} else {
-
-						Vec3 lp, ld;
-						lp = rayPos - obj->pos;
-						ld = lp + rayDir;
-						lp = obj->rotInverse * lp;
-						ld = obj->rotInverse * ld;
-						ld = normVec3(ld - lp);
-
-						distance = boxRaycast(lp, ld, VEC3_ZERO, obj->dim, &position, &normal, insideObject);
-
-						if(distance != -1) {
-							position = obj->rot * position;
-							position = position + obj->pos;
-
-							normal = obj->rot * normal;
-							distance = lenVec3(rayPos - position);
-						}
-					}
-				} break;
-
-				case GEOM_TYPE_CYLINDER: {
-
-					Vec3 lp, ld;
-					transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
-
-					distance = lineCylinderIntersection(lp, ld, &position, &normal, insideObject);
-
-					if(distance != -1) {
-						transformToGlobalSpace(obj, &position, &normal);
-						distance = lenVec3(rayPos - position);
-					}
-				} break;
-
-				case GEOM_TYPE_CONE: {
-
-					Vec3 lp, ld;
-					transformToUnitSpace(obj, rayPos, rayDir, &lp, &ld);
-
-					distance = lineConeIntersection(lp, ld, &position, &normal, insideObject);
-
-					if(distance != -1) {
-						transformToGlobalSpace(obj, &position, &normal);
-						distance = lenVec3(rayPos - position);
-					}
-				} break;
-			}
-
-			if(insideObject) {
-				if(intersection) *intersection = position;
-				if(intersectionNormal) *intersectionNormal = normal;
-
-				return lastObjectIndex;
-			}
+			distance = getIntersection(obj, rayPos, rayDir, &position, &normal);
 
 			if(distance > 0 && distance < minDistance) {
 				minDistance = distance;
@@ -668,107 +869,50 @@ int castRay(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, int lastObjectInd
 	return objectIndex;
 }
 
-void processSample(Vec3 rayPos, Vec3 rayDir, World* world, RaytraceSettings* settings, Vec3* sampleColor, int lastObjectIndex = 0, Vec3 attenuation = vec3(1,1,1), int rayIndex = 0) {
+int castRay(Vec3 rayPos, Vec3 rayDir, RaytraceSettings* settings, DArray<Object>* objects, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
 
-	// Vec3 sampleColor = settings->vec3Zero;
+	SpatialGrid* grid = &settings->spatialGrid;
+	spatialGridTraverseInit(grid, rayPos, rayDir);
 
-	// Find object with closest intersection.
+	if(grid->outside) return 0;
 
-	Vec3 objectReflectionPos, objectReflectionNormal;
-	int objectIndex = castRay(rayPos, rayDir, &world->objects, lastObjectIndex, &objectReflectionPos, &objectReflectionNormal);
+	int objectIndex = 0;
+	float minDistance = FLT_MAX;
 
-	if(objectIndex != 0) {
+	do {
+		int index = arrayIndex3D(grid->cellCount.x, grid->cellCount.y, 
+		                         grid->coord.x, grid->coord.y, grid->coord.z);
+		ObjectList* list = &settings->grid[index];
+		for(int i = 0; i < list->count; i++) {
 
-		Object* obj = world->objects.data + ((objectIndex<0?(-objectIndex):objectIndex)-1);
-		Material* m = &obj->material;
+			Object* obj = objects->data + list->data[i];
+			Geometry* g = &obj->geometry;
 
-		// Color calculation.
+			Vec3 position, normal;
+			float distance = -1;
 
-		if(m->emitColorLinear != VEC3_ZERO)
-			*sampleColor += attenuation * m->emitColorLinear;
+			distance = getIntersection(obj, rayPos, rayDir, &position, &normal);
 
-		attenuation = attenuation * obj->colorLinear;
-	
-		if(attenuation == VEC3_ZERO) return;
+			if(distance > 0 && distance < minDistance) {
+				minDistance = distance;
+				objectIndex = list->data[i]+1;
 
-		if(rayIndex == settings->rayBouncesMax) return;
-
-
-		if(m->refractiveIndex != 1.0f) {
-
-			// Transparent objects.
-
-			float ratio = fresnel(rayDir, objectReflectionNormal, m->refractiveIndex);
-
-			// Cast ray in mirror direction and refraction direction and
-			// then combine the results based on the fresnel ratio.
-
-			Vec3 reflectionColor;
-			Vec3 refractionColor;
-
-			if(ratio != 0.0f) {
-				Vec3 objectReflectionDir = reflectVector(rayDir, objectReflectionNormal);
-				reflectionColor = VEC3_ZERO;
-				processSample(objectReflectionPos, objectReflectionDir, world, settings, &reflectionColor, objectIndex, attenuation, rayIndex + 1);
+				if(intersection) *intersection = position;
+				if(intersectionNormal) *intersectionNormal = normal;
 			}
-
-			if(ratio != 1.0f) {
-				Vec3 refractionDir = refract(rayDir, objectReflectionNormal, m->refractiveIndex);
-
-				// Refract is not quite in sync with the fresnal calculation.
-				if(refractionDir == VEC3_ZERO) {
-					ratio = 1;
-				} else {
-					refractionColor = VEC3_ZERO;
-					processSample(objectReflectionPos, refractionDir, world, settings, &refractionColor, -objectIndex, attenuation, rayIndex + 1);
-				}
-			}
-
-			if(ratio == 0.0f) 
-				*sampleColor += refractionColor;
-			else if(ratio == 1.0f) 
-				*sampleColor += reflectionColor;
-			else 
-				*sampleColor += lerp(ratio, refractionColor, reflectionColor);
-
-		} else {
-
-			// Reflection direction.
-
-			rayDir = reflectVector(rayDir, objectReflectionNormal);
-
-			if(m->reflectionMod != 1.0f) {
-
-				// If not mirror, scatter randomly.
-
-				int dirIndex = randomIntPCG(0, settings->randomDirectionCount-1);
-
-				Vec3 randomDir = settings->randomDirections[dirIndex];
-
-				float d = dot(randomDir, objectReflectionNormal);
-				if(d <= 0) randomDir = reflectVector(randomDir, objectReflectionNormal);
-
-				rayDir = lerp(m->reflectionMod, randomDir, rayDir);
-			}
-
-			return processSample(objectReflectionPos, rayDir, world, settings, sampleColor, objectIndex, attenuation, rayIndex + 1);
 
 		}
 
-	} else if(rayIndex == 0) {
+		if(objectIndex != 0) break;
 
-		// Sky hit.
-		*sampleColor += world->ambientLightColorLinear;
+	} while(spatialGridTraverseNext(grid));
 
-	} else {
 
-		float lightDot = dot(rayDir, world->globalLightDir);
-		lightDot = clampMin(lightDot, 0);
-		Vec3 light = world->globalLightColorLinear * lightDot;
-		
-		*sampleColor += attenuation * (world->ambientLightColorLinear + light);
-	}
+	return objectIndex;
 }
+
+// Naive static bias.
+float INTERSECTION_BIAS = 0.0001f;
 
 void processPixelsThreaded(void* data) {
 	TimeStamp pixelTimings[5] = {};
@@ -779,6 +923,7 @@ void processPixelsThreaded(void* data) {
 
 	World world = *d->world;
 	RaytraceSettings settings = *d->settings;	
+
 	Vec3* buffer = d->buffer;
 
 	int sampleCount = settings.sampleCount;	
@@ -861,8 +1006,106 @@ void processPixelsThreaded(void* data) {
 				rayDir = normVec3(focalPoint - rayPos);
 			}
 
+
+			// Trace path.
+
 			Vec3 sampleColor = VEC3_ZERO;
-			processSample(rayPos, rayDir, &world, &settings, &sampleColor);
+			Vec3 attenuation = VEC3_ONE;
+
+			for(int rayIndex = 0; rayIndex < settings.rayBouncesMax; rayIndex++) {
+
+				// Find object with closest intersection.
+
+				Vec3 intersection, intersectionNormal;
+				int objectIndex = castRay(rayPos, rayDir, &settings, &world.objects, &intersection, &intersectionNormal);
+				// int objectIndex = castRayAll(rayPos, rayDir, &world.objects, &intersection, &intersectionNormal);
+
+				if(objectIndex != 0) {
+
+					Object* obj = world.objects.data + (objectIndex-1);
+					Material* m = &obj->material;
+
+					// Color calculation.
+
+					sampleColor += attenuation * m->emitColorLinear;
+
+					if(m->refractiveIndex != 1.0f) {
+
+						// Transparent objects.
+
+						float ratio = fresnel(rayDir, intersectionNormal, m->refractiveIndex);
+
+						Vec3 refractionDir = refract(rayDir, intersectionNormal, m->refractiveIndex);
+						// Refract is not quite in sync with the fresnal calculation.
+						if(refractionDir == VEC3_ZERO) ratio = 1;
+
+						// Choose reflection/refraction direction based on ratio.
+
+						Vec3 bias = intersectionNormal*INTERSECTION_BIAS;
+						bool outside = dot(rayDir, intersectionNormal) < 0;
+
+						float random = randomFloatPCG(0, 1.0f, 0.001f);
+
+						if(random < ratio) {
+							rayDir = reflectVector(rayDir, intersectionNormal);
+							rayPos = intersection;
+							rayPos += outside ? bias : -bias;
+						} else {
+							rayDir = refractionDir;
+							rayPos = intersection;
+							rayPos += outside ? -bias : bias;
+						}
+
+						attenuation = attenuation * obj->colorLinear;
+
+					} else {
+
+						// Reflection direction.
+
+						rayDir = reflectVector(rayDir, intersectionNormal);
+
+						if(m->reflectionMod != 1.0f) {
+
+							// If not mirror, scatter randomly.
+
+							int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
+
+							Vec3 randomDir = settings.randomDirections[dirIndex];
+
+							float d = dot(randomDir, intersectionNormal);
+							if(d <= 0) randomDir = reflectVector(randomDir, intersectionNormal);
+
+							rayDir = lerp(m->reflectionMod, randomDir, rayDir);
+						}
+
+						rayPos = intersection + intersectionNormal*INTERSECTION_BIAS;
+
+						float diffuseMod = lerp(1-m->reflectionMod, 1, dot(rayDir, intersectionNormal));
+						attenuation = attenuation * obj->colorLinear * diffuseMod;
+
+						// attenuation = attenuation * obj->colorLinear;
+					}
+					
+					if(attenuation == VEC3_ZERO) break;
+
+				} else if(rayIndex == 0) {
+
+					// Sky hit.
+					sampleColor += world.ambientLightColorLinear;
+
+					break;
+
+				} else {
+
+					float lightDot = dot(rayDir, world.globalLightDir);
+					lightDot = clampMin(lightDot, 0); 
+					Vec3 light = world.globalLightColorLinear * lightDot;
+					
+					sampleColor += attenuation * (world.ambientLightColorLinear + light);
+
+					break;
+				}
+			}
 
 			pixelColor += clampMax(sampleColor, VEC3_ONE);
 
@@ -1703,3 +1946,6 @@ void preCalcObjects(DArray<Object>* objects) {
 
 	}
 }
+
+
+
