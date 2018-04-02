@@ -26,7 +26,6 @@
 
 	- Defuse, reflected/metal, glass/water
 	- light sampling
-	- grid
 	- Oren–Nayar.
 
 	Bugs:
@@ -475,6 +474,33 @@ extern "C" APPMAINFUNCTION(appMain) {
 			gs->meshes[gs->meshCount++] = m;
 		}
 
+		// Plane.
+		{
+			// This is unnecessary, but whatever.
+			int count = 0;
+			float size = 1000.0f;
+			buffer[count++] = { vec3(-size,-size,0), vec3(0,0,1) };
+			buffer[count++] = { vec3(-size, size,0), vec3(0,0,1) };
+			buffer[count++] = { vec3( size, size,0), vec3(0,0,1) };
+			buffer[count++] = { vec3( size, size,0), vec3(0,0,1) };
+			buffer[count++] = { vec3( size,-size,0), vec3(0,0,1) };
+			buffer[count++] = { vec3(-size,-size,0), vec3(0,0,1) };
+
+			buffer[count++] = { vec3(-size,-size,-0.001f), vec3(0,0,-1) };
+			buffer[count++] = { vec3( size, size,-0.001f), vec3(0,0,-1) };
+			buffer[count++] = { vec3(-size, size,-0.001f), vec3(0,0,-1) };
+			buffer[count++] = { vec3( size, size,-0.001f), vec3(0,0,-1) };
+			buffer[count++] = { vec3(-size,-size,-0.001f), vec3(0,0,-1) };
+			buffer[count++] = { vec3( size,-size,-0.001f), vec3(0,0,-1) };
+
+			Mesh m = {};
+			m.vertices = getPArray(MeshVertex, count);
+			copyArray(m.vertices, buffer, MeshVertex, count);
+			m.vertexCount = count;
+
+			gs->meshes[gs->meshCount++] = m;
+		}
+
 		// 
 		// Samplers.
 		//
@@ -610,7 +636,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		// ad->settings.texDim = vec2i(1280, 720);
 		ad->settings.texDim = vec2i(768, 432);
 
-		ad->settings.sampleMode = SAMPLE_MODE_BLUE;
 		ad->settings.sampleCountWanted = 100;
 		ad->settings.sampleGridWidth = 3;
 		ad->settings.rayBouncesMaxWanted = 10;
@@ -1118,8 +1143,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			// Setup samples.
 			{
-				int mode = settings->sampleMode;
-
 				if(ad->preprocessStage) {
 					settings->sampleCountGrid = 2;
 				} else {
@@ -1129,9 +1152,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Vec2* blueNoiseSamples;
 
 				int sampleCount;
-				if(mode == SAMPLE_MODE_GRID) {
-					sampleCount = settings->sampleCountGrid*settings->sampleCountGrid;
-				} else if(mode == SAMPLE_MODE_BLUE) {
+				{
 					float sampleCountGrid = settings->sampleCountGrid * 1.3f;
 					sampleCount = blueNoise(rect(vec2(0.0f),vec2(settings->sampleGridWidth)), 1/(float)sampleCountGrid, &blueNoiseSamples);
 				}
@@ -1140,65 +1161,49 @@ extern "C" APPMAINFUNCTION(appMain) {
 				if(settings->samples) free(settings->samples);
 				settings->samples = mallocArray(Vec2, sampleCount);
 
-				switch(mode) {
-					case SAMPLE_MODE_GRID: {
-						if(settings->sampleCount == 1) {
-							settings->samples[0] = vec2(0.5f, 0.5f);
-							break;
-						}
+				// Setup blue noise sampling.
+				{
+					assert(settings->sampleGridWidth > 0);
 
-						int sampleCount2 = sqrt(settings->sampleCount);
-						for(int i = 0; i < sampleCount; i++) {
-							settings->samples[i] = vec2(((i%sampleCount2)*sampleCount2 + 1) / (float)sampleCount, 
-							                  ((i/sampleCount2)*sampleCount2 + 1) / (float)sampleCount);
-						}
-					} break;
+					settings->sampleGridCount = settings->sampleGridWidth * settings->sampleGridWidth + 1;
+					if(settings->sampleGridOffsets) free(settings->sampleGridOffsets);
+					settings->sampleGridOffsets = mallocArray(int, settings->sampleGridCount);
 
-					case SAMPLE_MODE_BLUE: {
+					for(int i = 0; i < settings->sampleGridCount; i++) settings->sampleGridOffsets[i] = 0;
 
-						assert(settings->sampleGridWidth > 0);
+					// Go through samples, calculate sample grid position and count how many samples per grid tile.
+					int width = settings->sampleGridWidth;
+					for(int i = 0; i < sampleCount; i++) {
+						Vec2i gridTilePos = vec2i(blueNoiseSamples[i]); // Casting to int rounds down and gives grid pos.
+						gridTilePos = clampMax(gridTilePos, vec2i(settings->sampleGridWidth-1)); // In case sample spawned at exact right border.
 
-						settings->sampleGridCount = settings->sampleGridWidth * settings->sampleGridWidth + 1;
-						if(settings->sampleGridOffsets) free(settings->sampleGridOffsets);
-						settings->sampleGridOffsets = mallocArray(int, settings->sampleGridCount);
+						// First element is zero so we can calculate offset and count like this:
+						// index = array[i]; count = array[i+1] - array[i];
+						settings->sampleGridOffsets[1 + gridTilePos.y*width + gridTilePos.x] += 1;
+					}
 
-						for(int i = 0; i < settings->sampleGridCount; i++) settings->sampleGridOffsets[i] = 0;
+					// Turn counts into offsets.
+					for(int i = 0; i < settings->sampleGridCount-1; i++) {
+						settings->sampleGridOffsets[i+1] += settings->sampleGridOffsets[i];
+					}
 
-						// Go through samples, calculate sample grid position and count how many samples per grid tile.
-						int width = settings->sampleGridWidth;
-						for(int i = 0; i < sampleCount; i++) {
-							Vec2i gridTilePos = vec2i(blueNoiseSamples[i]); // Casting to int rounds down and gives grid pos.
-							gridTilePos = clampMax(gridTilePos, vec2i(settings->sampleGridWidth-1)); // In case sample spawned at exact right border.
+					int* counter = mallocArray(int, settings->sampleGridCount);
+					for(int i = 0; i < settings->sampleGridCount; i++) counter[i] = 0;
 
-							// First element is zero so we can calculate offset and count like this:
-							// index = array[i]; count = array[i+1] - array[i];
-							settings->sampleGridOffsets[1 + gridTilePos.y*width + gridTilePos.x] += 1;
-						}
+					for(int i = 0; i < sampleCount; i++) {
+						Vec2i gridTilePos = vec2i(blueNoiseSamples[i]);
+						gridTilePos = clampMax(gridTilePos, vec2i(settings->sampleGridWidth-1)); // In case sample spawned at exact right border.
 
-						// Turn counts into offsets.
-						for(int i = 0; i < settings->sampleGridCount-1; i++) {
-							settings->sampleGridOffsets[i+1] += settings->sampleGridOffsets[i];
-						}
+						int gridIndex = gridTilePos.y*width + gridTilePos.x;
 
-						int* counter = mallocArray(int, settings->sampleGridCount);
-						for(int i = 0; i < settings->sampleGridCount; i++) counter[i] = 0;
+						int index = settings->sampleGridOffsets[gridIndex] + counter[gridIndex];
+						counter[gridIndex]++;
 
-						for(int i = 0; i < sampleCount; i++) {
-							Vec2i gridTilePos = vec2i(blueNoiseSamples[i]);
-							gridTilePos = clampMax(gridTilePos, vec2i(settings->sampleGridWidth-1)); // In case sample spawned at exact right border.
+						settings->samples[index] = blueNoiseSamples[i] - vec2(gridTilePos);
+					}
 
-							int gridIndex = gridTilePos.y*width + gridTilePos.x;
-
-							int index = settings->sampleGridOffsets[gridIndex] + counter[gridIndex];
-							counter[gridIndex]++;
-
-							settings->samples[index] = blueNoiseSamples[i] - vec2(gridTilePos);
-						}
-
-						free(counter);
-						free(blueNoiseSamples);
-
-					} break;
+					free(counter);
+					free(blueNoiseSamples);
 				}
 			}
 
@@ -1223,6 +1228,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			}
 
 			// Spatial grid.
+			#if 1
 			{
 				RaytraceSettings* settings = &ad->settings;
 				World* world = &ad->world;
@@ -1231,6 +1237,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				for(int objectIndex = 0; objectIndex < world->objects.count; objectIndex++) {
 					Object* obj = &world->objects.at(objectIndex);
+
+					// Ignore planes.
+					if(obj->geometry.type == GEOM_TYPE_PLANE) continue;
 
 					Vec3 pos = obj->pos;
 					Vec3 bbox = obj->geometry.boundingBox;
@@ -1276,17 +1285,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 							coordMin.e[i] = (int)(bMin.e[i]/grid->cellSize.e[i]) - grid->coordMin.e[i];
 							if(bMin.e[i] < 0) coordMin.e[i]--;
 
-							// Precision bug.
-							if(coordMin.e[i] == -1) coordMin.e[i] = 0;
-							if(coordMin.e[i] >= grid->cellCount.e[i]) coordMin.e[i]--;
+							clampInt(&coordMin.e[i], 0, grid->cellCount.e[i]-1);
 						}
 						for(int i = 0; i < 3; i++) {
 							coordMax.e[i] = (int)(bMax.e[i]/grid->cellSize.e[i]) - grid->coordMin.e[i];
 							if(bMax.e[i] < 0) coordMax.e[i]--;
 
-							// Precision bug.
-							if(coordMax.e[i] == -1) coordMax.e[i] = 0;
-							if(coordMax.e[i] >= grid->cellCount.e[i]) coordMax.e[i]--;
+							clampInt(&coordMax.e[i], 0, grid->cellCount.e[i]-1);
 						}
 
 						Vec3i cs = grid->cellCount;
@@ -1332,6 +1337,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 
 			}
+			#endif
 
 			// Push thread jobs in circles.
 			{
@@ -2055,19 +2061,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			glLineWidth(1);
 
-			// Vec4 lineColor = vec4(0,0.5f);
-			// float size = roundFloat(ad->entityUI.snapGridSize);
-			// float count = roundFloat(eui->snapGridDim / size);
-			// Vec3 start = vec3(-(size*count)/2, -(size*count)/2, 0);
-			// for(int i = 0; i < count+1; i++) {
-			// 	Vec3 p = start + vec3(1,0,0) * i*size;
-			// 	drawLine(p, p + vec3(0,size*count,0), lineColor);
-			// }
+			float zOff = 0.5f;
 
-			// for(int i = 0; i < count+1; i++) {
-			// 	Vec3 p = start + vec3(0,1,0) * i*size;
-			// 	drawLine(p, p + vec3(size*count,0,0), lineColor);
-			// }
+			Vec4 lineColor = vec4(0,0.5f);
+			float size = roundFloat(ad->entityUI.snapGridSize);
+			float count = roundFloat(eui->snapGridDim / size);
+			Vec3 start = vec3(-(size*count)/2, -(size*count)/2, zOff);
+			for(int i = 0; i < count+1; i++) {
+				Vec3 p = start + vec3(1,0,0) * i*size;
+				drawLine(p, p + vec3(0,size*count,0), lineColor);
+			}
+
+			for(int i = 0; i < count+1; i++) {
+				Vec3 p = start + vec3(0,1,0) * i*size;
+				drawLine(p, p + vec3(size*count,0,0), lineColor);
+			}
 			glEnable(GL_LIGHTING);
 		}
 
@@ -2756,7 +2764,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 						}
 					}
 
-					if(eui->selectionMode == ENTITYUI_MODE_SCALE && !multipleSelection) {
+					if(eui->selectionMode == ENTITYUI_MODE_SCALE && !multipleSelection && 
+					   geom->type != GEOM_TYPE_PLANE) {
 
 						Vec3 c[] = { vec3(0.9f,0,0), vec3(0,0.9f,0), vec3(0,0,0.9f) };
 
@@ -3112,12 +3121,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 				RaytraceSettings* settings = &ad->settings;
 
-				int samplesPerPixel;
-				if(settings->sampleMode == SAMPLE_MODE_GRID) {
-					samplesPerPixel = settings->sampleCount;
-				} else {
-					samplesPerPixel = settings->sampleCount/pow(ad->settings.sampleGridWidth,2);
-				}
+				int samplesPerPixel = settings->sampleCount/pow(ad->settings.sampleGridWidth,2);
 
 				i64 totalSampleCount = ((i64)settings->texDim.x * (i64)settings->texDim.h * (i64)samplesPerPixel);
 				char* stats[] = {
@@ -3306,11 +3310,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 						newGuiQuickTextEdit(gui, quickRowNext(&qr), &settings->texDim.h);
 						clampInt(&settings->texDim.w, arrayCount(ad->threadData), 10000);
 						clampInt(&settings->texDim.h, arrayCount(ad->threadData), 10000);
-
-						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
-						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
-						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
-						newGuiQuickComboBox(gui, quickRowNext(&qr), &settings->sampleMode, sampleModeStrings, arrayCount(sampleModeStrings));
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);

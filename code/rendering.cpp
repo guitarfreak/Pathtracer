@@ -1645,6 +1645,21 @@ void drawConeRaw() {
 	glEnd();
 }
 
+void drawPlaneRaw() {
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	Mesh* mesh = &globalGraphicsState->meshes[MESH_PLANE];
+
+	glBegin(GL_TRIANGLES);
+	for(int i = 0; i < mesh->vertexCount; i++) {
+		MeshVertex* v = mesh->vertices + i;
+		glNormal3f(v->n.x, v->n.y, v->n.z);
+		glVertex3f(v->p.x, v->p.y, v->p.z);
+	}
+	glEnd();
+}
+
+
 // Bad beans.
 void drawBox(Vec3 pos, Vec3 dim, Mat4* vm, Quat rot, Vec4 color) {
 	glBindTexture(GL_TEXTURE_2D, 0);

@@ -14,6 +14,7 @@ F3              - Toggle first person mode.
 
 R               - Toggle between local/global translation/rotation.
 1,2,3,MWheel    - Select translate/rotate/scale editing modes.
+Ctrl + A        - Select all.
 Ctrl + X        - Cut.
 Ctrl + C        - Copy.
 Ctrl + V        - Paste.

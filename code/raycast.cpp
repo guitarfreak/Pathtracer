@@ -7,6 +7,7 @@ enum {
 	GEOM_TYPE_BOX,
 	GEOM_TYPE_CYLINDER,
 	GEOM_TYPE_CONE,
+	GEOM_TYPE_PLANE,
 
 	GEOM_TYPE_COUNT,
 };
@@ -16,6 +17,7 @@ char* geometryTypeStrings[] = {
 	"GEOM_TYPE_BOX",
 	"GEOM_TYPE_CYLINDER",
 	"GEOM_TYPE_CONE",
+	"GEOM_TYPE_PLANE",
 };
 
 struct Material {
@@ -96,6 +98,9 @@ void geometryBoundingSphere(Object* obj) {
 void geometryBoundingBox(Object* obj) {
 	Quat rot = obj->rot;
 	Vec3 dim = obj->dim;
+
+	if(obj->geometry.type == GEOM_TYPE_PLANE) 
+		dim = vec3(1000000,1000000,0);
 
 	Vec3 points[] = {
 		{ 0.5f, 0.5f, 0.5f },
@@ -236,18 +241,6 @@ float fresnel(Vec3 incident, Vec3 normal, float refractiveIndex) {
 } 
 
 
-enum SampleMode {
-	SAMPLE_MODE_GRID = 0,
-	SAMPLE_MODE_BLUE,
-
-	SAMPLE_MODE_COUNT,	
-};
-
-char* sampleModeStrings[] = {
-	"GRID",
-	"BLUE_NOISE",
-};
-
 struct World {
 	Camera camera;
 
@@ -319,7 +312,6 @@ struct SpatialGrid {
 
 struct RaytraceSettings {
 	Vec2i texDim;
-	int sampleMode;
 	int sampleCountGrid;
 	int sampleGridWidth;
 	int rayBouncesMaxWanted;
@@ -600,8 +592,10 @@ void spatialGridInit(SpatialGrid* grid, Vec3 boxMin, Vec3 boxMax, Vec3i cellCoun
 
 	Vec3 dim = boxMax - boxMin;
 
-	for(int i = 0; i < 3; i++) 
+	for(int i = 0; i < 3; i++) {
 		grid->cellSize.e[i] = (int)((float)dim.e[i]/cellCount.e[i]);
+		if(grid->cellSize.e[i] == 0) grid->cellSize.e[i] = 1;
+	}
 
 	for(int i = 0; i < 3; i++) 
 		grid->coordMin.e[i] = (roundInt(boxMin.e[i]/grid->cellSize.e[i] - 0.5f));
@@ -642,8 +636,7 @@ void spatialGridTraverseInit(SpatialGrid* grid, Vec3 rayPos, Vec3 rayDir) {
 		if(rayPos.e[i] < 0) grid->coord.e[i]--;
 
 		// Precision bug.
-		if(grid->coord.e[i] == -1) grid->coord.e[i] = 0;
-		if(grid->coord.e[i] >= grid->cellCount.e[i]) grid->coord.e[i]--;
+		clampInt(&grid->coord.e[i], 0, grid->cellCount.e[i]-1);
 	}
 
 	for(int i = 0; i < 3; i++) {
@@ -835,6 +828,12 @@ float getIntersection(Object* obj, Vec3 rayPos, Vec3 rayDir, Vec3* position, Vec
 				distance = lenVec3(rayPos - (*position));
 			}
 		} break;
+
+		case GEOM_TYPE_PLANE: {
+
+			Vec3 planeNormal = obj->rot * vec3(0,0,1);
+			distance = linePlaneIntersection(rayPos, rayDir, obj->pos, planeNormal, position, normal);
+		} break;
 	}
 
 	return distance;
@@ -851,7 +850,9 @@ int castRayAll(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, Vec3* intersec
 		Vec3 position, normal;
 		float distance = -1;
 
-		bool possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
+		bool possibleIntersection;
+		if(g->type == GEOM_TYPE_PLANE) possibleIntersection = true;
+		else possibleIntersection = lineSphereCollision(rayPos, rayDir, obj->pos, g->boundingSphereRadius);
 		if(possibleIntersection) {
 
 			distance = getIntersection(obj, rayPos, rayDir, &position, &normal);
@@ -869,15 +870,34 @@ int castRayAll(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, Vec3* intersec
 	return objectIndex;
 }
 
-int castRay(Vec3 rayPos, Vec3 rayDir, RaytraceSettings* settings, DArray<Object>* objects, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+int castRay(Vec3 rayPos, Vec3 rayDir, RaytraceSettings* settings, DArray<Object>* objects, Vec3* intersection, Vec3* intersectionNormal) {
 
 	SpatialGrid* grid = &settings->spatialGrid;
 	spatialGridTraverseInit(grid, rayPos, rayDir);
 
-	if(grid->outside) return 0;
-
 	int objectIndex = 0;
 	float minDistance = FLT_MAX;
+
+	// If we are outside the scene bounding box we still have to check all the planes.
+	if(grid->outside) {
+		for(int i = 0; i < objects->count; i++) {
+			if(objects->data[i].geometry.type == GEOM_TYPE_PLANE) {
+
+				Vec3 position, normal;
+				float distance = getIntersection(objects->data + i, rayPos, rayDir, &position, &normal);
+				if(distance != -1) {
+					minDistance = distance;
+					objectIndex = i+1;
+
+					*intersection = position;
+					*intersectionNormal = normal;
+				}
+
+			}
+		}
+
+		return objectIndex;
+	}
 
 	do {
 		int index = arrayIndex3D(grid->cellCount.x, grid->cellCount.y, 
@@ -886,7 +906,6 @@ int castRay(Vec3 rayPos, Vec3 rayDir, RaytraceSettings* settings, DArray<Object>
 		for(int i = 0; i < list->count; i++) {
 
 			Object* obj = objects->data + list->data[i];
-			Geometry* g = &obj->geometry;
 
 			Vec3 position, normal;
 			float distance = -1;
@@ -897,8 +916,8 @@ int castRay(Vec3 rayPos, Vec3 rayDir, RaytraceSettings* settings, DArray<Object>
 				minDistance = distance;
 				objectIndex = list->data[i]+1;
 
-				if(intersection) *intersection = position;
-				if(intersectionNormal) *intersectionNormal = normal;
+				*intersection = position;
+				*intersectionNormal = normal;
 			}
 
 		}
@@ -906,7 +925,6 @@ int castRay(Vec3 rayPos, Vec3 rayDir, RaytraceSettings* settings, DArray<Object>
 		if(objectIndex != 0) break;
 
 	} while(spatialGridTraverseNext(grid));
-
 
 	return objectIndex;
 }
@@ -964,7 +982,8 @@ void processPixelsThreaded(void* data) {
 		Vec2 percent = vec2(x/texDimFloat.w, y/texDimFloat.h);
 		Vec3 camPixelPos = settings.camTopLeft + camRightWidth*percent.w + camDownHeight*percent.h;
 
-		if(settings.sampleMode == SAMPLE_MODE_BLUE) {
+		// Get blue noise grid offsets.
+		{
 			int index = (y%settings.sampleGridWidth)*settings.sampleGridWidth + (x%settings.sampleGridWidth);
 			int offset = settings.sampleGridOffsets[index];
 			samples = settings.samples + offset;
@@ -1017,7 +1036,8 @@ void processPixelsThreaded(void* data) {
 				// Find object with closest intersection.
 
 				Vec3 intersection, intersectionNormal;
-				int objectIndex = castRay(rayPos, rayDir, &settings, &world.objects, &intersection, &intersectionNormal);
+				// int objectIndex = castRay(rayPos, rayDir, &settings, &world.objects, &intersection, &intersectionNormal);
+				int objectIndex = castRayAll(rayPos, rayDir, &world.objects, &intersection, &intersectionNormal);
 				// int objectIndex = castRayAll(rayPos, rayDir, &world.objects, &intersection, &intersectionNormal);
 
 				if(objectIndex != 0) {
@@ -1898,6 +1918,7 @@ void drawGeometry(int type) {
 		case GEOM_TYPE_SPHERE: drawSphereRaw(); break;
 		case GEOM_TYPE_CYLINDER: drawCylinderRaw(); break;
 		case GEOM_TYPE_CONE: drawConeRaw(); break;
+		case GEOM_TYPE_PLANE: drawPlaneRaw(); break;
 	}
 }
 

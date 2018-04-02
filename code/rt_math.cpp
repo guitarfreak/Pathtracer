@@ -2334,17 +2334,18 @@ float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3 pu, Vec2 di
 	return -1;
 }
 
-float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3* intersection = 0) {
+float linePlaneIntersection(Vec3 lp, Vec3 ld, Vec3 pp, Vec3 pn, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+
+	// N * (Q - E) = 0, t = N*(Q-E) / N*D.
 
 	float a = dot(pn, ld);
 	if(a == 0) return -1;
 
-	float distance = -(dot(pn, lp) - dot(pn, pp)) / a;
+	float distance = dot(pn, (pp-lp)) / a;
 	if(distance >= 0) {
-		Vec3 ip = lp + ld*distance;
-
-		if(intersection) *intersection = ip;
-
+		if(intersection) *intersection = lp + ld*distance;
+		if(intersectionNormal) 
+			*intersectionNormal = a < 0 ? pn : -pn;
 		return distance;
 	}
 
