@@ -24,6 +24,7 @@ struct Material {
 	Vec3 emitColor;
 	float reflectionMod;
 	float refractiveIndex;
+	float roughness;
 
 	// Precalc.
 
@@ -246,6 +247,7 @@ struct World {
 
 	DArray<Object> objects;
 
+	Vec3 backgroundColor;
 	Vec3 ambientLightColor;
 
 	Vec3 globalLightDir;
@@ -261,6 +263,7 @@ struct World {
 
 	// Precalc.
 
+	Vec3 backgroundColorLinear;
 	Vec3 ambientLightColorLinear;
 	Vec3 globalLightColorLinear;
 };
@@ -303,11 +306,15 @@ struct SpatialGrid {
 	Vec3 startPos;
 
 	Vec3i coord;
+	Vec3i nextCoord;
 	Vec3i step;
 	Vec3 tMax;
 	Vec3 tDelta;
 
 	bool outside;
+
+	Vec3 gridBoxMin;
+	Vec3 gridBoxMax;
 };
 
 struct RaytraceSettings {
@@ -658,44 +665,80 @@ void spatialGridTraverseInit(SpatialGrid* grid, Vec3 rayPos, Vec3 rayDir) {
 			grid->tDelta.e[i] = -grid->tDelta.e[i];
 	}
 
+	grid->gridBoxMin = vec3((grid->coord + grid->coordMin) * grid->cellSize);
+	grid->gridBoxMax = vec3((grid->coord + vec3i(1) + grid->coordMin) * grid->cellSize);
 }
 
 bool spatialGridTraverseNext(SpatialGrid* grid) {
 
 	if(grid->tMax.x < grid->tMax.y) {
 		if(grid->tMax.x < grid->tMax.z) {
+
 			grid->coord.x = grid->coord.x + grid->step.x;
 			if(grid->coord.x < 0 || 
 			   grid->coord.x >= grid->cellCount.x) return false;
 
 			grid->tMax.x += grid->tDelta.x;
+
+			if(grid->step.x < 0) {
+				grid->gridBoxMax.x = grid->gridBoxMin.x;
+				grid->gridBoxMin.x = (grid->coord.x + grid->coordMin.x) * grid->cellSize.x;
+			} else {
+				grid->gridBoxMin.x = grid->gridBoxMax.x;
+				grid->gridBoxMax.x = (grid->coord.x + grid->coordMin.x + 1) * grid->cellSize.x;
+			}
 		} else {
+
 			grid->coord.z = grid->coord.z + grid->step.z;
 			if(grid->coord.z < 0 || 
 			   grid->coord.z >= grid->cellCount.z) return false;
 
 			grid->tMax.z += grid->tDelta.z;
+
+			if(grid->step.z < 0) {
+				grid->gridBoxMax.z = grid->gridBoxMin.z;
+				grid->gridBoxMin.z = (grid->coord.z + grid->coordMin.z) * grid->cellSize.z;
+			} else {
+				grid->gridBoxMin.z = grid->gridBoxMax.z;
+				grid->gridBoxMax.z = (grid->coord.z + grid->coordMin.z + 1) * grid->cellSize.z;
+			}
 		}
 	} else {
 		if(grid->tMax.y < grid->tMax.z) {
+
 			grid->coord.y = grid->coord.y + grid->step.y;
 			if(grid->coord.y < 0 || 
 			   grid->coord.y >= grid->cellCount.y) return false;
 
 			grid->tMax.y += grid->tDelta.y;
+
+			if(grid->step.y < 0) {
+				grid->gridBoxMax.y = grid->gridBoxMin.y;
+				grid->gridBoxMin.y = (grid->coord.y + grid->coordMin.y) * grid->cellSize.y;
+			} else {
+				grid->gridBoxMin.y = grid->gridBoxMax.y;
+				grid->gridBoxMax.y = (grid->coord.y + grid->coordMin.y + 1) * grid->cellSize.y;
+			}
 		} else {
+
 			grid->coord.z = grid->coord.z + grid->step.z;
 			if(grid->coord.z < 0 || 
 			   grid->coord.z >= grid->cellCount.z) return false;
 
 			grid->tMax.z += grid->tDelta.z;
+
+			if(grid->step.z < 0) {
+				grid->gridBoxMax.z = grid->gridBoxMin.z;
+				grid->gridBoxMin.z = (grid->coord.z + grid->coordMin.z) * grid->cellSize.z;
+			} else {
+				grid->gridBoxMin.z = grid->gridBoxMax.z;
+				grid->gridBoxMax.z = (grid->coord.z + grid->coordMin.z + 1) * grid->cellSize.z;
+			}
 		}
 	}
 
 	return true;
 }
-
-
 
 
 // Transform a vector to unit system and back:
@@ -725,6 +768,16 @@ inline void transformToGlobalSpace(Object* obj, Vec3* pos, Vec3* dir) {
 	if(obj->isRotated) (*dir) = obj->rot * (*dir);
 	(*dir) = normVec3((*dir));
 }
+
+
+// Vec3 RandomUnitVector(ref uint state) {
+//     float z = RandomFloat01(ref state) * 2.0f - 1.0f;
+//     float a = RandomFloat01(ref state) * 2.0f * PI;
+//     float r = sqrt(1.0f - z * z);
+//     float x, y;
+//     sincos(a, out x, out y);
+//     return new float3(r * x, r* y, z);
+// }
 
 
 struct TimeStamp {
@@ -839,13 +892,15 @@ float getIntersection(Object* obj, Vec3 rayPos, Vec3 rayDir, Vec3* position, Vec
 	return distance;
 }
 
-int castRayAll(Vec3 rayPos, Vec3 rayDir, DArray<Object>* objects, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
+int castRayAll(Vec3 rayPos, Vec3 rayDir, bool outside, DArray<Object>* objects, Vec3* intersection = 0, Vec3* intersectionNormal = 0) {
 
 	int objectIndex = 0;
 	float minDistance = FLT_MAX;
 	for(int i = 0; i < objects->count; i++) {
 		Object* obj = objects->data + i;
 		Geometry* g = &obj->geometry;
+
+		if(outside && objects->data[i].geometry.type != GEOM_TYPE_PLANE) continue;
 
 		Vec3 position, normal;
 		float distance = -1;
@@ -912,7 +967,8 @@ int castRay(Vec3 rayPos, Vec3 rayDir, RaytraceSettings* settings, DArray<Object>
 
 			distance = getIntersection(obj, rayPos, rayDir, &position, &normal);
 
-			if(distance > 0 && distance < minDistance) {
+			if(distance > 0 && distance < minDistance && 
+			   pointInBox(position, grid->gridBoxMin, grid->gridBoxMax)) {
 				minDistance = distance;
 				objectIndex = list->data[i]+1;
 
@@ -962,6 +1018,8 @@ void processPixelsThreaded(void* data) {
 
 	world.globalLightDir = normVec3(world.globalLightDir);
 
+	bool useAperture = world.apertureSize != 0.0f;
+
 	int pixelCount = d->pixelDim.x * d->pixelDim.y;
 	for(int pixelIndex = 0; pixelIndex < pixelCount; pixelIndex++) {
 		startTimer(0);
@@ -1004,7 +1062,7 @@ void processPixelsThreaded(void* data) {
 
 			Vec3 rayDir;
 
-			if(world.apertureSize == 0.0f) {
+			if(!useAperture) {
 				rayDir = normVec3(rayPos - camera.pos);
 			} else {
 				Vec3 focalPoint;
@@ -1036,9 +1094,17 @@ void processPixelsThreaded(void* data) {
 				// Find object with closest intersection.
 
 				Vec3 intersection, intersectionNormal;
-				// int objectIndex = castRay(rayPos, rayDir, &settings, &world.objects, &intersection, &intersectionNormal);
-				int objectIndex = castRayAll(rayPos, rayDir, &world.objects, &intersection, &intersectionNormal);
-				// int objectIndex = castRayAll(rayPos, rayDir, &world.objects, &intersection, &intersectionNormal);
+				int objectIndex;
+
+
+				if(world.objects.count < 10) {
+					spatialGridTraverseInit(&settings.spatialGrid, rayPos, rayDir);
+
+					objectIndex = castRayAll(rayPos, rayDir, settings.spatialGrid.outside, &world.objects, &intersection, &intersectionNormal);
+				} else {
+
+					objectIndex = castRay(rayPos, rayDir, &settings, &world.objects, &intersection, &intersectionNormal);
+				}
 
 				if(objectIndex != 0) {
 
@@ -1047,7 +1113,8 @@ void processPixelsThreaded(void* data) {
 
 					// Color calculation.
 
-					sampleColor += attenuation * m->emitColorLinear;
+					if(m->emitColorLinear != VEC3_ZERO)
+						sampleColor += attenuation * m->emitColorLinear;
 
 					if(m->refractiveIndex != 1.0f) {
 
@@ -1080,38 +1147,104 @@ void processPixelsThreaded(void* data) {
 
 					} else {
 
-						// Reflection direction.
-
-						rayDir = reflectVector(rayDir, intersectionNormal);
-
-						if(m->reflectionMod != 1.0f) {
-
-							// If not mirror, scatter randomly.
-
-							int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
-
-							Vec3 randomDir = settings.randomDirections[dirIndex];
-
-							float d = dot(randomDir, intersectionNormal);
-							if(d <= 0) randomDir = reflectVector(randomDir, intersectionNormal);
-
-							rayDir = lerp(m->reflectionMod, randomDir, rayDir);
-						}
-
 						rayPos = intersection + intersectionNormal*INTERSECTION_BIAS;
 
-						float diffuseMod = lerp(1-m->reflectionMod, 1, dot(rayDir, intersectionNormal));
-						attenuation = attenuation * obj->colorLinear * diffuseMod;
+						// Reflection direction.
 
-						// attenuation = attenuation * obj->colorLinear;
+						Vec3 reflectionDir;
+						if(m->reflectionMod != 0.0f)
+							reflectionDir = reflectVector(rayDir, intersectionNormal);
+
+						// Random direction.
+
+						Vec3 randomDir;
+						if(m->reflectionMod != 1.0f) {
+
+							// Random weighted distribution.
+
+							#if 1
+
+							int dirIndex = randomIntPCG(0, settings.randomDirectionCount-1);
+							randomDir = settings.randomDirections[dirIndex];
+							float d = dot(randomDir, intersectionNormal);
+							if(d < 0) randomDir = reflectVector(randomDir, intersectionNormal);
+
+							#else
+
+							// Cosine weighted distribution.
+
+							float z = randomFloatPCG(-1,1, 0.001f);
+							float angle = randomFloatPCG(0,1, 0.001f) * M_2PI;
+							float radius = sqrt(1.0f - z*z);
+							randomDir = vec3(radius * sin(angle), radius * cos(angle), z);
+							randomDir = normVec3(randomDir);
+
+							// rayDir = lerp(m->reflectionMod, randomDir, rayDir);
+							// rayDir = lerp(m->reflectionMod, randomDir, randomDir);
+
+							#endif
+						}
+
+						Vec3 rayOut = -rayDir;
+						Vec3 rayIn = lerpCheck(m->reflectionMod, randomDir, reflectionDir);
+
+						rayDir = rayIn;
+
+						float diffuseReflection = lerpCheck(1-m->reflectionMod, 1, dot(rayIn, intersectionNormal));
+
+						attenuation = attenuation * obj->colorLinear / M_PI * diffuseReflection;
+
+						// Oren–Nayar.
+
+						if(m->roughness != 0.0f) {
+
+							float roughness = m->roughness;
+							float roughness2 = roughness*roughness; 
+
+							float a = 1 - 0.5f * (roughness2 / (roughness2 + 0.33f));
+							float b = 0.45f * (roughness2 / (roughness2 + 0.09f));
+
+							float cosThetaIn = dot(rayDir, intersectionNormal);
+							float cosThetaOut = dot(rayOut, intersectionNormal);
+
+							Vec3 lightPlane = normVec3(rayDir - cosThetaIn * intersectionNormal);
+							Vec3 viewPlane = normVec3(rayOut - cosThetaOut * intersectionNormal);
+							float cosPhi = dot(lightPlane, viewPlane);
+
+							float thetaIn = acos(cosThetaIn);
+							float thetaOut = acos(cosThetaOut);
+							float alpha = max(thetaIn, thetaOut);
+							float beta = min(thetaIn, thetaOut);
+							float orna = a + (b * max(0, cosPhi) * sin(alpha) * tan(beta));
+
+							attenuation *= orna;
+						}
+
 					}
 					
 					if(attenuation == VEC3_ZERO) break;
 
+					#if 0
+					// Directly sample global light.
+					{
+						Vec3 i, n;
+						Vec3 pos = intersection + intersectionNormal*INTERSECTION_BIAS;
+						int oi = castRay(pos, world.globalLightDir, &settings, &world.objects, &i, &n);
+						if(oi == 0) {
+							float lightDot = dot(intersectionNormal, world.globalLightDir);
+							lightDot = clampMin(lightDot, 0); 
+							Vec3 light = world.globalLightColorLinear * lightDot;
+
+							sampleColor += attenuation * light;
+							// sampleColor += attenuation * world.globalLightColorLinear;
+						}
+					}
+					#endif
+					
 				} else if(rayIndex == 0) {
 
 					// Sky hit.
-					sampleColor += world.ambientLightColorLinear;
+					sampleColor += world.backgroundColorLinear;
 
 					break;
 
@@ -1173,6 +1306,7 @@ void getDefaultScene(World* world) {
 	world->apertureSize = 0;
 	world->lockFocalPoint = false;
 
+	world->backgroundColor = vec3(1,1,1);
 	world->ambientLightColor = vec3(1,1,1);
 	world->globalLightRot = vec2i(0,90);
 
@@ -1182,12 +1316,14 @@ void getDefaultScene(World* world) {
 
 	Material materials[10] = {};
 	materials[0].emitColor = vec3(0,0,0);
-	materials[0].reflectionMod = 0.5f;
+	materials[0].reflectionMod = 0.0f;
 	materials[0].refractiveIndex = 1.0f;
+	materials[0].roughness = 0.0f;
 
 	materials[1].emitColor = vec3(0,0,0);
 	materials[1].reflectionMod = 1.0f;
 	materials[1].refractiveIndex = 1.0f;
+	materials[1].roughness = 0.0f;
 
 	Object obj;
 
@@ -1289,6 +1425,7 @@ Object objectDiff(Object o0, Object o1) {
 	diff.material.emitColor = o0.material.emitColor - o1.material.emitColor;
 	diff.material.reflectionMod = o0.material.reflectionMod - o1.material.reflectionMod;
 	diff.material.refractiveIndex = o0.material.refractiveIndex - o1.material.refractiveIndex;
+	diff.material.roughness = o0.material.roughness - o1.material.roughness;
 
 	return diff;
 }
@@ -1302,6 +1439,7 @@ Object objectAdd(Object obj, Object diff) {
 	obj.material.emitColor = obj.material.emitColor + diff.material.emitColor;
 	obj.material.reflectionMod = obj.material.reflectionMod + diff.material.reflectionMod;
 	obj.material.refractiveIndex = obj.material.refractiveIndex + diff.material.refractiveIndex;
+	obj.material.roughness = obj.material.roughness + diff.material.roughness;
 
 	return obj;
 }
@@ -1750,8 +1888,9 @@ void historyChange(HistoryData* hd, World* world, DArray<int>* selected, bool un
 Object defaultObject() {
 	Material m = {};
 	m.emitColor = vec3(0,0,0);
-	m.reflectionMod = 0.5f;
+	m.reflectionMod = 0.0f;
 	m.refractiveIndex = 1.0f;
+	m.roughness = 0.0f;
 
 	Object obj = {};
 	obj.pos = vec3(0,0,0);

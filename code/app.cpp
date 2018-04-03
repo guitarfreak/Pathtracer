@@ -3,15 +3,15 @@
 
 	ToDo:
 	- Clean global light and multiple lights.
-	- Spacial data structure to speed up processing.
 	- Converge method on sampling for speed up.
-	- Float not good enough.
 	- More advanced lighting function.
 	- Have cam independent, mini window.
+	- Light sampling.
 
 	- Check out setTimer for pitfalls.
 	- Torus for rotation widget.
 
+	- Float not good enough.
 	- Clean up of whole code folder. Make it somewhat presentable, remove unused things.
 	- Turning while dragging is glitchy.
 	- Title buttons don't scale nicely.
@@ -19,14 +19,7 @@
 	- Clean up repetitive gui code. (Layout.)
 	- App hangs when calculating blueNoise samples.
 	- Simd.
-
-	- Splitting up rays on transparent objects is probably wrong.
-	  Should bias towards refractin/refleciton probability and just cast one ray.
 	- Automatic bias instead of static bias.
-
-	- Defuse, reflected/metal, glass/water
-	- light sampling
-	- Oren–Nayar.
 
 	Bugs:
 	- Windows key slow often.
@@ -664,7 +657,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 		ad->dialogData.filePath = getPString(ad->dialogData.filePathSize);
 		ad->dialogData.windowHandle = windowHandle;
 
-
 		// Precalc random directions.
 		{
 			ad->settings.randomDirectionCount = 20000;
@@ -674,6 +666,21 @@ extern "C" APPMAINFUNCTION(appMain) {
 			count = ad->settings.randomDirectionCount;
 			ad->settings.randomDirections = mallocArray(Vec3, count);
 			precision = 0.001f;
+
+			// for(int i = 0; i < count; i++) {
+			// 	Vec3 randomDir;
+
+			// 	float azimuth = randomFloatPCG(0,1,0.0001f) * M_2PI;
+			// 	float zenith = asin(sqrt(randomFloatPCG(0,1,0.0001f)));
+
+			// 	randomDir.x = sin(zenith)*cos(azimuth); 
+			// 	randomDir.y = sin(zenith)*sin(azimuth);
+			// 	randomDir.z = cos(zenith);
+
+			// 	randomDir = normVec3(randomDir);
+
+			// 	ad->settings.randomDirections[i] = randomDir;
+			// }
 
 			for(int i = 0; i < count; i++) {
 				// Cube discard method.
@@ -1014,8 +1021,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 		{
 			if(!ad->captureMouse) {
 				bool mouseOverUI = pointInRectEx(input->mousePosNegative, ad->menuRect) ||
-								   pointInRectEx(input->mousePosNegative, ad->panelLeftRect) || 
-								   pointInRectEx(input->mousePosNegative, ad->panelRightRect);
+								   ((pointInRectEx(input->mousePosNegative, ad->panelLeftRect) || 
+								   pointInRectEx(input->mousePosNegative, ad->panelRightRect)) && 
+								   ad->entityUI.selectedObjects.count > 0);
 
 				if((input->keysPressed[KEYCODE_F3] || (mouseButtonPressedRight(gui, input) && !mouseOverUI)) && ad->drawSceneWired) {
 					ad->captureMouse = true;
@@ -1219,9 +1227,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 				preCalcObjects(&world->objects);
 
 				worldCalcLightDir(world);
+				world->backgroundColorLinear = colorSRGB(world->backgroundColor);
 				world->ambientLightColorLinear = colorSRGB(world->ambientLightColor);
 				world->globalLightColorLinear = colorSRGB(world->globalLightColor);
-
 
 				if(ad->preprocessStage) settings->rayBouncesMax = 3;
 				else settings->rayBouncesMax = settings->rayBouncesMaxWanted;
@@ -1617,7 +1625,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 			if(mouseButtonPressedLeft(gui, input) && eui->selectionState == ENTITYUI_INACTIVE) {
 				Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, &ad->world.camera);
 
-				int objectIndex = castRayAll(ad->world.camera.pos, rayDir, &ad->world.objects);
+				int objectIndex = castRayAll(ad->world.camera.pos, rayDir, false, &ad->world.objects);
 				if(objectIndex) {
 					objectIndex--;
 
@@ -2011,7 +2019,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 
 		glDepthMask(false);
-		Vec3 cc = world->ambientLightColor;
+		Vec3 cc = world->backgroundColor;
 		drawRect(rectCenDim(0,0,10000,10000), vec4(cc,1));
 		glDepthMask(true);
 
@@ -2041,14 +2049,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 		Vec4 light;
 		
-		// light = vec4(world->ambientLightColor,1);
-		// glLightfv(GL_LIGHT0, GL_AMBIENT, light.e);
-
 		light = colorSRGB(vec4(world->globalLightColor,1));
+		light.xyz = clamp(light.xyz, vec3(0,0,0), vec3(1,1,1));
 		glLightfv(GL_LIGHT0, GL_DIFFUSE, light.e);
-
-		// light = vec4(world->globalLightColor,1);
-		// glLightfv(GL_LIGHT0, GL_SPECULAR, light.e);
 
 		glEnable(GL_DEPTH_TEST);
 		glBindTexture(GL_TEXTURE_2D, 0);
@@ -2061,8 +2064,9 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			glLineWidth(1);
 
-			float zOff = 0.5f;
+			float zOff = 0.0f;
 
+			#if 1
 			Vec4 lineColor = vec4(0,0.5f);
 			float size = roundFloat(ad->entityUI.snapGridSize);
 			float count = roundFloat(eui->snapGridDim / size);
@@ -2076,6 +2080,8 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Vec3 p = start + vec3(0,1,0) * i*size;
 				drawLine(p, p + vec3(size*count,0,0), lineColor);
 			}
+			#endif
+
 			glEnable(GL_LIGHTING);
 		}
 
@@ -2090,12 +2096,6 @@ extern "C" APPMAINFUNCTION(appMain) {
 				Material* m = &obj->material;
 
 				Vec4 color;
-
-				// color = vec4(vec3(0.1f), 1);
-				// glMaterialfv(GL_FRONT, GL_AMBIENT, color.e);
-
-				// color = vec4(obj->color, 1);
-				// glMaterialfv(GL_FRONT, GL_DIFFUSE, color.e);
 
 				color = colorSRGB(vec4(obj->color, 1));
 				glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, color.e);
@@ -2182,19 +2182,22 @@ extern "C" APPMAINFUNCTION(appMain) {
 
 			glPopMatrix();
 
+			// Spatial grid test.
 			#if 0
 			{
-				RaytraceSettings* settings = &ad->settings;
-
-				// Scene bounding box.
-
+				glDisable(GL_CULL_FACE);
 				glDisable(GL_LIGHTING);
-				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-				Vec3 boxMin = vec3(FLT_MAX), boxMax = vec3(-FLT_MAX);
+				RaytraceSettings* settings = &ad->settings;
+				World* world = &ad->world;
+
+				Vec3 sceneMin = vec3(FLT_MAX), sceneMax = vec3(-FLT_MAX);
 
 				for(int objectIndex = 0; objectIndex < world->objects.count-2; objectIndex++) {
 					Object* obj = &world->objects.at(objectIndex);
+
+					// Ignore planes.
+					if(obj->geometry.type == GEOM_TYPE_PLANE) continue;
 
 					Vec3 pos = obj->pos;
 					Vec3 bbox = obj->geometry.boundingBox;
@@ -2202,13 +2205,16 @@ extern "C" APPMAINFUNCTION(appMain) {
 					Vec3 bMin = pos - bbox/2;
 					Vec3 bMax = pos + bbox/2;
 
-					boxMin.x = min(boxMin.x, bMin.x);
-					boxMin.y = min(boxMin.y, bMin.y);
-					boxMin.z = min(boxMin.z, bMin.z);
-					boxMax.x = max(boxMax.x, bMax.x);
-					boxMax.y = max(boxMax.y, bMax.y);
-					boxMax.z = max(boxMax.z, bMax.z);
+					sceneMin.x = min(sceneMin.x, bMin.x);
+					sceneMin.y = min(sceneMin.y, bMin.y);
+					sceneMin.z = min(sceneMin.z, bMin.z);
+					sceneMax.x = max(sceneMax.x, bMax.x);
+					sceneMax.y = max(sceneMax.y, bMax.y);
+					sceneMax.z = max(sceneMax.z, bMax.z);
 				}
+
+				SpatialGrid grid = {};
+				spatialGridInit(&grid, sceneMin, sceneMax, vec3i(10,10,10));
 
 				// {
 				// 	Vec3 bl = vec3(boxMin.x, boxMin.y, 0);
@@ -2227,90 +2233,102 @@ extern "C" APPMAINFUNCTION(appMain) {
 				drawLine(vec3(0,0,0), vec3(0,200,0), vec4(0,0,0,1));
 				drawLine(vec3(0,-200,0), vec3(0,0,0), vec4(0,0,0,1));
 
+				// Init grid memory and put in object ids.
 				{
-					SpatialGrid grid;
-					{
-						spatialGridInit(&grid, boxMin, boxMax, vec3i(3,3,1));
+					int cellCount = grid.cellCount.x * grid.cellCount.y * grid.cellCount.z;
 
-						int cellCount = grid.cellCount.x * grid.cellCount.y * grid.cellCount.z;
+					settings->gridCount = cellCount;
+					settings->grid = getTArray(ObjectList, settings->gridCount);
+					for(int i = 0; i < settings->gridCount; i++) settings->grid[i] = {};
 
-						settings->gridCount = cellCount;
-						settings->grid = getTArray(ObjectList, cellCount);
-						for(int i = 0; i < settings->gridCount; i++) settings->grid[i] = {};
+					settings->gridBufferMax = cellCount*10;
 
-						for(int objectIndex = 0; objectIndex < world->objects.count-2; objectIndex++) {
-							Object* obj = &ad->world.objects.at(objectIndex);
+					spatialStart2:
 
-							Vec3 dim = obj->geometry.boundingBox;
-							Vec3 pos = obj->pos;
-							Vec3 bMin = pos - dim/2;
-							Vec3 bMax = pos + dim/2;
+					settings->gridBuffer = getTArray(int, settings->gridBufferMax);
+					settings->gridBufferCount = 0;
 
-							Vec3i coordMin, coordMax;
-							for(int i = 0; i < 3; i++) {
-								coordMin.e[i] = (int)(bMin.e[i]/grid.cellSize.e[i]) - grid.coordMin.e[i];
-								if(bMin.e[i] < 0) coordMin.e[i]--;
-							}
-							for(int i = 0; i < 3; i++) {
-								coordMax.e[i] = (int)(bMax.e[i]/grid.cellSize.e[i]) - grid.coordMin.e[i];
-								if(bMax.e[i] < 0) coordMax.e[i]--;
-							}
+					for(int objectIndex = 0; objectIndex < world->objects.count-2; objectIndex++) {
+						Object* obj = &ad->world.objects.at(objectIndex);
 
-							Vec3i cs = grid.cellCount;
-							for(int z = coordMin.z; z < coordMax.z+1; z++) {
-								for(int y = coordMin.y; y < coordMax.y+1; y++) {
-									for(int x = coordMin.x; x < coordMax.x+1; x++) {
-										int bufferIndex = arrayIndex3D(cs.x, cs.y, x, y, z);
+						geometryBoundingBox(obj);
 
-										ObjectList* list = &settings->grid[bufferIndex];
-										if(!list->data) {
-											list->max = 5;
-											list->data = getTArray(int, list->max);
-											list->count = 0;
-										} 
+						Vec3 bMin = obj->pos - obj->geometry.boundingBox/2;
+						Vec3 bMax = obj->pos + obj->geometry.boundingBox/2;
 
-										if(list->count + 1 == list->max) {
-											list->max *= 2;
-											int* newData = getTArray(int, list->max);
-											copyArray(newData, list->data, int, list->count);
-											list->data = newData;
-										}
+						Vec3i coordMin, coordMax;
+						for(int i = 0; i < 3; i++) {
+							coordMin.e[i] = (int)(bMin.e[i]/grid.cellSize.e[i]) - grid.coordMin.e[i];
+							if(bMin.e[i] < 0) coordMin.e[i]--;
 
-										list->data[list->count++] = objectIndex;
+							clampInt(&coordMin.e[i], 0, grid.cellCount.e[i]-1);
+						}
+						for(int i = 0; i < 3; i++) {
+							coordMax.e[i] = (int)(bMax.e[i]/grid.cellSize.e[i]) - grid.coordMin.e[i];
+							if(bMax.e[i] < 0) coordMax.e[i]--;
 
+							clampInt(&coordMax.e[i], 0, grid.cellCount.e[i]-1);
+						}
+
+						Vec3 boxPos = bMin + (bMax - bMin)/2.0;
+						Vec3 boxDim = bMax - bMin;
+
+						glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+						drawBoxQuads(boxPos, boxDim, vec4(0,1,0,1));
+						glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+						Vec3i cs = grid.cellCount;
+						for(int z = coordMin.z; z < coordMax.z+1; z++) {
+							for(int y = coordMin.y; y < coordMax.y+1; y++) {
+								for(int x = coordMin.x; x < coordMax.x+1; x++) {
+									int bufferIndex = arrayIndex3D(cs.x, cs.y, x, y, z);
+
+									if(x == 4 && y == 2 && z == 2) {
+										int stop = 234;
 									}
+
+									ObjectList* list = &settings->grid[bufferIndex];
+									if(!list->data) {
+										list->max = 5;
+										list->data = settings->gridBuffer + settings->gridBufferCount; 
+										settings->gridBufferCount += list->max;
+
+										list->count = 0;
+									} 
+
+									if(list->count + 1 == list->max) {
+										list->max *= 2;
+										int* newData = settings->gridBuffer; 
+										settings->gridBufferCount += list->max;
+
+										copyArray(newData, list->data, int, list->count);
+										list->data = newData;
+									}
+
+									list->data[list->count++] = objectIndex;
+
+									// We start over when we run out of memory.
+									// Is this reasonable?
+									if(settings->gridBufferCount >= settings->gridBufferMax) {
+										free(settings->gridBuffer);
+										settings->gridBufferMax *= 2;
+
+										goto spatialStart2;
+									}
+
 								}
 							}
-
 						}
+
 					}
 
 					Vec3 boxPos = vec3(grid.bMin + (grid.bMax - grid.bMin)/2.0f);
 					Vec3 boxDim = vec3(grid.bMax - grid.bMin);
-					boxPos.z = 0;
-					boxDim.z = 0;
-					// drawBox(boxPos, boxDim, vec4(0,1,0,1));
+					glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+					drawBoxQuads(boxPos, boxDim, vec4(0,1,0,1));
+					glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
 					Vec3 size = vec3(grid.bMax - grid.bMin);
-
-					for(int x = 0; x < grid.cellCount.x+1; x++) {
-						Vec3 pos = vec3(grid.bMin) + vec3(grid.cellSize.x*x,0,0);
-						pos.z = 0;
-						drawLine(pos, pos + vec3(0,size.y,0), vec4(0,1,0,1));
-					}
-
-					for(int y = 0; y < grid.cellCount.y+1; y++) {
-						Vec3 pos = vec3(grid.bMin) + vec3(0,grid.cellSize.y*y,0);
-						pos.z = 0;
-						drawLine(pos, pos + vec3(size.x,0,0), vec4(0,1,0,1));
-					}
-
-					{
-						Vec3 mi = vec3(grid.bMin); mi.z = 0;
-						Vec3 ma = vec3(grid.bMax); ma.z = 0;
-						drawSphere(mi, 0.1f, vec4(0,1,1,1));
-						drawSphere(ma, 0.1f, vec4(0,1,1,1));
-					}
 
 					Vec3 rayPos = world->objects.at(2).pos;
 					Vec3 rayDir = normVec3(world->objects.at(3).pos - world->objects.at(2).pos);
@@ -2331,27 +2349,56 @@ extern "C" APPMAINFUNCTION(appMain) {
 							printf("START:\n");
 
 							do {
+
 								Vec3 bMin = vec3((grid.coord + grid.coordMin) * grid.cellSize);
 								Vec3 bMax = vec3((grid.coord + vec3i(1) + grid.coordMin) * grid.cellSize);
 								Vec3 boxPos = bMin + (bMax - bMin)/2.0;
 								Vec3 boxDim = bMax - bMin;
-								boxPos.z = 0.1f;
-								boxDim.z = 0.1f;
 
-								drawBox(boxPos, boxDim, vec4(0,0,0,1));
+								glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+								drawBoxQuads(boxPos, boxDim, vec4(0,0,0,1));
+								glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 
-								printf("%i,%i: ", grid.coord.x, grid.coord.y);
+								printf("%i,%i,%i: ", grid.coord.x, grid.coord.y, grid.coord.z);
 								int index = arrayIndex3D(grid.cellCount.x, grid.cellCount.y, 
 								                         grid.coord.x, grid.coord.y, grid.coord.z);
 								ObjectList* list = &settings->grid[index];
 								if(list) {
+									int objectIndex = 0;
+									float minDistance = FLT_MAX;
+									Vec3 intersection, intersectionNormal;
+
 									for(int i = 0; i < list->count; i++) {
-										printf("%i, ", list->data[i]);
+										printf("Count: %i %i, ", list->count, list->data[i]);
+
+										Object* obj = &world->objects.at(list->data[i]);
+										Vec3 position, normal;
+										float distance = getIntersection(obj, rayPos, rayDir, &position, &normal);
+										if(distance != -1) {
+
+											// Only accept intersections that are in the current grid box.
+											if(distance < minDistance && pointInBox(position, grid.gridBoxMin, grid.gridBoxMax)) {
+												minDistance = distance;
+												objectIndex = list->data[i]+1;
+
+												intersection = position;
+												intersectionNormal = normal;
+											}
+
+										}
+									}
+
+									if(objectIndex) {
+										drawSphere(intersection, 0.4f, vec4(0,1,1,1));
+										drawLine(intersection, intersection + intersectionNormal*10, vec4(1,0,1,1));
+
+										break;
 									}
 								}
 								printf("\n");
 
 							} while(spatialGridTraverseNext(&grid));
+
 						}
 
 					}
@@ -2359,6 +2406,34 @@ extern "C" APPMAINFUNCTION(appMain) {
 				}
 
 				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+				glEnable(GL_LIGHTING);
+				glEnable(GL_CULL_FACE);
+			}
+			#endif
+
+			// @Testing.
+			#if 0
+			{
+				glDisable(GL_LIGHTING);
+
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+				drawBox(vec3(0,0,0), vec3(10), vec4(1,0,0,1));
+
+				glPointSize(1);
+
+				Vec3 pos = vec3(0,0,20);
+				RaytraceSettings* settings = &ad->settings;
+				for(int i = 0; i < settings->randomDirectionCount; i++) {
+					Vec3 dir = settings->randomDirections[i];
+
+					drawPoint(pos + dir*5, vec4(1,0,0,1));
+				}
+
+				glPointSize(1);
+
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
 				glEnable(GL_LIGHTING);
 			}
 			#endif
@@ -3295,7 +3370,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					newGuiQuickTextBox(gui, r, "<b>Render Settings<b>", vec2i(0,0), &headerSettings);
 
 					{
-						char* labels[] = {"Texture dim", "Sample mode", "Sample count", "Max ray bounces"};
+						char* labels[] = {"Texture dim", "Samples/Pixel", "Max ray bounces"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -3343,7 +3418,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 						Camera* cam = &world->camera;
 						EntityUI* eui = &ad->entityUI;
 
-						char* labels[] = {"Cam position", "Cam rotation", "Cam fov", "Ambient light", "Global light", "Global light dir", "Aperture size", "Focal distance"};
+						char* labels[] = {"Cam position", "Cam rotation", "Cam fov", "Back color", "Ambient light", "Global light", "Global light dir", "Aperture size", "Focal distance"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -3375,6 +3450,13 @@ extern "C" APPMAINFUNCTION(appMain) {
 							drawLineH(p+vec2(0,-0.5f), p+vec2(ew,0)+vec2(0,-0.5f), cSeparatorBright);
 							p.y -= separatorHeight/2+pad.y;
 						}
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->backgroundColor.r, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->backgroundColor.g, 0, 1);
+						newGuiQuickSlider(gui, quickRowNext(&qr), &world->backgroundColor.b, 0, 1);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0,0,0);
@@ -3463,7 +3545,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 								Vec3 rayDir = mouseRayCast(ad->textureScreenRectFitted, input->mousePosNegative, cam);
 
 								Vec3 intersection;
-								int objectIndex = castRayAll(cam->pos, rayDir, &ad->world.objects, 0, &intersection);
+								int objectIndex = castRayAll(cam->pos, rayDir, false, &ad->world.objects, &intersection);
 								if(objectIndex) {
 									world->focalPoint = intersection;
 									updateFocalDistance = true;
@@ -3627,6 +3709,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(o.material.emitColor.b != obj->material.emitColor.b) o.material.emitColor.b = -1;
 							if(o.material.reflectionMod != obj->material.reflectionMod) o.material.reflectionMod = -1;
 							if(o.material.refractiveIndex != obj->material.refractiveIndex) o.material.refractiveIndex = -1;
+							if(o.material.roughness != obj->material.roughness) o.material.roughness = -1;
 						}
 
 						objectDiffs = o;
@@ -3651,6 +3734,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 							if(o.material.emitColor.b == -1) o.material.emitColor.b = 0;
 							if(o.material.reflectionMod == -1) o.material.reflectionMod = 0;
 							if(o.material.refractiveIndex == -1) o.material.refractiveIndex = 0;
+							if(o.material.roughness == -1) o.material.roughness = 0;
 						}
 						eui->multiChangeObject = o;
 
@@ -3690,7 +3774,7 @@ extern "C" APPMAINFUNCTION(appMain) {
 					} else quickRowNext(&qr);
 
 					{
-						char* labels[] = {"Position", "Rotation", "Color", "Type", "Dimension", "EmitColor", "Reflection", "Refraction"};
+						char* labels[] = {"Position", "Rotation", "Color", "Type", "Dimension", "EmitColor", "Roughness", "Reflection", "Refraction"};
 						int labelIndex = 0;
 						float labelsMaxWidth = 0;
 						for(int i = 0; i < arrayCount(labels); i++) {
@@ -3800,6 +3884,11 @@ extern "C" APPMAINFUNCTION(appMain) {
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->material.emitColor.r)) offSize = memberOffsetSize(Object, material.emitColor.r);
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->material.emitColor.g)) offSize = memberOffsetSize(Object, material.emitColor.g);
 						if(newGuiQuickTextEdit(gui, quickRowNext(&qr), &obj->material.emitColor.b)) offSize = memberOffsetSize(Object, material.emitColor.b);
+
+						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
+						qr = quickRow(r, pad.x, labelsMaxWidth, 0);
+						newGuiQuickText(gui, quickRowNext(&qr), labels[labelIndex++], vec2i(-1,0));
+						if(newGuiQuickSlider(gui, quickRowNext(&qr), &obj->material.roughness, 0, 1)) offSize = memberOffsetSize(Object, material.roughness);
 
 						r = rectTLDim(p, vec2(ew, eh)); p.y -= eh+pad.y;
 						qr = quickRow(r, pad.x, labelsMaxWidth, 0);

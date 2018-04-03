@@ -485,17 +485,17 @@ LRESULT CALLBACK mainWindowCallBack(HWND window, UINT message, WPARAM wParam, LP
         	return sd->ncTestRegion = HTCLIENT;
         } break;
 
-        case WM_NCPAINT: {
-	        HDC hdc;
-	        hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
-	        // Paint into this DC 
-	        ReleaseDC(window, hdc);
+        // case WM_NCPAINT: {
+	       //  HDC hdc;
+	       //  hdc = GetDCEx(window, (HRGN)wParam, DCX_WINDOW|DCX_INTERSECTRGN);
+	       //  // Paint into this DC 
+	       //  ReleaseDC(window, hdc);
 
-	        sd->vsyncTempTurnOff = true;
-	        SwitchToFiber(sd->mainFiber);
+	       //  // sd->vsyncTempTurnOff = true;
+	       //  // SwitchToFiber(sd->mainFiber);
 
-        	return 0;
-        } break;
+        // 	return 0;
+        // } break;
 
         case WM_NCLBUTTONDOWN: {
         	int test = wParam;

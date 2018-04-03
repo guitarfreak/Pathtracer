@@ -219,6 +219,12 @@ float lerp(float percent, float min, float max) {
 	return min + percent * (max-min);
 }
 
+float lerpCheck(float percent, float min, float max) {
+	if(percent == 0) return min;
+	else if(percent == 1) return max;
+	else return min + percent * (max-min);
+}
+
 inline bool valueBetween(float v, float min, float max) {
 	return (v >= min && v <= max);
 }
@@ -2509,6 +2515,13 @@ inline Vec3 lerp(float percent, Vec3 a, Vec3 b) {
 	a.x = lerp(percent, a.x, b.x);
 	a.y = lerp(percent, a.y, b.y);
 	a.z = lerp(percent, a.z, b.z);
+	return a;
+}
+
+inline Vec3 lerpCheck(float percent, Vec3 a, Vec3 b) {
+	a.x = lerpCheck(percent, a.x, b.x);
+	a.y = lerpCheck(percent, a.y, b.y);
+	a.z = lerpCheck(percent, a.z, b.z);
 	return a;
 }
 
