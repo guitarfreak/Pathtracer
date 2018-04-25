@@ -1,6 +1,9 @@
 
 Simple Path Tracer.
 
+![Screenshot1](https://guitarfreak.github.io/assets/images/pathtracer1.png)
+![Screenshot1](https://guitarfreak.github.io/assets/images/pathtracer2.png)
+
 Runs on Windows x86/x64 starting with Windows XP.
 Requires Opengl 3.3 or higher.
 
