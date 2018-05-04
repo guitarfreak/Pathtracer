@@ -1,13 +1,30 @@
 
-Simple Path Tracer.
+## Simple Path Tracer
 
-![Screenshot1](https://guitarfreak.github.io/assets/images/pathtracer1.png)
-![Screenshot1](https://guitarfreak.github.io/assets/images/pathtracer2.png)
+<p float="right">
+	<a href="https://guitarfreak.github.io/assets/images/pathtracer1.png">
+  		<img src="https://guitarfreak.github.io/assets/images/pathtracer1.png" width="49%" />
+  	</a>
+	<a href="https://guitarfreak.github.io/assets/images/pathtracer2.png">
+		<img src="https://guitarfreak.github.io/assets/images/pathtracer2.png" width="49%" />
+  	</a>
+</p>
 
-Runs on Windows x86/x64 starting with Windows XP.
-Requires Opengl 3.3 or higher.
+#### A path tracer with basic functionality
 
-Controls:
+* Reflection, refraction, depth of field.
+* Ellipsoids, boxes, cylinders and cones.
+* Blue noise sampling.
+* Grid acceleration structure.
+* Edit entities.
+* Save/load scenes.
+* Save screenshots.
+
+Runs on Windows 32bit and 64bit.
+It uses Opengl 3.3, Freetype to render fonts and stb_image/stb_image_write to read/write images.
+Lines of code: 13.8K.
+
+#### Controls
 
 W,A,S,D         - Move camera.  
 Q,E             - Move camera vertically.  
