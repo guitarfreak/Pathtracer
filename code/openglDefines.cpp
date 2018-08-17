@@ -25,6 +25,8 @@
 #define GL_RGBA8UI                        0x8D7C
 #define GL_R8                             0x8229
 #define GL_ARRAY_BUFFER                   0x8892
+#define GL_MAX_INTEGER_SAMPLES            0x9110
+#define GL_MAX_SAMPLES                    0x821D
 
 #define GL_NUM_EXTENSIONS                 0x821D
 

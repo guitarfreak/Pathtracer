@@ -767,8 +767,6 @@ void CALLBACK updateInput(SystemData* sd) {
 
 #include <Mmsystem.h>
 
-
-
 int getSystemFontHeight(HWND windowHandle);
 void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, Vec2i res, int style, int , int monitor = 0) {
 	systemData->windowsData = wData;
@@ -888,7 +886,6 @@ void initSystem(SystemData* systemData, WindowSettings* ws, WindowsData wData, V
 
     ws->styleBorderSize = GetSystemMetrics(SM_CXSIZEFRAME);
 
-
     // Set icon.
     {
     	char* rs = MAKEINTRESOURCE(1);
@@ -927,15 +924,15 @@ void showWindow(HWND windowHandle) {
     ShowWindow(windowHandle, SW_SHOW);
 }
 
-float getScalingFactor(HWND windowHandle) {
-    HDC deviceContext = GetDC(windowHandle);
-    int LogicalScreenHeight = GetDeviceCaps(deviceContext, VERTRES);
-    int PhysicalScreenHeight = GetDeviceCaps(deviceContext, DESKTOPVERTRES); 
+// float getScalingFactor(HWND windowHandle) {
+//     HDC deviceContext = GetDC(windowHandle);
+//     int LogicalScreenHeight = GetDeviceCaps(deviceContext, VERTRES);
+//     int PhysicalScreenHeight = GetDeviceCaps(deviceContext, DESKTOPVERTRES); 
 
-    float ScreenScalingFactor = (float)PhysicalScreenHeight / (float)LogicalScreenHeight;
+//     float ScreenScalingFactor = (float)PhysicalScreenHeight / (float)LogicalScreenHeight;
 
-    return ScreenScalingFactor;
-}
+//     return ScreenScalingFactor;
+// }
 
 // MetaPlatformFunction();
 // const char* getClipboard(MemoryBlock* memory) {

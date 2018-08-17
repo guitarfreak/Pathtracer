@@ -2652,10 +2652,10 @@ inline Mat4 operator*(Mat4 a, Mat4 b) {
 
 inline Vec4 operator*(Mat4 m, Vec4 v) {
 	Vec4 result;
-	result.x = m.xa*v.x + m.xb*v.y + m.xc+v.z + m.xd+v.w;
-	result.y = m.ya*v.x + m.yb*v.y + m.yc+v.z + m.yd+v.w;
-	result.z = m.za*v.x + m.zb*v.y + m.zc+v.z + m.zd+v.w;
-	result.w = m.wa*v.x + m.wb*v.y + m.wc+v.z + m.wd+v.w;
+	result.x = m.xa*v.x + m.xb*v.y + m.xc*v.z + m.xd*v.w;
+	result.y = m.ya*v.x + m.yb*v.y + m.yc*v.z + m.yd*v.w;
+	result.z = m.za*v.x + m.zb*v.y + m.zc*v.z + m.zd*v.w;
+	result.w = m.wa*v.x + m.wb*v.y + m.wc*v.z + m.wd*v.w;
 
 	return result;
 }
@@ -3164,7 +3164,7 @@ Rect rectAlignDim(Vec2 v, Vec2i align, Vec2 dim) {
 }
 
 Rect rectAlignDim(Rect r, Vec2i align, Vec2 dim) {
-	     if(align == vec2i(0,  0)) return rectCenDim( rectCen(r), dim );
+	     if(align == vec2i( 0, 0)) return rectCenDim( rectCen(r), dim );
 	else if(align == vec2i(-1,-1)) return rectBLDim ( rectBL (r), dim );
 	else if(align == vec2i(-1, 0)) return rectLDim  ( rectL  (r), dim );
 	else if(align == vec2i(-1, 1)) return rectTLDim ( rectTL (r), dim );

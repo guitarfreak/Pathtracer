@@ -512,7 +512,8 @@ struct NewGui {
 	// Used for text edits right now.
 	int activeSignalId;
 
-	int storedIds[10];
+	int storedIds[20];
+	int storedIdIndex;
 	int storedIdCount;
 
 	Input* input;
@@ -661,29 +662,30 @@ int newGuiAdvanceId(NewGui* gui) {
 
 // "Increment" doesn't make sense anymore, but too lazy to change the name.
 int newGuiIncrementId(NewGui* gui) {
-	if(gui->storedIdCount) {
-		int storedId = gui->storedIds[gui->storedIdCount-1];
-		gui->storedIdCount--;
+	if(gui->storedIdIndex < gui->storedIdCount) {
+		return gui->storedIds[gui->storedIdIndex++];
 
-		return storedId;
 	} else {
 		return newGuiAdvanceId(gui);
 	}
 }
 
 void newGuiStoreIds(NewGui* gui, int count) {
-	for(int i = 0; i < count; i++) 
-		gui->storedIds[gui->storedIdCount++] = newGuiAdvanceId(gui);
+	gui->storedIdIndex = 0;
+	gui->storedIdCount = count;
+	for(int i = 0; i < count; i++) {
+		gui->storedIds[i] = newGuiAdvanceId(gui);
+	}
 }
 
 void newGuiClearStoredIds(NewGui* gui) {
+	gui->storedIdIndex = 0;
 	gui->storedIdCount = 0;
 }
 
 int newGuiCurrentId(NewGui* gui) {
-	if(gui->storedIdCount) {
-		int storedId = gui->storedIds[gui->storedIdCount];
-		return storedId;
+	if(gui->storedIdIndex < gui->storedIdCount) {
+		return gui->storedIds[gui->storedIdIndex-1];
 	} else {
 		return gui->id-1;
 	}
@@ -736,13 +738,13 @@ void newGuiSetActive(NewGui* gui, int id, bool input, int focus = 0) {
 	if(id == gui->activeSignalId) {
 		setActive = true;
 		gui->activeSignalId = 0;
+
 	} else {
-		
 		if(!newGuiIsActive(gui, id)) {
 			if(input && newGuiIsHot(gui, id, focus)) {
-
 				if(newGuiSomeoneActive(gui)) { 
 					gui->activeSignalId = id;
+					
 				} else {
 					setActive = true;
 				}
@@ -1632,10 +1634,11 @@ bool newGuiQuickTextEditAllVars(NewGui* gui, Rect r, void* data, int varType, in
 
 	if(event == 0) set.textBoxSettings.boxSettings.color += newGuiColorMod(gui);
 
+	bool active = event == 1 || event == 2;
 	gui->editVars.dt = gui->dt;
-	if(varType == 0) drawTextEditBox(charData, r, event > 0, gui->scissor, gui->editVars, set);
-	else if(varType == 1) drawTextEditBox(*intData, r, event > 0, gui->scissor, gui->editVars, set);
-	else drawTextEditBox(*floatData, r, event > 0, gui->scissor, gui->editVars, set);
+	if(varType == 0) drawTextEditBox(charData, r, active, gui->scissor, gui->editVars, set);
+	else if(varType == 1) drawTextEditBox(*intData, r, active, gui->scissor, gui->editVars, set);
+	else drawTextEditBox(*floatData, r, active, gui->scissor, gui->editVars, set);
 
 	if(newGuiIsHot(gui) || (newGuiIsActive(gui) && pointInRectEx(gui->input->mousePosNegative, intersect))) newGuiSetCursor(gui, IDC_IBEAM);
 
@@ -1670,7 +1673,6 @@ float sliderGetMod(NewGui* gui, int type, SliderSettings* settings, int mod) {
 		return mod;
 	}
 }
-
 bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void* max, SliderSettings* settings = 0) {
 
 	bool typeIsInt = type == SLIDER_TYPE_INT;
@@ -1678,6 +1680,8 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 
 	bool result = false;
 	bool editMode = false;
+
+	newGuiStoreIds(gui, 6);
 
 	// Double click text edit mode.
 	{
@@ -1688,14 +1692,16 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 		int event;
 		flagSet(&edSet.flags, ESETTINGS_START_RIGHT);
 		event = newGuiGoTextEdit(gui, intersect, gui->zLevel, val, typeIsInt?EDIT_MODE_INT:EDIT_MODE_FLOAT, edSet, &gui->editVars, 0, true);
-		if(event != 0) {
+		if(event == 1 || event == 2) {
 			drawTextEditBox(val, typeIsInt?EDIT_MODE_INT:EDIT_MODE_FLOAT, r, event > 0, gui->scissor, gui->editVars, edSet);
 			editMode = true;
-			if(event == 3) result = true;
-		}
 
-		if(editMode && event != 3) return false;
-		else if(editMode && event == 3) return true;
+			newGuiClearStoredIds(gui);
+			return false;
+
+		} else if(event == 3) {
+			result = true;
+		}
 	}
 
 	// Mouse Wheel / Arrow Keys.
@@ -1746,7 +1752,10 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 	Rect slider = newGuiCalcSlider(floatVal, r, sliderSize, floatMin, floatMax, true);
 
 	int event = newGuiGoDragAction(gui, getRectScissor(r, slider), gui->zLevel);
-	if(!testRectScissor(gui->scissor, r)) return false;
+	if(!testRectScissor(gui->scissor, r)) {
+		newGuiClearStoredIds(gui);
+		return false;
+	}
 
 	if(event == 1 && set.useDefaultValue && gui->input->doubleClick) {
 		newGuiSetNotActive(gui, newGuiCurrentId(gui));
@@ -1754,6 +1763,7 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 
 		if(typeIsInt) Void_Dref(int, val) = roundInt(set.defaultvalue);
 		else Void_Dref(float, val) = set.defaultvalue;
+
 	} else {
 		if(event == 1) {
 			if(set.applyAfter) {
@@ -1796,6 +1806,8 @@ bool newGuiQuickSlider(NewGui* gui, Rect r, int type, void* val, void* min, void
 	
 		result = true;
 	}
+
+	newGuiClearStoredIds(gui);
 
 	return result;
 }
