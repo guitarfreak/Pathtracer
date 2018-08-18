@@ -1,7 +1,15 @@
 @echo off
 
-set 7ZIP_PATH=C:\Program Files\7-Zip\7z.exe
 set APP_NAME=Pathtracer
+set APP_VERSION=0.6
+set GITHUB_LINK=www.github.com/guitarfreak/Pathtracer
+
+set                ZIP7=C:\Program Files\7-Zip\7z.exe
+set              RCEDIT=C:\Standalone\rcedit.exe
+
+set INNO_SETUP_COMPILER=C:\Program Files (x86)\Inno Setup 5\ISCC.exe
+set        WIN_SDK_PATH=C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A
+set             VS_PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0
 
 set scriptpath=%~d0%~p0
 cd %scriptpath%
@@ -15,9 +23,7 @@ if "%~1"=="-x86" set PLATFORM2=x86
 set BUILD_FOLDER=buildWin64
 if "%~1"=="-x86" set BUILD_FOLDER=buildWin32
 
-if "%~4"=="-ship" goto buildSetup
-goto buildSetupEnd
-:buildSetup
+if NOT "%~4"=="-folder" goto buildSetupEnd
 	set BUILD_FOLDER=releaseBuild
 	if exist "..\%BUILD_FOLDER%" rmdir "..\%BUILD_FOLDER%" /S /Q
 :buildSetupEnd
@@ -30,34 +36,28 @@ set LINC=
 
 set LINKER_LIBS= -DEFAULTLIB:Opengl32.lib -DEFAULTLIB:Shell32.lib -DEFAULTLIB:user32.lib -DEFAULTLIB:Gdi32.lib -DEFAULTLIB:Shlwapi.lib -DEFAULTLIB:Winmm.lib -DEFAULTLIB:Psapi.lib -DEFAULTLIB:Comdlg32.lib
 
-set          INC=%INC% -I"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\include"
-set          INC=%INC% -I"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Include"
+set INC=%INC% -I"%VS_PATH%\VC\include"
+set INC=%INC% -I"%WIN_SDK_PATH%\Include"
 
 if "%~1"=="-x86" goto compilerSelectionX86
-
-set                  PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\amd64;%PATH%
-set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\lib\amd64"
-set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Lib\x64"
-
+	set                  PATH=%VS_PATH%\VC\bin\amd64;%PATH%
+	set LINC=%LINC% -LIBPATH:"%VS_PATH%\VC\lib\amd64"
+	set LINC=%LINC% -LIBPATH:"%WIN_SDK_PATH%\Lib\x64"
 goto compilerSelectionEnd
+
 :compilerSelectionX86
-
-set                  PATH=C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin;%PATH%
-set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\lib"
-set LINC=%LINC% -LIBPATH:"C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\Lib"
-
+	set                  PATH=%VS_PATH%\VC\bin;%PATH%
+	set LINC=%LINC% -LIBPATH:"%VS_PATH%\VC\lib"
+	set LINC=%LINC% -LIBPATH:"%WIN_SDK_PATH%\Lib"
 :compilerSelectionEnd
-
 
 set INC=%INC% -I"..\libs\freetype 2.9\include"
 set LINC=%LINC% -LIBPATH:"..\libs\freetype 2.9\lib\%PLATFORM%"
 set LINKER_LIBS=%LINKER_LIBS% -DEFAULTLIB:freetype.lib
 
-
-
 set BUILD_MODE=-Od
 set MODE_DEFINE=
-if "%~3"=="-release" (
+if "%~3"=="-releaseMode" (
 	rem -Oy -Zo
 	set BUILD_MODE=-O2
 	set MODE_DEFINE=-DRELEASE_BUILD
@@ -65,7 +65,7 @@ if "%~3"=="-release" (
 
 set RUNTIME=-MD
 
-if "%~4"=="-ship" (
+if "%~4"=="-folder" (
 	set MODE_DEFINE=%MODE_DEFINE% -DSHIPPING_MODE
 	set RUNTIME=-MT
 )
@@ -79,7 +79,7 @@ set COMPILER_OPTIONS= %RUNTIME% %BUILD_MODE% -nologo -Oi -FC -wd4838 -wd4005 -fp
 set LINKER_OPTIONS= -link -SUBSYSTEM:WINDOWS -OUT:"%APP_NAME%.exe" -incremental:no -opt:ref
 
 
-if "%~4"=="-ship" goto noDLL
+if "%~4"=="-folder" goto noDLL
 
 del main_*.pdb > NUL 2> NUL
 echo. 2>lock.tmp
@@ -88,40 +88,32 @@ del lock.tmp
 
 :noDLL
 
-
 cl %COMPILER_OPTIONS% ..\code\main.cpp %MODE_DEFINE% %INC% %LINKER_OPTIONS% %LINC% %LINKER_LIBS%
 
 
 
-if "%~4"=="-ship" goto packShippingFolder
-goto packShippingFolderEnd
-
-:packShippingFolder
-
-	rem This is suboptimal.
+if NOT "%~4"=="-folder" goto packShippingFolderEnd
 
 	cd ..
+
+	rem Create release folder.
 
 	mkdir ".\%BUILD_FOLDER%\data"
 	xcopy ".\data" ".\%BUILD_FOLDER%\data" /E /Q
 
-	if "%~3"=="" goto nodelete
-		del ".\%BUILD_FOLDER%\*.pdb"
-		del ".\%BUILD_FOLDER%\*.exp"
-		del ".\%BUILD_FOLDER%\*.lib"
-		del ".\%BUILD_FOLDER%\*.obj"
-	:nodelete
+	del ".\%BUILD_FOLDER%\*.pdb"
+	del ".\%BUILD_FOLDER%\*.exp"
+	del ".\%BUILD_FOLDER%\*.lib"
+	del ".\%BUILD_FOLDER%\*.obj"
 
 	xcopy ".\libs\freetype 2.9\lib\%PLATFORM%\*.dll" ".\%BUILD_FOLDER%" /Q
 
 	xcopy ".\README.txt" ".\%BUILD_FOLDER%" /Q
 	xcopy ".\Licenses.txt" ".\%BUILD_FOLDER%" /Q
 
+	%RCEDIT% "%BUILD_FOLDER%\\%APP_NAME%.exe" --set-icon icon.ico
 
-
-	call "C:\\Standalone\\rcedit.exe" "%BUILD_FOLDER%\\%APP_NAME%.exe" --set-icon icon.ico
-
-	set RELEASE_FOLDER=.\releases\%PLATFORM%\%APP_NAME%
+	set RELEASE_FOLDER=.\releases\%APP_NAME% %PLATFORM2%
 	if exist "%RELEASE_FOLDER%" rmdir "%RELEASE_FOLDER%" /S /Q
 	mkdir "%RELEASE_FOLDER%"
 
@@ -129,19 +121,12 @@ goto packShippingFolderEnd
 
 	rmdir ".\%BUILD_FOLDER%" /S /Q
 
-	"C:\Program Files\7-Zip\7z.exe" a "%RELEASE_FOLDER% %PLATFORM2%.zip" "%RELEASE_FOLDER%"
+
+	if NOT "%~6"=="-ship" shipEnd
+		set COMPILE_TOKEN=true
+		call buildCreateInstallerAndZip.bat
+	:shipEnd
 
 :packShippingFolderEnd
 
-
-:parseParameters
-IF "%~2"=="" GOTO parseParametersEnd
-IF "%~2"=="-run" call %APP_NAME%.exe
-SHIFT
-GOTO parseParameters
-:parseParametersEnd
-
-rem popd
-set LOCATION=
-
-rem exit -b
+IF "%~2"=="-run" call "%APP_NAME%.exe"
