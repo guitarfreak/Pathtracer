@@ -10,6 +10,10 @@
   	</a>
 </p>
 
+<a href="https://github.com/guitarfreak/PropertyWatcher/assets/1862206/dbd22884-693a-4e99-a08c-158c970683b3">
+	<img src="https://github.com/guitarfreak/PropertyWatcher/assets/1862206/dbd22884-693a-4e99-a08c-158c970683b3" width="49%" />
+</a>
+
 #### A path tracer with basic functionality
 
 * Reflection, refraction, depth of field.
